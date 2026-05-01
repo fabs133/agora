@@ -1,0 +1,64 @@
+name: Research / experiment proposal
+description: Propose a comparison, replication, or measurement that produces empirical data — not a code change.
+title: "[research] "
+labels: ["research"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for runs that *generate evidence* — cross-tier comparisons, ablation studies,
+        replication on different hardware/OS, capability-ceiling probes.
+        Existing thread candidates are in
+        [docs/runs/publishable.md](https://github.com/fabs133/agora/blob/main/docs/runs/publishable.md).
+
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: One sentence. What would the run prove or disprove?
+      placeholder: "Claim: postcondition gates produce diminishing returns above gpt-4o-mini tier — a 4o-mini run with all gates disabled would still ship working code on the URL-shortener test bed."
+    validations:
+      required: true
+
+  - type: textarea
+    id: design
+    attributes:
+      label: Experiment design
+      description: |
+        Test bed (existing or new), models compared, control conditions, what's
+        held constant. Reference the relevant `flows/*.plan.yaml` if reusing
+        an existing DAG.
+    validations:
+      required: true
+
+  - type: textarea
+    id: success-criteria
+    attributes:
+      label: Success criteria
+      description: |
+        What number / outcome would settle the question? Include both
+        positive and negative outcomes so the result is interpretable
+        regardless of direction.
+    validations:
+      required: true
+
+  - type: input
+    id: cost-estimate
+    attributes:
+      label: Cost estimate (USD or wall-clock)
+      description: e.g. "~$1.50 (5 gpt-4o runs at $0.30 each)" or "~30 min local on qwen2.5:7b"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: thread
+    attributes:
+      label: Maps to which publishable thread?
+      description: See [docs/runs/publishable.md](https://github.com/fabs133/agora/blob/main/docs/runs/publishable.md).
+      options:
+        - "Candidate 1 — cross-tier empirical comparison"
+        - "Candidate 2 — failure taxonomy"
+        - "Candidate 3 — capability-ceiling characterisation"
+        - "Other / not yet a thread"
+    validations:
+      required: true

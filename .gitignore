@@ -21,6 +21,10 @@ conduit/data/
 workspace/.knowledge/
 workspace/.logs/*.tmp
 
+# Sphinx build artefacts and autosummary stubs.
+docs/_build/
+docs/api/_autosummary/
+
 # Working file used during run-archive build; safe to regenerate.
 docs/runs/_inventory.csv
 

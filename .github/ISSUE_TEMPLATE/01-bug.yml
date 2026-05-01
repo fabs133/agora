@@ -1,0 +1,75 @@
+name: Bug report
+description: Something the framework does that it shouldn't, or fails to do that it should.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: skim [docs/lessons-learned.md](https://github.com/fabs133/agora/blob/main/docs/lessons-learned.md)
+        for the failure-mode taxonomy. Many "bugs" turn out to be model capability
+        ceilings (Category 2: hallucination) or known deferrals — not framework defects.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: One paragraph. What did you run, what did you expect, what did you get.
+      placeholder: "Ran `python scripts/run_discord_bot_test.py` on default Ollama model. Expected DONE 12/12; got task `build_skeleton` failing on postcondition `py_compiles` after 3 retries."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimum command(s) to reproduce. Include any AGORA_* env vars set.
+      render: bash
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model + backend
+      description: e.g. `ollama/qwen2.5:7b-instruct`, `openai/gpt-4o-mini`, `anthropic/claude-haiku-4-5`
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS + Python version
+      description: e.g. Ubuntu 24.04, Python 3.12.5
+    validations:
+      required: true
+
+  - type: textarea
+    id: artefacts
+    attributes:
+      label: Run artefacts
+      description: |
+        If a run dir was produced (`workspace/<project>/`), attach the relevant files:
+        the failing source file, the per-run `git-log.txt` if present, the `.logs/` line
+        range. Pasted screenshots welcome.
+
+  - type: textarea
+    id: postcondition
+    attributes:
+      label: Failing postcondition (if applicable)
+      description: |
+        Which `Specification.postconditions` predicate failed, and the reason
+        text the framework recorded. Found in the runner's stdout under
+        `[task <id>] FAILED postcondition <name>`.
+
+  - type: checkboxes
+    id: capability-check
+    attributes:
+      label: Capability-ceiling check
+      description: |
+        The framework cannot patch model capability gaps (see
+        [lessons-learned § The 7B capability ceiling](https://github.com/fabs133/agora/blob/main/docs/lessons-learned.md)).
+        Tick the box that applies.
+      options:
+        - label: I've tried this on a stronger model (gpt-4o-mini or better) and the bug still happens — this is likely a framework issue, not a capability ceiling.
+        - label: I'm only able to test on a weak local model and can't rule out the capability ceiling.

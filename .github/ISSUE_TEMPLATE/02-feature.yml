@@ -1,0 +1,61 @@
+name: Feature / framework gate suggestion
+description: Propose a new postcondition, tool, predicate, observer verb, or other framework addition.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Operating principle**: every postcondition added in Rounds 1–18 was
+        driven by a failure observed in a real run. The bar is *evidence*, not
+        speculation — see [lessons-learned § Operating principles](https://github.com/fabs133/agora/blob/main/docs/lessons-learned.md).
+        Please name the run or symptom that motivates this feature.
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: What failure shape is this fixing?
+      description: |
+        Describe the run / commit / repro that surfaced the gap. If you don't have one yet,
+        consider whether this would be friction without evidence of value.
+      placeholder: "plan-builder.run13 produced an api_spec.md with stray markdown bullets that ast.parse accepted but were structurally degenerate downstream. Currently no gate catches this."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed addition
+      description: One paragraph on what the gate / tool / verb would do, and where it would live in the framework.
+      placeholder: "New predicate `api_spec_no_stray_bullets` in src/agora/plan/structure.py, wired into the plan-builder author_spec stage as a postcondition."
+    validations:
+      required: true
+
+  - type: textarea
+    id: false-positives
+    attributes:
+      label: False-positive risk
+      description: What legitimate code/output might this gate incorrectly reject? How would you scope it to avoid that?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope of change
+      options:
+        - "Single predicate / tool"
+        - "New stage type"
+        - "New observer verb"
+        - "Cross-cutting (touches orchestrator + multiple modules)"
+        - "New module"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: evidence
+    attributes:
+      label: Evidence checklist
+      options:
+        - label: I have at least one concrete run where this gap surfaced (not hypothetical).
+        - label: I've checked that no existing postcondition / tool already covers this case.

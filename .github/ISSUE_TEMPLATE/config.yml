@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project log & lessons learned
+    url: https://github.com/fabs133/agora/blob/main/docs/lessons-learned.md
+    about: Round-by-round evolution, the five load-bearing ideas, file map. Read this before proposing a new postcondition or framework gate.
+  - name: Run history archive
+    url: https://github.com/fabs133/agora/tree/main/docs/runs
+    about: 46 catalogued runs with cross-cutting findings. Cite a run_id when reporting a failure mode.
