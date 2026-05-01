@@ -32,4 +32,8 @@ docs/runs/_inventory.csv
 .env
 .idea/
 .vscode/
-.claude/
+
+# Claude Code state: ignore runtime / local files but ship project-level
+# settings (permission allowlists for the gamedev-mcp doc-gen workflow).
+.claude/*
+!.claude/settings.json
