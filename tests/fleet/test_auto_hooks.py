@@ -8,7 +8,6 @@ import pytest
 
 from agora.core.types import AgentRole
 from agora.fleet.auto_hooks import (
-    AutoHookResult,
     run_auto_hooks,
     synthesize_mark_complete,
 )
@@ -59,9 +58,9 @@ def test_get_tool_definitions_hides_auto_hooked_tools_when_enabled() -> None:
 def test_auto_hooked_tool_names_is_stable() -> None:
     # Regression: the set defines what the agent does NOT see. Widening it
     # silently hides tools from the LLM.
-    assert AUTO_HOOKED_TOOL_NAMES == frozenset(
+    assert frozenset(
         {"check_python", "git_commit", "git_diff", "git_log", "report_learning"}
-    )
+    ) == AUTO_HOOKED_TOOL_NAMES
 
 
 # ---------------------------------------------------------------- run_auto_hooks

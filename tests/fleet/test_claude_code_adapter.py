@@ -18,7 +18,6 @@ from agora.fleet.claude_code_adapter import (
     _flatten_messages,
 )
 
-
 # ------------------------------------------------------------ construction
 
 

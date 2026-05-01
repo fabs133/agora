@@ -18,14 +18,12 @@ from __future__ import annotations
 
 import ast
 import py_compile
-import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from agora.core.contract import Predicate, make_predicate
 from agora.core.errors import AgoraError
-
 
 Factory = Callable[..., Predicate]
 _REGISTRY: dict[str, Factory] = {}
@@ -559,7 +557,7 @@ def _extract_verbs(bullet: str) -> list[str]:
     seen: set[str] = set()
     verbs: list[str] = []
     # Two-token lookahead for "look up" → single verb "look".
-    for i, tok in enumerate(tokens):
+    for tok in tokens:
         if tok in _BRIEF_VERB_KEYWORDS and tok not in seen:
             verbs.append(tok)
             seen.add(tok)

@@ -23,7 +23,6 @@ from agora.plan.predicate_registry import (
     register_predicate,
 )
 
-
 # Seed names we promise to keep registered — if any of these ever disappears
 # every existing plan YAML breaks.
 REQUIRED_NAMES = frozenset(

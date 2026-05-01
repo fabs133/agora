@@ -13,6 +13,7 @@ Tool categories:
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 from collections.abc import Awaitable, Callable
@@ -2148,7 +2149,7 @@ def _find_module_scope_undefined_names(source: str) -> list[tuple[str, int]]:
     return undefined
 
 
-def _collect_module_scope_bindings(node: "ast.stmt", defined: "set[str]") -> None:
+def _collect_module_scope_bindings(node: ast.stmt, defined: set[str]) -> None:
     """Populate ``defined`` with every name that ``node`` (module-scope) binds.
 
     Recurses into if/try/for/with bodies (those share module scope) but not
@@ -2187,7 +2188,7 @@ def _collect_module_scope_bindings(node: "ast.stmt", defined: "set[str]") -> Non
                     defined.add(handler.name)
 
 
-def _unpack_assign_target(target: "ast.expr", defined: "set[str]") -> None:
+def _unpack_assign_target(target: ast.expr, defined: set[str]) -> None:
     import ast
 
     if isinstance(target, ast.Name):
@@ -2199,7 +2200,7 @@ def _unpack_assign_target(target: "ast.expr", defined: "set[str]") -> None:
         _unpack_assign_target(target.value, defined)
 
 
-def _iter_module_scope_loads(node: "ast.stmt"):
+def _iter_module_scope_loads(node: ast.stmt):
     """Yield ``(name, lineno)`` for every Name-Load that executes at module scope.
 
     Skips function and class bodies (those have their own scopes). Still yields
@@ -2208,7 +2209,7 @@ def _iter_module_scope_loads(node: "ast.stmt"):
     """
     import ast
 
-    def _walk(n: "ast.AST"):
+    def _walk(n: ast.AST):
         if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
             yield n.id, n.lineno
             return
@@ -2241,8 +2242,7 @@ def _iter_module_scope_loads(node: "ast.stmt"):
     yield from _walk(node)
 
 
-def _iter_annotations(args: "ast.arguments"):
-    import ast
+def _iter_annotations(args: ast.arguments):
 
     for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
         if arg.annotation is not None:
@@ -2288,7 +2288,7 @@ def _find_code_after_main_block(source: str) -> list[tuple[str, int]]:
     return stragglers
 
 
-def _is_if_name_equals_main(node: "Any") -> bool:
+def _is_if_name_equals_main(node: Any) -> bool:
     """Is ``node`` exactly ``if __name__ == '__main__':`` at module scope?"""
     import ast
 
@@ -2310,19 +2310,19 @@ def _is_if_name_equals_main(node: "Any") -> bool:
     return False
 
 
-def _is_dunder_name(node: "Any") -> bool:
+def _is_dunder_name(node: Any) -> bool:
     import ast
 
     return isinstance(node, ast.Name) and node.id == "__name__"
 
 
-def _is_main_literal(node: "Any") -> bool:
+def _is_main_literal(node: Any) -> bool:
     import ast
 
     return isinstance(node, ast.Constant) and node.value == "__main__"
 
 
-def _describe_statement(node: "Any") -> str:
+def _describe_statement(node: Any) -> str:
     """Short human-readable label for a module-scope statement."""
     import ast
 
@@ -2748,7 +2748,7 @@ def _make_await_user_decision(ctx: ToolContext):
 
         try:
             answer = await control.await_decision(decision_id, timeout_seconds=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return f"ERROR: decision {decision_id!r} timed out after {timeout}s"
         return answer
 
@@ -2999,7 +2999,6 @@ def _make_plan_add_decision_stage(ctx: ToolContext):
 
 def _make_plan_finalize(ctx: ToolContext):
     async def plan_finalize(args: dict[str, Any]) -> str:
-        from pathlib import Path as _Path
 
         from agora.core.flow import save_flow
         from agora.plan.loader import instantiate_plan, load_plan

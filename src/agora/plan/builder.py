@@ -38,7 +38,6 @@ from agora.core.flow import (
 from agora.core.task import build_dag
 from agora.core.types import AgentRole
 
-
 _ALLOWED_STAGE_KINDS = frozenset({"llm", "decision"})
 
 
@@ -50,7 +49,7 @@ class PlanDraft:
     description: str = ""
     agents: list[dict[str, Any]] = field(default_factory=list)
     # Ordered by insertion so the emitted YAML task_graph stays deterministic.
-    tasks: "OrderedDict[str, dict[str, Any]]" = field(default_factory=OrderedDict)
+    tasks: OrderedDict[str, dict[str, Any]] = field(default_factory=OrderedDict)
     # v2.6 — rich brief text (markdown). Populated at finalize time by reading
     # the plan-builder's ``plan/brief.md`` into memory so it travels with the
     # emitted plan.yaml and reaches the executor workspace's scaffolder.

@@ -13,8 +13,8 @@ import yaml
 
 from agora.core.errors import AgoraError
 from agora.core.flow import (
-    PostconditionRef,
     SUPPORTED_FLOW_VERSIONS,
+    PostconditionRef,
     StageTemplate,
     load_flow,
     save_flow,

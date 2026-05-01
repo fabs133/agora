@@ -20,7 +20,6 @@ from agora.fleet.inner_tools import (
 )
 from agora.fleet.runtime_postconditions import postcond_no_code_after_main_block
 
-
 # ============================================================================
 # _find_code_after_main_block — AST-level detector
 # ============================================================================

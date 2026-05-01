@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from agora.core.agent import AgentConfig
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task

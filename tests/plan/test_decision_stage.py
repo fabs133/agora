@@ -24,13 +24,13 @@ import yaml
 from agora.core.agent import AgentConfig, AgentIdentity
 from agora.core.contract import Specification, make_predicate
 from agora.core.errors import AgoraError
-from agora.core.flow import StageTemplate, load_flow
+from agora.core.flow import load_flow
 from agora.core.task import Task
 from agora.core.types import AgentRole, TaskStatus
 from agora.fleet.agent_runtime import AgentRuntime
 from agora.fleet.control import OrchestratorControl
 from agora.fleet.inner_tools import ToolContext
-from agora.fleet.stage_runner import StageRunner, StagedTask, _EMOJI_DIGITS
+from agora.fleet.stage_runner import _EMOJI_DIGITS, StagedTask, StageRunner
 
 
 class _FakeMatrixClient:

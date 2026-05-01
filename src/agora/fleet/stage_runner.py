@@ -15,9 +15,22 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+
+from agora.core.agent import AgentIdentity
+from agora.core.task import Task
+from agora.fleet.agent_runtime import (
+    AgentRuntime,
+    TaskResult,
+    _collect_artifacts,
+    _evaluate_postconditions,
+    _merge_usage,
+    build_output_path_banner,
+)
+from agora.fleet.inner_tools import ToolContext, get_tool_definitions, get_tool_executor
 
 #: Digit-emoji keys used for decision-stage reaction voting. Each option in a
 #: decision stage gets the emoji at the matching index. Element may strip the
@@ -34,18 +47,6 @@ _EMOJI_DIGITS: tuple[str, ...] = (
     "8\ufe0f\u20e3",
     "9\ufe0f\u20e3",
 )
-
-from agora.core.agent import AgentIdentity
-from agora.core.task import Task
-from agora.fleet.agent_runtime import (
-    AgentRuntime,
-    TaskResult,
-    _collect_artifacts,
-    _evaluate_postconditions,
-    _merge_usage,
-    build_output_path_banner,
-)
-from agora.fleet.inner_tools import ToolContext, get_tool_definitions, get_tool_executor
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +540,7 @@ class StageRunner:
         )
         try:
             answer_id = await control.await_decision(decision_id, timeout_seconds=timeout)
-        except _asyncio.TimeoutError:
+        except TimeoutError:
             return (False, f"decision {decision_id!r} timed out after {timeout}s")
 
         # 4) Write the answer to the stage's output_path.

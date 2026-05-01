@@ -1,7 +1,7 @@
 from agora.core.learning import (
     DECAY_RATE,
-    Learning,
     MAX_CONFIDENCE,
+    Learning,
     decay_learnings,
     filter_active,
     format_learnings_for_context,

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import NamedTuple
 
 from agora.core.errors import InvalidTransition
@@ -91,7 +91,7 @@ class Project:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def transition_phase(project: Project, new_phase: ProjectPhase, reason: str) -> Project:

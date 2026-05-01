@@ -66,12 +66,11 @@ async def _register(username: str, password: str) -> None:
         "username": username,
         "password": password,
     }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, json=payload) as resp:
-            if resp.status in (200, 400):  # 400 = M_USER_IN_USE on re-run
-                return
-            text = await resp.text()
-            raise RuntimeError(f"register failed ({resp.status}): {text}")
+    async with aiohttp.ClientSession() as session, session.post(url, json=payload) as resp:
+        if resp.status in (200, 400):  # 400 = M_USER_IN_USE on re-run
+            return
+        text = await resp.text()
+        raise RuntimeError(f"register failed ({resp.status}): {text}")
 
 
 async def _make_client(username: str, password: str) -> AgoraMatrixClient:

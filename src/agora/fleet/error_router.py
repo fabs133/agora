@@ -25,10 +25,9 @@ back to PENDING with structural feedback in its next system prompt.
 from __future__ import annotations
 
 import re
-from typing import Sequence
+from collections.abc import Sequence
 
 from agora.core.task import Task
-
 
 #: ``No module named 'src.url_shortener'`` / ``No module named "src.url_shortener"``
 #: (captures the dotted module path)

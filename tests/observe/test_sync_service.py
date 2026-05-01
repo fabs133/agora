@@ -1,7 +1,5 @@
 import asyncio
 
-import pytest
-
 from agora.matrix.sync import EventDispatcher
 from agora.observe.sync_service import SyncService
 

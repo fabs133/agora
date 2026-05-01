@@ -30,8 +30,10 @@ jobs:
       - name: ruff check
         run: ruff check .
 
-      - name: ruff format --check
-        run: ruff format --check .
+      # ruff format is intentionally NOT enforced yet — the codebase has
+      # organic style and a sweeping reformat is a separate decision.
+      # Track via the open follow-up; flip to `ruff format --check .` once
+      # a one-shot reformat commit lands.
 
   test:
     runs-on: ubuntu-latest
@@ -42,6 +44,16 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      - name: Configure git identity for repo-creating tests
+        # tests/git/test_merge.py runs `git merge --no-ff` against fresh
+        # tmp_path repos. The committer Actor is set explicitly in
+        # src/agora/git/merge.py, but a global identity is also expected
+        # by some git versions on a host with no user.* config.
+        run: |
+          git config --global user.name "Agora CI"
+          git config --global user.email "ci@agora.local"
+          git config --global init.defaultBranch main
 
       - name: Install Agora with all optional extras
         run: |

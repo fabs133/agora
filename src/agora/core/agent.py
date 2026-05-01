@@ -32,7 +32,7 @@ class AgentIdentity:
     room_id: RoomId
     config: AgentConfig
     knowledge_refs: list[str] = field(default_factory=list)
-    learned_patterns: list["Learning"] = field(default_factory=list)
+    learned_patterns: list[Learning] = field(default_factory=list)
 
     @property
     def effective_instructions(self) -> str:

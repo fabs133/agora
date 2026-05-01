@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 from agora.core.contract import Specification
 from agora.core.errors import AgoraError, InvalidTransition

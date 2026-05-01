@@ -26,7 +26,7 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agora.core.agent import AgentConfig, AgentIdentity
@@ -111,7 +111,7 @@ class Orchestrator:
         work_dir: str,
         homeserver_name: str = "agora.local",
         max_parallel_agents: int = 3,
-        vram_check: "VRAMGate | None" = None,
+        vram_check: VRAMGate | None = None,
         *,
         enable_observer: bool = False,
         repo_root: str | None = None,
@@ -446,7 +446,7 @@ class Orchestrator:
         the narration redirect are injected so the retry sees the feedback
         immediately rather than waiting for the next phase boundary.
         """
-        started = datetime.now(timezone.utc)
+        started = datetime.now(UTC)
 
         await self._preflight_models(agents)
 
@@ -592,7 +592,7 @@ class Orchestrator:
                     logger.warning("sync service stop raised: %s", exc)
             self._active_controls.pop(project_room, None)
 
-        ended = datetime.now(timezone.utc)
+        ended = datetime.now(UTC)
         return ProjectResult(
             project=project,
             success=project.phase == ProjectPhase.DONE,
@@ -976,9 +976,9 @@ class Orchestrator:
         *,
         project_room_id: str,
         identity_rooms: list[str],
-        user_review_fn: "ReviewFn | None",
+        user_review_fn: ReviewFn | None,
         project_work_dir: str | None = None,
-    ) -> tuple[Any | None, Any | None, "ReviewFn"]:
+    ) -> tuple[Any | None, Any | None, ReviewFn]:
         """Start the per-project observer stack (if enabled). Returns (control, service, review_fn)."""
         # Build a control object even when the observer is disabled so pause/abort
         # hooks in _run_phase remain uniform (they just never fire).
@@ -1092,7 +1092,7 @@ class Orchestrator:
                     status=status,
                     artifacts=tuple(r.artifacts),
                     result_summary=r.output[:500],
-                    updated_at=datetime.now(timezone.utc).isoformat(),
+                    updated_at=datetime.now(UTC).isoformat(),
                 )
             )
         return _with_tasks(project, new_tasks)
@@ -1136,7 +1136,7 @@ def _replace_task(
                 t,
                 status=status,
                 result_summary=summary,
-                updated_at=datetime.now(timezone.utc).isoformat(),
+                updated_at=datetime.now(UTC).isoformat(),
             )
         )
     return out
@@ -1157,7 +1157,7 @@ def _reset_tasks_for_retry(project: Project) -> Project:
 
 
 def _output_path_was_produced(
-    output_path: str, artifacts: "list[str] | tuple[str, ...]"
+    output_path: str, artifacts: list[str] | tuple[str, ...]
 ) -> bool:
     """Was the task's declared output_path among the artifacts it produced?
 

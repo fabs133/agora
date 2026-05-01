@@ -340,7 +340,7 @@ def _find_stray_top_level_statements(tree: ast.Module) -> list[str]:
     bodies are syntactically Python but structurally not a signature list.
     """
     offending: list[str] = []
-    for i, node in enumerate(tree.body):
+    for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if isinstance(node, (ast.Import, ast.ImportFrom)):

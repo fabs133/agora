@@ -9,7 +9,6 @@ from typer.testing import CliRunner
 from agora import __version__
 from agora.cli import _recommend_model, app
 
-
 runner = CliRunner()
 
 

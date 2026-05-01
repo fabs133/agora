@@ -146,7 +146,7 @@ class ReviewCoordinator:
 
         try:
             answer_id, voter = await asyncio.wait_for(future, timeout=self._timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.info(
                 "review timed out after %.0fs for project %s — auto-rejecting any failures",
                 self._timeout,

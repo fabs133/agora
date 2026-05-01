@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from agora.core.types import LearningCategory, TaskId
 
@@ -38,7 +38,7 @@ class Learning:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def decay_learnings(learnings: list[Learning]) -> list[Learning]:

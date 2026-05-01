@@ -32,7 +32,6 @@ from agora.plan.harness import HarnessConfig, force_utf8_stdio, run_plan_project
 from agora.plan.loader import instantiate_plan, load_plan
 from agora.plan.predicate_registry import (
     describe_registered_predicates,
-    list_registered_predicates,
 )
 
 PLAN_YAML = REPO_ROOT / "flows" / "plan-builder.plan.yaml"
@@ -188,7 +187,7 @@ async def main() -> None:
     work_dir = scaffold_workspace(args.project_name, args.goal)
     print(f"[*] goal: {args.goal}")
     print(f"[*] workspace: {work_dir}")
-    print(f"[*] scaffold files: plan/kb/goal.md, plan/kb/postcondition_catalog.md, plan/decisions.yaml")
+    print("[*] scaffold files: plan/kb/goal.md, plan/kb/postcondition_catalog.md, plan/decisions.yaml")
     print()
 
     plan = load_plan(PLAN_YAML)

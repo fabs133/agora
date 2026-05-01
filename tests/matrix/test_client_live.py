@@ -29,12 +29,11 @@ async def _register(homeserver: str, username: str, password: str, token: str) -
         "username": username,
         "password": password,
     }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, json=payload) as resp:
-            if resp.status in (200, 400):  # 400 = user_in_use on re-run
-                return
-            text = await resp.text()
-            raise RuntimeError(f"register failed ({resp.status}): {text}")
+    async with aiohttp.ClientSession() as session, session.post(url, json=payload) as resp:
+        if resp.status in (200, 400):  # 400 = user_in_use on re-run
+            return
+        text = await resp.text()
+        raise RuntimeError(f"register failed ({resp.status}): {text}")
 
 
 async def test_live_smoke() -> None:

@@ -17,15 +17,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from agora.core.agent import AgentConfig, AgentIdentity
 from agora.core.contract import Specification, make_predicate
 from agora.core.errors import AgoraError
-from agora.core.flow import Flow, load_flow, save_flow
+from agora.core.flow import Flow, load_flow
 from agora.core.task import Task
 from agora.core.types import AgentRole, ProjectPhase, TaskStatus
 from agora.fleet.agent_runtime import TaskResult
@@ -474,7 +474,7 @@ class AgoraHandlers:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _require_str(args: dict[str, Any], key: str) -> str:

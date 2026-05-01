@@ -16,11 +16,10 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from agora.core.learning import Learning
 from agora.core.types import LearningCategory, TaskId
-
 
 AUTO_LEARNING_CONFIDENCE = 0.8
 """Higher than agent reflections because postconditions are ground truth."""
@@ -42,10 +41,10 @@ def synthesize_failure_learning(
     the same failure recurring twice reinforces the original rather than
     duplicating. The category is always :attr:`LearningCategory.FAILURE`.
     """
-    timestamp = (now or datetime.now(timezone.utc)).isoformat()
+    timestamp = (now or datetime.now(UTC)).isoformat()
     content = _format_content(task_id, predicate_name, reason)
     digest = hashlib.sha256(
-        f"{task_id}|{predicate_name}|{_normalise_reason(reason)}".encode("utf-8")
+        f"{task_id}|{predicate_name}|{_normalise_reason(reason)}".encode()
     ).hexdigest()[:16]
     return Learning(
         id=f"auto-{digest}",

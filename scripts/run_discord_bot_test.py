@@ -32,6 +32,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 import logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
@@ -57,10 +58,10 @@ from agora.fleet.runtime_postconditions import (
     postcond_readme_only_references_existing_commands,
     postcond_requirements_parse,
 )
+from agora.fleet.stage_runner import Stage, StagedTask
 from agora.fleet.vram import check_model_fits, raise_if_wont_fit
 from agora.matrix.client import AgoraMatrixClient
 from agora.matrix.room_manager import RoomManager
-
 
 HOMESERVER = os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167")
 SERVER_NAME = "agora.local"
@@ -575,7 +576,7 @@ def build_tasks() -> list[Task]:
     return tasks
 
 
-def build_staged_tasks(tasks: list[Task]) -> dict[str, "StagedTask"]:
+def build_staged_tasks(tasks: list[Task]) -> dict[str, StagedTask]:
     """Stage the tasks where weak models consistently fail.
 
     Tasks NOT staged still run through the normal one-shot execute_task loop —
@@ -583,8 +584,6 @@ def build_staged_tasks(tasks: list[Task]) -> dict[str, "StagedTask"]:
     unstaged runs (``write_requirements``, ``build_skeleton``, ``build_ping``,
     ``build_roll``, ``build_echo``, ``write_tests``).
     """
-    from agora.fleet.stage_runner import Stage, StagedTask
-
     by_id = {t.id: t for t in tasks}
     staged: dict[str, StagedTask] = {}
 
@@ -847,7 +846,7 @@ async def main() -> None:
     )
 
     print("[*] Running project 'discord-bot' (observer enabled)")
-    print(f"   open Element as @fabs:agora.local to watch and vote on the REVIEW poll")
+    print("   open Element as @fabs:agora.local to watch and vote on the REVIEW poll")
     print(f"   review_timeout_seconds={REVIEW_TIMEOUT} (auto-decides if you don't click)")
     print()
     try:

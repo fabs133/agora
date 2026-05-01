@@ -102,7 +102,7 @@ class ClaudeCodeSubprocessAdapter(_AnthropicShape):
             stdout_b, stderr_b = await asyncio.wait_for(
                 proc.communicate(), timeout=self.timeout_seconds
             )
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             proc.kill()
             await proc.wait()
             raise AgoraError(

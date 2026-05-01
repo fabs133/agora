@@ -19,12 +19,25 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
-from git import GitCommandError
+from git import Actor, GitCommandError
 
 from agora.core.errors import AgoraError
 from agora.git.repo_manager import DEFAULT_BRANCH, RepoManager
 
 logger = logging.getLogger(__name__)
+
+# Author/committer used for merge commits. Mirrors the identity used by
+# RepoManager.commit_all and init_project_repo so the project's commit
+# graph attributes every commit to the same actor regardless of whether
+# git's user.name / user.email are configured on the host (they aren't,
+# in fresh CI containers).
+_AGORA_AUTHOR = Actor("agora", "agora@agora.local")
+_AGORA_GIT_ENV: dict[str, str] = {
+    "GIT_AUTHOR_NAME": _AGORA_AUTHOR.name,
+    "GIT_AUTHOR_EMAIL": _AGORA_AUTHOR.email,
+    "GIT_COMMITTER_NAME": _AGORA_AUTHOR.name,
+    "GIT_COMMITTER_EMAIL": _AGORA_AUTHOR.email,
+}
 
 
 class MergeStrategy(str, Enum):
@@ -112,21 +125,31 @@ class MergeManager:
     def _squash_merge(self, branch: str) -> None:
         repo = self._repo.repo
         try:
-            repo.git.merge("--squash", branch)
+            repo.git.merge("--squash", branch, env=_AGORA_GIT_ENV)
         except GitCommandError as exc:
             files = _extract_conflict_files(repo)
             repo.git.reset("--merge")
             raise _MergeConflict(files) from exc
         # --squash leaves changes staged but does not commit.
         try:
-            repo.index.commit(f"squash merge {branch}")
+            repo.index.commit(
+                f"squash merge {branch}",
+                author=_AGORA_AUTHOR,
+                committer=_AGORA_AUTHOR,
+            )
         except Exception as exc:  # noqa: BLE001
             raise AgoraError(f"squash commit failed for {branch}: {exc}") from exc
 
     def _full_merge(self, branch: str) -> None:
         repo = self._repo.repo
         try:
-            repo.git.merge("--no-ff", "-m", f"merge {branch}", branch)
+            repo.git.merge(
+                "--no-ff",
+                "-m",
+                f"merge {branch}",
+                branch,
+                env=_AGORA_GIT_ENV,
+            )
         except GitCommandError as exc:
             files = _extract_conflict_files(repo)
             # `merge --abort` is safer than reset --merge when a merge commit is in progress.

@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from agora.core.errors import AgoraError
 from agora.core.types import RoomId
@@ -67,7 +67,7 @@ class OrchestratorControl:
     #: ``decision_id → asyncio.Future`` — the primitive the ``await_user_decision``
     #: inner tool blocks on. Resolved by :meth:`resolve_decision` when a poll
     #: response with a matching ``POLL_DECISION_ID_KEY`` arrives.
-    pending_decisions: dict[str, "asyncio.Future[str]"] = field(default_factory=dict)
+    pending_decisions: dict[str, asyncio.Future[str]] = field(default_factory=dict)
     #: ``decision_id → answer_id`` — populated as decisions resolve, kept as a
     #: record of what the user chose (useful for debugging and for late-arriving
     #: tool calls that raced the poll response).
@@ -249,7 +249,7 @@ class OrchestratorControl:
         return self.task_card_events.get(event_id)
 
     async def handle_reaction(
-        self, room_id: "RoomId", reaction: "Any"
+        self, room_id: RoomId, reaction: Any
     ) -> None:
         """EventDispatcher callback. Two routing branches:
 
@@ -300,7 +300,7 @@ class OrchestratorControl:
         )
 
     async def handle_reply(
-        self, room_id: "RoomId", reply: "Any"
+        self, room_id: RoomId, reply: Any
     ) -> None:
         """EventDispatcher callback. When the reply targets a known task card,
         route its body as an implicit ``/agora comment`` for that task."""

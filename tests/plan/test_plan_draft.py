@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from agora.core.errors import AgoraError
-from agora.core.flow import Flow, PostconditionRef, save_flow
+from agora.core.flow import Flow, save_flow
 from agora.plan.builder import PlanDraft
 from agora.plan.loader import instantiate_plan, load_plan
 

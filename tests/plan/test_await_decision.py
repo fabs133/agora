@@ -10,11 +10,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import pytest
-
 from agora.core.types import AgentRole
 from agora.fleet.control import OrchestratorControl
 from agora.fleet.inner_tools import ToolContext, get_tool_executor
+
 # POLL_DECISION_ID_KEY / POLL_TAG_KEY were removed from event content in
 # favour of a client-side poll_event_id → decision_id map. These tests no
 # longer assert anything about custom wire keys.

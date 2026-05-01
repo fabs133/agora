@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -292,7 +292,7 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
 
 
 def _validate_and_build_stage(
-    s: "_StageSchema", task_id: str
+    s: _StageSchema, task_id: str
 ) -> StageTemplate:
     """Build a StageTemplate from its schema row, enforcing kind-specific rules."""
     kind = s.kind or "llm"
@@ -567,7 +567,7 @@ def instantiate_flow(
     else:
         id_map = {t.id: t.id for t in flow.task_graph}
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     tasks: list[Task] = []
     for t in flow.task_graph:

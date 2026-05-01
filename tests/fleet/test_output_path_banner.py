@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agora.core.agent import AgentConfig, AgentIdentity
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task
@@ -20,7 +18,7 @@ from agora.fleet.agent_runtime import AgentRuntime, build_output_path_banner
 from agora.fleet.inner_tools import ToolContext
 from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.stage_runner import Stage, StagedTask, StageRunner
-from tests.conftest import FakeLLM, tool_call
+from tests.conftest import FakeLLM
 
 
 def _passing_spec() -> Specification:

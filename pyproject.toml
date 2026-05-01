@@ -72,7 +72,33 @@ exclude_lines = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# workspace/ holds frozen LLM-generated artefacts from research runs;
+# they're empirical evidence, not maintained source. docs/_build is
+# Sphinx output. Both are gitignored or kept for reference, never
+# linted.
+extend-exclude = [
+    "workspace",
+    "docs/_build",
+    "docs/api/_autosummary",
+]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM"]
-ignore = ["E501"]
+# Bug-finder families only. `UP` and `SIM` are stylistic / modernization
+# suggestions that produce ~30+ low-value flags on this codebase; revisit
+# in a dedicated cleanup pass, not as a CI gate.
+select = ["E", "F", "W", "I", "B"]
+ignore = [
+    "E501",  # line-too-long — handled by formatter, not a logic issue
+    "E741",  # ambiguous-variable-name (`l`, `I`) — used intentionally
+             # in a few iterators; not worth a churn pass.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Runner scripts insert sys.path BEFORE importing agora.* so they work
+# without `pip install -e .`. ruff sees that as "imports below the top".
+"scripts/run_*.py" = ["E402"]
+# Test scaffolds occasionally bind variables in `with` clauses we don't
+# read — intentional to keep contextmanager scope explicit. Section-
+# header comments before grouped imports trigger E402; that pattern is
+# load-bearing for readability.
+"tests/**/*.py" = ["F841", "E402"]

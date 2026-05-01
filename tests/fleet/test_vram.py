@@ -9,7 +9,6 @@ import pytest
 from agora.core.errors import AgoraError
 from agora.fleet import vram
 
-
 # ------------------------------------------------------------- size heuristics
 
 
@@ -81,7 +80,7 @@ class _FakeResponse:
     async def json(self) -> dict:
         return self._payload
 
-    async def __aenter__(self) -> "_FakeResponse":
+    async def __aenter__(self) -> _FakeResponse:
         return self
 
     async def __aexit__(self, *args: object) -> None:
@@ -95,7 +94,7 @@ class _FakeSession:
     def post(self, *_a: object, **_k: object) -> _FakeResponse:
         return self._response
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> _FakeSession:
         return self
 
     async def __aexit__(self, *_a: object) -> None:
@@ -216,12 +215,11 @@ async def test_warmup_raises_on_http_error(monkeypatch) -> None:
 
 
 async def test_warmup_raises_on_timeout(monkeypatch) -> None:
-    import asyncio
 
     class _HangingSession:
         def __init__(self, *_a, **_k): ...
         def post(self, *_a, **_k):
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
 
         async def __aenter__(self):
             return self

@@ -22,7 +22,7 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agora.core.agent import AgentIdentity
@@ -252,7 +252,7 @@ class AgentRuntime:
             # Diagnostic: log each tool call name + short result so live runs
             # are debuggable. Trimmed args mimic the minimum context reviewers
             # need to see what the model actually tried.
-            for c, r in zip(call_list, results):
+            for c, r in zip(call_list, results, strict=True):
                 try:
                     arg_preview = str(c.arguments)[:120]
                 except Exception:
@@ -270,7 +270,7 @@ class AgentRuntime:
             if self._ctx.auto_hooks_enabled:
                 hook_calls: list[ToolCall] = []
                 hook_results: list[str] = []
-                for call, result in zip(call_list, results):
+                for call, result in zip(call_list, results, strict=True):
                     hooks = await run_auto_hooks(
                         call.name, call.arguments, result, self._ctx
                     )
@@ -693,7 +693,7 @@ def _parse_learnings(raw: str, task_ref: TaskId) -> list[Learning]:
     if not isinstance(items, list):
         return []
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     learnings: list[Learning] = []
     for item in items:
         if not isinstance(item, dict):

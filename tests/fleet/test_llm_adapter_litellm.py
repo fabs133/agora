@@ -16,7 +16,6 @@ the real package installed.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 from types import SimpleNamespace
@@ -27,13 +26,12 @@ import pytest
 from agora.core.errors import AgoraError
 from agora.fleet.llm_adapter import (
     LITELLM_PROVIDER_PREFIXES,
-    LLMResponse,
     LiteLLMAdapter,
+    LLMResponse,
     ToolCall,
     _is_litellm_model,
     create_llm_adapter,
 )
-
 
 # ------------------------------------------------------------ litellm stub
 

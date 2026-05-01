@@ -116,11 +116,10 @@ def setup_ollama(
         try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=5, sock_connect=2)
-            ) as s:
-                async with s.get(f"{settings.ollama_base_url}/api/tags") as resp:
-                    if resp.status != 200:
-                        raise AgoraError(f"Ollama returned HTTP {resp.status}")
-        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            ) as s, s.get(f"{settings.ollama_base_url}/api/tags") as resp:
+                if resp.status != 200:
+                    raise AgoraError(f"Ollama returned HTTP {resp.status}")
+        except (TimeoutError, aiohttp.ClientError) as exc:
             raise AgoraError(
                 f"Cannot reach Ollama at {settings.ollama_base_url} — run `ollama serve`?"
             ) from exc
@@ -147,34 +146,32 @@ def setup_ollama(
         typer.echo(f"→ Pulling {target_name}...")
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=3600, sock_connect=10)
-        ) as s:
-            async with s.post(
-                f"{settings.ollama_base_url}/api/pull",
-                json={"name": target_name, "stream": False},
-            ) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    raise AgoraError(f"Pull failed HTTP {resp.status}: {body[:200]}")
+        ) as s, s.post(
+            f"{settings.ollama_base_url}/api/pull",
+            json={"name": target_name, "stream": False},
+        ) as resp:
+            if resp.status != 200:
+                body = await resp.text()
+                raise AgoraError(f"Pull failed HTTP {resp.status}: {body[:200]}")
         typer.echo("  ok.")
 
         typer.echo("→ Warm-up (keep_alive=30m)...")
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=300, sock_connect=5)
-        ) as s:
-            async with s.post(
-                f"{settings.ollama_base_url}/api/generate",
-                json={
-                    "model": target_name,
-                    "prompt": "ready?",
-                    "stream": False,
-                    "keep_alive": "30m",
-                    "options": {"num_predict": 4},
-                },
-            ) as resp:
-                if resp.status != 200:
-                    typer.echo(f"  warm-up HTTP {resp.status} — skipping")
-                else:
-                    await resp.json()
+        ) as s, s.post(
+            f"{settings.ollama_base_url}/api/generate",
+            json={
+                "model": target_name,
+                "prompt": "ready?",
+                "stream": False,
+                "keep_alive": "30m",
+                "options": {"num_predict": 4},
+            },
+        ) as resp:
+            if resp.status != 200:
+                typer.echo(f"  warm-up HTTP {resp.status} — skipping")
+            else:
+                await resp.json()
         typer.echo("  ok. Model is resident.")
 
     asyncio.run(_setup())
@@ -256,9 +253,8 @@ def doctor() -> None:
         try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=3, sock_connect=2)
-            ) as s:
-                async with s.get(f"{settings.ollama_base_url}/api/tags") as resp:
-                    typer.echo(f"ollama  : OK (HTTP {resp.status}) at {settings.ollama_base_url}")
+            ) as s, s.get(f"{settings.ollama_base_url}/api/tags") as resp:
+                typer.echo(f"ollama  : OK (HTTP {resp.status}) at {settings.ollama_base_url}")
         except Exception as exc:  # noqa: BLE001
             typer.echo(f"ollama  : unreachable ({type(exc).__name__})")
 

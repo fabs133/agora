@@ -18,15 +18,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import re
 import subprocess
 import sys
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -130,9 +128,9 @@ COST_ESTIMATES_USD = {
 @dataclass
 class TaskRecord:
     name: str
-    agent: Optional[str] = None
+    agent: str | None = None
     iterations: int = 0
-    success: Optional[bool] = None
+    success: bool | None = None
     tool_call_count: int = 0
     # Inferred from ``llm return: tool_calls=N`` when per-call lines are
     # absent (older log format).  Resolved into ``tool_call_count`` at end.
@@ -143,7 +141,7 @@ class TaskRecord:
 
 @dataclass
 class CostRecord:
-    value_usd: Optional[float] = None
+    value_usd: float | None = None
     source: str = "unknown"  # recorded | estimated | unknown
     note: str = ""
 
@@ -158,9 +156,9 @@ class RunRecord:
     git_first_iso: str = ""
     git_last_iso: str = ""
     log_paths: list[str] = field(default_factory=list)
-    model: Optional[str] = None
-    provider: Optional[str] = None
-    duration_seconds: Optional[float] = None
+    model: str | None = None
+    provider: str | None = None
+    duration_seconds: float | None = None
     tasks: list[TaskRecord] = field(default_factory=list)
     loopback_count: int = 0
     cost: CostRecord = field(default_factory=CostRecord)
@@ -241,18 +239,18 @@ class LogSummary:
     path: Path
     first_iso: str
     last_iso: str
-    model: Optional[str]
-    provider: Optional[str]
-    project_hint: Optional[str]
+    model: str | None
+    provider: str | None
+    project_hint: str | None
     line_count: int
 
 
 def _scan_log(path: Path) -> LogSummary:
     first_iso = ""
     last_iso = ""
-    model: Optional[str] = None
-    provider: Optional[str] = None
-    project_hint: Optional[str] = None
+    model: str | None = None
+    provider: str | None = None
+    project_hint: str | None = None
     line_count = 0
     project_hits: dict[str, int] = defaultdict(int)
     try:
@@ -367,8 +365,8 @@ def _normalise_task(name: str) -> str:
 def _parse_log_for_run(run: RunRecord, log_path: Path) -> None:
     """Update run with task/loopback/duration data extracted from a log."""
     tasks_by_name: dict[str, TaskRecord] = {t.name: t for t in run.tasks}
-    first_ts: Optional[datetime] = None
-    last_ts: Optional[datetime] = None
+    first_ts: datetime | None = None
+    last_ts: datetime | None = None
     loopbacks = run.loopback_count
     try:
         with log_path.open("r", encoding="utf-8", errors="ignore") as f:
@@ -451,7 +449,7 @@ DEFAULT_MODEL_BY_PROJECT: dict[str, str] = {
 }
 
 
-def _infer_model_from_suffix(suffix: str) -> Optional[str]:
+def _infer_model_from_suffix(suffix: str) -> str | None:
     """Fallback: read model tier from the run-dir filename suffix.
 
     Conventions used in workspace/ (filename suffix is canonical metadata

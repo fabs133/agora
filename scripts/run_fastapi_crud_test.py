@@ -26,6 +26,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 import logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
@@ -47,10 +48,10 @@ from agora.fleet.runtime_postconditions import (
     postcond_python_imports,
     postcond_requirements_parse,
 )
+from agora.fleet.stage_runner import Stage, StagedTask
 from agora.fleet.vram import check_model_fits, raise_if_wont_fit
 from agora.matrix.client import AgoraMatrixClient
 from agora.matrix.room_manager import RoomManager
-
 
 HOMESERVER = os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167")
 SERVER_NAME = "agora.local"
@@ -76,11 +77,16 @@ KB_CACHE_DIR = WORK_DIR / ".knowledge"
 # stable because predicate names match (see naming-comments in the registry).
 from agora.plan.predicate_registry import (
     postcond_file_contains as _postcond_file_contains,
+)
+from agora.plan.predicate_registry import (
     postcond_file_exists as _postcond_file_exists,
+)
+from agora.plan.predicate_registry import (
     postcond_mark_complete as _postcond_mark_complete,
+)
+from agora.plan.predicate_registry import (
     postcond_py_compiles as _postcond_py_compiles,
 )
-
 
 ARCHITECT_INSTRUCTIONS = """\
 You are the ARCHITECT. Follow each task's description literally — one concrete
@@ -533,10 +539,8 @@ def build_tasks() -> list[Task]:
     return tasks
 
 
-def build_staged_tasks(tasks: list[Task]) -> dict[str, "StagedTask"]:
+def build_staged_tasks(tasks: list[Task]) -> dict[str, StagedTask]:
     """Stage the tasks where weak models consistently fail."""
-    from agora.fleet.stage_runner import Stage, StagedTask
-
     by_id = {t.id: t for t in tasks}
     staged: dict[str, StagedTask] = {}
 
@@ -832,7 +836,7 @@ async def main() -> None:
     )
 
     print("[*] Running project 'fastapi-crud' (observer enabled)")
-    print(f"   open Element as @fabs:agora.local to watch")
+    print("   open Element as @fabs:agora.local to watch")
     print(f"   review_timeout_seconds={REVIEW_TIMEOUT}")
     print()
     try:

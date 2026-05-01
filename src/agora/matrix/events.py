@@ -10,7 +10,7 @@ All timestamps use ISO-8601 strings.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agora.core.agent import AgentConfig
@@ -45,7 +45,7 @@ def _require(content: dict[str, Any], key: str, event_type: str) -> Any:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ------------------------------ m.agora.agent_config ------------------------------

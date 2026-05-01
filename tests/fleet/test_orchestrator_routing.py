@@ -10,12 +10,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from agora.core.agent import AgentConfig
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task
-from agora.core.types import AgentRole, ProjectPhase, TaskStatus
+from agora.core.types import TaskStatus
 from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator
 from agora.matrix.room_manager import RoomManager

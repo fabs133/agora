@@ -1,7 +1,5 @@
 import asyncio
 
-import pytest
-
 from agora.core.project import Project
 from agora.core.types import ProjectPhase
 from agora.matrix.sync import EventDispatcher

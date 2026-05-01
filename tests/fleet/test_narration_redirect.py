@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agora.core.agent import AgentConfig
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task
@@ -24,7 +22,6 @@ from agora.fleet.agent_runtime import TaskResult
 from agora.fleet.control import OrchestratorControl
 from agora.fleet.orchestrator import Orchestrator, _output_path_was_produced
 from agora.matrix.room_manager import RoomManager
-
 
 # =============================================================================
 # _output_path_was_produced — the core detector

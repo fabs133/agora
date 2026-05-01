@@ -29,7 +29,6 @@ from pathlib import Path
 
 from nio import AsyncClient, LoginResponse, RoomSendResponse
 
-
 STAGE_RE = re.compile(
     r"stage 1/1 task=(?P<task>\w+) name=(?P<stage>\w+) kind=decision"
 )
@@ -191,24 +190,24 @@ async def main_async() -> int:
         # rejects as M_BAD_JSON — use a raw authenticated POST with ``{}``.
         joined = await client.joined_rooms()
         if room_id not in joined.rooms:
-            import aiohttp
             from urllib.parse import quote as url_quote
+
+            import aiohttp
 
             url = (
                 f"{args.homeserver}/_matrix/client/v3/join/{url_quote(room_id)}"
             )
-            async with aiohttp.ClientSession() as sess:
-                async with sess.post(
-                    url,
-                    json={},
-                    headers={"Authorization": f"Bearer {client.access_token}"},
-                ) as resp:
-                    body = await resp.text()
-                    if resp.status != 200:
-                        raise RuntimeError(
-                            f"room_join failed ({resp.status}): {body}"
-                        )
-                    print(f"[voter] joined {room_id} (raw POST)")
+            async with aiohttp.ClientSession() as sess, sess.post(
+                url,
+                json={},
+                headers={"Authorization": f"Bearer {client.access_token}"},
+            ) as resp:
+                body = await resp.text()
+                if resp.status != 200:
+                    raise RuntimeError(
+                        f"room_join failed ({resp.status}): {body}"
+                    )
+                print(f"[voter] joined {room_id} (raw POST)")
             await client.sync(timeout=5000)
         await tail_and_vote(
             args.output_file, client, room_id, list(args.answers), args.settle_seconds

@@ -14,7 +14,6 @@ from agora.plan.test_scaffolder import (
     snake_from_deliverable,
 )
 
-
 # --------------------------------------------------------------- parse_deliverables
 
 

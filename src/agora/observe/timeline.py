@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import UTC
 from typing import Any
 
 from agora.matrix.events import (
@@ -66,9 +67,9 @@ def _extract_timestamp(content: dict[str, Any], event: dict[str, Any]) -> str:
         return ts
     origin = event.get("origin_server_ts")
     if isinstance(origin, int):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        return datetime.fromtimestamp(origin / 1000, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(origin / 1000, tz=UTC).isoformat()
     return ""
 
 

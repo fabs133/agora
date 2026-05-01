@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import ast
 
-import pytest
-
 from agora.plan.api_spec import (
     ClassSpec,
     FunctionSpec,
@@ -14,7 +12,6 @@ from agora.plan.api_spec import (
     render_impl_stub,
     render_test_imports,
 )
-
 
 _SAMPLE_SPEC = """\
 # API spec
@@ -277,10 +274,8 @@ def test_find_dedupes_repeated_violations():
 
 
 def test_find_empty_when_no_spec_classes():
-    from agora.plan.api_spec import find_unknown_method_calls
-
     # A spec with only functions, no classes — nothing to validate.
-    from agora.plan.api_spec import parse_api_spec
+    from agora.plan.api_spec import find_unknown_method_calls, parse_api_spec
     modules = parse_api_spec(
         "## module: src/util.py\n\ndef helper(x: int) -> int: ...\n"
     )

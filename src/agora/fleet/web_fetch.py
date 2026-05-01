@@ -204,7 +204,7 @@ async def _fetch_once(
                     if len(body) >= max_bytes:
                         break
                 raw_html = bytes(body).decode(errors="replace")
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise FetchError(f"timeout after {timeout_seconds}s for {url}") from exc
     except aiohttp.ClientError as exc:
         raise FetchError(f"network error for {url}: {exc}") from exc

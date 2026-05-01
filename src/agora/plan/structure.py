@@ -33,8 +33,7 @@ import ast
 import textwrap
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal
-
+from typing import Literal
 
 # ============================================================
 # Type model
@@ -79,29 +78,29 @@ class TypeRef:
 
     kind: TypeKind
     name: str = ""
-    params: tuple["TypeRef", ...] = ()
+    params: tuple[TypeRef, ...] = ()
     tuple_variadic: bool = False  # tuple[X, ...] with literal ellipsis
 
     # Convenience constructors keep call sites readable.
 
     @classmethod
-    def primitive(cls, name: str) -> "TypeRef":
+    def primitive(cls, name: str) -> TypeRef:
         return cls(kind=TypeKind.PRIMITIVE, name=name)
 
     @classmethod
-    def cls_ref(cls, name: str) -> "TypeRef":
+    def cls_ref(cls, name: str) -> TypeRef:
         return cls(kind=TypeKind.CLASS, name=name)
 
     @classmethod
-    def none(cls) -> "TypeRef":
+    def none(cls) -> TypeRef:
         return cls(kind=TypeKind.NONE, name="None")
 
     @classmethod
-    def unknown(cls, hint: str = "") -> "TypeRef":
+    def unknown(cls, hint: str = "") -> TypeRef:
         return cls(kind=TypeKind.UNKNOWN, name=hint)
 
     @classmethod
-    def any_(cls) -> "TypeRef":
+    def any_(cls) -> TypeRef:
         return cls(kind=TypeKind.ANY, name="Any")
 
     def describe(self) -> str:
@@ -533,10 +532,7 @@ def extract_usage_traces(
         for node in ast.walk(func_node):
             iter_node = None
             target = None
-            if isinstance(node, ast.comprehension):
-                iter_node = node.iter
-                target = node.target
-            elif isinstance(node, (ast.For, ast.AsyncFor)):
+            if isinstance(node, ast.comprehension) or isinstance(node, (ast.For, ast.AsyncFor)):
                 iter_node = node.iter
                 target = node.target
             else:
@@ -622,7 +618,7 @@ def _try_build_trace(
     class_names: set[str],
     aliases: dict[str, str],
     parents: dict[int, ast.AST],
-) -> "UsageTrace | None":
+) -> UsageTrace | None:
     """Convert a method-call node into a UsageTrace when the receiver
     resolves to a declared class; else return None.
 
@@ -719,7 +715,7 @@ def _emit_traces_from_name_accesses(
     iter_aliases: dict[str, tuple[str, str]],
     class_names: set[str],
     parents: dict[int, ast.AST],
-    out: list["UsageTrace"],
+    out: list[UsageTrace],
 ) -> None:
     """For each Name node referring to a return-aliased variable or
     iter-aliased comprehension target, walk outward to build a UsageTrace.

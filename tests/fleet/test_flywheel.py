@@ -5,19 +5,15 @@ Verifies decay → reinforce loop runs when an agent is reused across projects.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-
-import pytest
 
 from agora.core.agent import AgentConfig
 from agora.core.contract import Specification, make_predicate
-from agora.core.learning import CONFIDENCE_THRESHOLD
 from agora.core.task import Task
 from agora.core.types import AgentRole, LearningCategory, TaskStatus
 from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator
-from agora.matrix.events import LEARNING_EVENT, learning_from_content, learning_to_content
+from agora.matrix.events import LEARNING_EVENT, learning_from_content
 from agora.matrix.room_manager import RoomManager
 from tests.conftest import FakeLLM, tool_call
 

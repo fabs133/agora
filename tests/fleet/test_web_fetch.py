@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 
 from agora.fleet.web_fetch import (
@@ -15,7 +12,6 @@ from agora.fleet.web_fetch import (
     safe_fetch,
     validate_url,
 )
-
 
 # ================================================================ URL validation
 
@@ -160,7 +156,7 @@ class _FakeResponse:
         self.url = _FakeURL(url)
         self.content = _FakeContent(body)
 
-    async def __aenter__(self) -> "_FakeResponse":
+    async def __aenter__(self) -> _FakeResponse:
         return self
 
     async def __aexit__(self, *_a: object) -> None:
@@ -190,7 +186,7 @@ class _FakeSession:
     def get(self, *_a: object, **_k: object) -> _FakeResponse:
         return self._response
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> _FakeSession:
         return self
 
     async def __aexit__(self, *_a: object) -> None:
@@ -270,7 +266,7 @@ async def test_safe_fetch_timeout_surfaces_as_fetch_error(public_dns, monkeypatc
     class _HangingSession:
         def __init__(self, *_a, **_k): ...
         def get(self, *_a, **_k):
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
 
         async def __aenter__(self):
             return self
@@ -304,7 +300,7 @@ async def test_safe_fetch_retries_once_on_timeout_then_succeeds(
         def get(self, *_a, **_k):
             calls["n"] += 1
             if calls["n"] == 1:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             return ok_response
 
         async def __aenter__(self):
@@ -407,7 +403,7 @@ async def test_safe_fetch_retries_bounded_to_two_attempts(
         def __init__(self, *_a, **_k): ...
         def get(self, *_a, **_k):
             calls["n"] += 1
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
 
         async def __aenter__(self):
             return self
@@ -444,7 +440,7 @@ async def test_fetch_url_tool_dispatches_to_fetcher(tmp_path, fake_matrix_client
     )
     executor = get_tool_executor(AgentRole.ARCHITECT, ctx)
     result = await executor["fetch_url"]({"url": "https://discordpy.readthedocs.io/"})
-    assert "fetched(https://discordpy.readthedocs.io/)" == result
+    assert result == "fetched(https://discordpy.readthedocs.io/)"
     assert received == ["https://discordpy.readthedocs.io/"]
 
 

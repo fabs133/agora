@@ -21,7 +21,6 @@ import shlex
 from dataclasses import dataclass
 from typing import Any
 
-
 COMMAND_PREFIX = "/agora"
 
 VERB_NOTE = "note"

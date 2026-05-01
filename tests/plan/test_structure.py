@@ -6,8 +6,6 @@ Phase 1: core dataclasses, type annotation parsing, and
 
 from __future__ import annotations
 
-import pytest
-
 from agora.plan.structure import (
     Mode,
     TypeKind,
@@ -17,7 +15,6 @@ from agora.plan.structure import (
     extract_contract,
     filter_by_mode,
 )
-
 
 # --------------------------------------------------------- TypeRef.describe
 
@@ -332,7 +329,6 @@ from agora.plan.structure import (
     check_usage_matches_contract,
     extract_usage_traces,
 )
-
 
 _SHORTENER_SPEC = (
     "## module: src/url_shortener.py\n\n"
@@ -665,7 +661,6 @@ def test_diff_stops_cascading_on_first_violation_per_chain():
 # ================================================================
 
 from agora.plan.structure import (
-    ImplClassModel,
     check_impl_self_consistent,
     extract_impl_classes,
 )

@@ -7,11 +7,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import subprocess
 from pathlib import Path
-
-import pytest
 
 from agora.core.agent import AgentConfig, AgentIdentity
 from agora.core.contract import Specification, make_predicate
@@ -29,7 +26,6 @@ from agora.observe.formatters import (
 )
 from agora.observe.review import _gather_artifact_snapshot
 from tests.conftest import FakeLLM, tool_call
-
 
 # ==============================================================================
 # Gap 1 — review summary with artifact previews

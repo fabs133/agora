@@ -70,7 +70,7 @@ class SyncService:
         if self._task is not None:
             try:
                 await asyncio.wait_for(self._task, timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._task.cancel()
                 try:
                     await self._task
@@ -124,7 +124,7 @@ async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:
     """Sleep up to ``seconds`` but wake immediately when ``stop`` is set."""
     try:
         await asyncio.wait_for(stop.wait(), timeout=seconds)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return
 
 

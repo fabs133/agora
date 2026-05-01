@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from agora.core.types import LearningCategory
 from agora.fleet.auto_learning import (
@@ -11,8 +11,7 @@ from agora.fleet.auto_learning import (
     synthesize_failure_learning,
 )
 
-
-FIXED_TIME = datetime(2026, 4, 16, 12, 0, 0, tzinfo=timezone.utc)
+FIXED_TIME = datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC)
 
 
 def test_synthesize_returns_failure_category() -> None:
@@ -57,7 +56,7 @@ def test_synthesize_id_is_deterministic_for_same_failure() -> None:
         task_id="t1",
         predicate_name="p1",
         reason="something broke",
-        now=datetime(2030, 1, 1, tzinfo=timezone.utc),
+        now=datetime(2030, 1, 1, tzinfo=UTC),
     )
     assert a.id == b.id, "same failure must produce same id across time"
 

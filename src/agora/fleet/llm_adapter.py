@@ -327,18 +327,17 @@ class OllamaAdapter:
         )
         semaphore = _get_ollama_semaphore(self.base_url, self.max_concurrent)
         try:
-            async with semaphore:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(
-                        f"{self.base_url}/api/chat", json=payload
-                    ) as resp:
-                        if resp.status != 200:
-                            body = await resp.text()
-                            raise AgoraError(
-                                f"Ollama HTTP {resp.status}: {body[:200]}"
-                            )
-                        data = await resp.json()
-        except asyncio.TimeoutError as exc:
+            async with semaphore, aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    f"{self.base_url}/api/chat", json=payload
+                ) as resp:
+                    if resp.status != 200:
+                        body = await resp.text()
+                        raise AgoraError(
+                            f"Ollama HTTP {resp.status}: {body[:200]}"
+                        )
+                    data = await resp.json()
+        except TimeoutError as exc:
             raise AgoraError(
                 f"Ollama request timed out after {self.timeout_seconds}s; is the daemon responsive?"
             ) from exc
@@ -622,7 +621,7 @@ class LiteLLMAdapter:
 
         try:
             resp = await litellm.acompletion(**kwargs)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise AgoraError(
                 f"LiteLLM request timed out after {self._timeout}s for model "
                 f"{effective_model!r}"

@@ -5,8 +5,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agora.core.agent import AgentConfig
 from agora.core.flow import (
     Flow,
@@ -206,7 +204,11 @@ def test_split_test_task_emits_one_impl_per_test_file():
         "tests/test_list.py",
     ]
     # Each impl's pytest_passes is scoped to its own file (not the broad tests/).
-    for impl, expected_path in zip(impls, ["tests/test_add.py", "tests/test_lookup.py", "tests/test_list.py"]):
+    for impl, expected_path in zip(
+        impls,
+        ["tests/test_add.py", "tests/test_lookup.py", "tests/test_list.py"],
+        strict=True,
+    ):
         pytest_gates = [
             pc for pc in impl.postconditions
             if pc.name == "pytest_passes"
@@ -470,7 +472,6 @@ def test_split_test_task_synthesizes_fallback_brief_from_description():
     """The loader passes the task description's deliverables list through
     validation_args (both contract + impl tasks) so the scaffolder can emit
     per-deliverable stubs even without plan/brief.md in the executor workspace."""
-    from agora.plan.loader import _task_description_to_brief
 
     t = _task(
         id_="tests",

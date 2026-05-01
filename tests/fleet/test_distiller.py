@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agora.core.types import AgentRole
 from agora.fleet.distiller import (
-    DEFAULT_BUCKET_CHARS,
     _split_into_buckets,
     distill,
     make_distill_fn,
@@ -16,7 +13,6 @@ from agora.fleet.distiller import (
 from agora.fleet.inner_tools import ToolContext, get_tool_executor
 from agora.fleet.llm_adapter import LLMResponse
 from tests.conftest import FakeLLM
-
 
 # ----------------------------------------------------------- _split_into_buckets
 

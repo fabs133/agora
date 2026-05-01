@@ -8,10 +8,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from agora.core.types import RoomId
 from agora.fleet.control import OrchestratorControl
 from agora.matrix.sync import (
@@ -27,7 +23,6 @@ from agora.observe.formatters import (
     format_review_summary,
     format_write_event,
 )
-
 
 # =============================================================================
 # EventDispatcher — reactions + reply relations

@@ -7,7 +7,6 @@ from agora.core.errors import AgoraError
 from agora.core.flow import Flow, TaskTemplate, instantiate_flow, load_flow, save_flow
 from agora.core.types import AgentRole, TaskStatus
 
-
 VALID_YAML = """
 name: demo
 description: a demo flow

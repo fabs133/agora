@@ -21,7 +21,7 @@ from agora.core.types import AgentRole, TaskStatus
 from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator
 from agora.matrix.room_manager import RoomManager
-from tests.conftest import FakeLLM, tool_call
+from tests.conftest import tool_call
 
 
 class _SleepingLLM:
@@ -97,7 +97,7 @@ async def test_ollama_timeout_surfaces_as_task_failure(
     class _HangingSession:
         def __init__(self, *_a, **_k) -> None: ...
         def post(self, *_a, **_k):
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
 
         async def __aenter__(self):
             return self

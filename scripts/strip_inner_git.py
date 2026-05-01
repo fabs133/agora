@@ -34,7 +34,6 @@ LOG_FORMAT = "commit %H%nAuthor: %an <%ae>%nDate:   %aI%n%n    %s%n%n%b"
 
 
 def capture_log(git_dir: Path) -> tuple[str, str]:
-    parent = git_dir.parent
     log = subprocess.run(
         [
             "git",

@@ -17,7 +17,6 @@ from agora.plan.predicate_registry import (
     postcond_api_spec_covers_brief_deliverables,
 )
 
-
 _URL_SHORTENER_BRIEF = """\
 # Brief: URL Shortener
 

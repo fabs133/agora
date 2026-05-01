@@ -415,7 +415,7 @@ def format_write_event(
             "</details>"
         )
     html_parts.append(
-        f"<p><small>↳ react: ✅ looks good · 🔁 retry this task · "
-        f"💬 reply to this message with feedback</small></p>"
+        "<p><small>↳ react: ✅ looks good · 🔁 retry this task · "
+        "💬 reply to this message with feedback</small></p>"
     )
     return FormattedMessage(body=body, formatted_body="".join(html_parts))

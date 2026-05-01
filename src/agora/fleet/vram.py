@@ -95,7 +95,7 @@ async def _run_cmd(*args: str) -> str | None:
         stdout, _stderr = await asyncio.wait_for(
             proc.communicate(), timeout=PROBE_TIMEOUT_SECONDS
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.wait()
         return None
@@ -138,7 +138,7 @@ async def get_model_size_mib(model: str, base_url: str) -> int:
                 if resp.status != 200:
                     return estimate_model_size_mib(model)
                 data = await resp.json()
-    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+    except (TimeoutError, aiohttp.ClientError) as exc:
         logger.debug("ollama /api/show failed for %s: %s", model, exc)
         return estimate_model_size_mib(model)
 
@@ -220,7 +220,7 @@ async def _is_model_resident(model: str, base_url: str) -> bool:
                 if resp.status != 200:
                     return False
                 data = await resp.json()
-    except (aiohttp.ClientError, asyncio.TimeoutError):
+    except (TimeoutError, aiohttp.ClientError):
         return False
     for entry in data.get("models") or []:
         name = str(entry.get("name") or entry.get("model") or "")
@@ -278,7 +278,7 @@ async def warmup(
                         f"Ollama warm-up HTTP {resp.status} for {effective!r}: {body[:200]}"
                     )
                 await resp.json()
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise AgoraError(
             f"Ollama warm-up for {effective!r} timed out after {deadline_seconds}s"
         ) from exc

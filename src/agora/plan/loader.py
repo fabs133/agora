@@ -35,6 +35,7 @@ from agora.core.flow import (
     save_flow,
 )
 from agora.core.task import Task
+from agora.fleet.stage_runner import Stage, StagedTask
 
 logger = logging.getLogger(__name__)
 
@@ -777,7 +778,7 @@ def instantiate_plan(
     plan: Plan,
     project_name: str,
     variables: dict[str, str] | None = None,
-) -> tuple[list[AgentConfig], list[Task], dict[str, "StagedTask"]]:
+) -> tuple[list[AgentConfig], list[Task], dict[str, StagedTask]]:
     """Build the triple ``Orchestrator.run_project`` consumes.
 
     String task ids are preserved (unlike :func:`instantiate_flow` default) so
@@ -788,7 +789,6 @@ def instantiate_plan(
     v2.4: transparently wraps test-authoring tasks with a scaffold → llm →
     verify 3-stage pipeline so the 7B tester stops guessing imports.
     """
-    from agora.fleet.stage_runner import Stage, StagedTask
 
     # Apply the test-task transform on the template list BEFORE passing into
     # instantiate_flow. v2.4 wrapped a single test task with scaffold/llm/verify;

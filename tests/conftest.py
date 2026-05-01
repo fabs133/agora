@@ -211,7 +211,6 @@ from collections.abc import Callable  # noqa: E402
 
 from agora.fleet.llm_adapter import LLMResponse, ToolCall  # noqa: E402
 
-
 ResponsePlan = list[LLMResponse] | Callable[[list[dict[str, Any]]], LLMResponse]
 
 

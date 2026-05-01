@@ -42,6 +42,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 import logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
@@ -57,10 +58,10 @@ from agora.core.task import Task
 from agora.core.types import AgentRole, TaskStatus
 from agora.fleet.llm_adapter import create_llm_adapter
 from agora.fleet.orchestrator import Orchestrator
+from agora.fleet.stage_runner import Stage, StagedTask
 from agora.fleet.vram import check_model_fits, raise_if_wont_fit
 from agora.matrix.client import AgoraMatrixClient
 from agora.matrix.room_manager import RoomManager
-
 
 HOMESERVER = os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167")
 SERVER_NAME = "agora.local"
@@ -226,10 +227,8 @@ def build_tasks(source_files: list[str]) -> list[Task]:
 
 def build_staged_tasks(
     tasks: list[Task], source_files: list[str]
-) -> dict[str, "StagedTask"]:
+) -> dict[str, StagedTask]:
     """Stage every review task with the file pre-loaded + schema in the instruction."""
-    from agora.fleet.stage_runner import Stage, StagedTask
-
     by_id = {t.id: t for t in tasks}
     staged: dict[str, StagedTask] = {}
 

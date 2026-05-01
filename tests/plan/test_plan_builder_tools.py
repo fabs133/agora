@@ -10,9 +10,6 @@ No live Matrix; a trivial fake client satisfies ``ToolContext`` requirements.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
-import pytest
 
 from agora.core.types import AgentRole
 from agora.fleet.inner_tools import ToolContext, get_tool_executor

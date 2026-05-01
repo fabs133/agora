@@ -64,7 +64,7 @@ class HarnessConfig:
     routed_retry_budget: int = 2
 
     @classmethod
-    def from_env(cls, work_dir: str | Path = "workspace") -> "HarnessConfig":
+    def from_env(cls, work_dir: str | Path = "workspace") -> HarnessConfig:
         """Pull the same env knobs the existing runners read."""
         work_dir_path = Path(work_dir)
         return cls(
