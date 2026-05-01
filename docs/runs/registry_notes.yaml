@@ -1,0 +1,363 @@
+# Hand-filled per-run notes merged into registry.yaml by
+# scripts/extract_run_metadata.py.  Edit this file to add or revise the
+# narrative summary for any run; the mechanical fields in registry.yaml
+# are always re-derived and your notes survive regeneration.
+#
+# Sources: lessons-learned.md (Runs 1-17, dated 2026-04-17) + session memory
+# for the post-2026-04-17 LiteLLM / plan-builder / structural-validation
+# era (recovered from conversation context, 2026-04-26).
+
+notes:
+
+  # ───────────────────────────────────────────────────────────────────
+  # Discord-bot family — qwen2.5:7b, lessons-learned.md Runs 1-13
+  # Original 7B-era logs are NOT in workspace/.logs/ (predate the archive);
+  # narrative below is reconstructed from lessons-learned.md.
+  # ───────────────────────────────────────────────────────────────────
+
+  discord-bot.run1: |
+    Run 1 (lessons-learned.md). First-ever Agora run. 6/11 first-pass tasks; the
+    rest landed via user `approve` reactions in Element. Established the
+    postcondition pattern: tasks FAIL silently if mark_complete misses, so
+    the four static postconditions (file_exists, file_contains, mark_complete,
+    py_compiles) were added as the first hardening round.
+    Outcome: DONE via user approve.
+
+  discord-bot.run2: |
+    Run 2 (lessons-learned.md). 9/12. Round 2 changes: unified work_dir + git
+    repo (was separate before), AST undefined-name check, DAG reshape so
+    documentation-task failures don't block downstream code tasks.
+    Outcome: DONE.
+
+  discord-bot.run3: |
+    Run 3 (lessons-learned.md). 9/12 first pass but FAILED via cascade: a
+    single LLM flake on fetch_commands cascaded through the whole DAG
+    because fetch wasn't atomic (had to be echoed back as a tool arg, which
+    the model then truncated). This run is the origin of the `save_as`
+    primitive and bounded HTTP retries — Round 5 in the evolution table.
+    Outcome: FAILED. Drove the most consequential framework change.
+
+  discord-bot.run4: |
+    Run 4 (lessons-learned.md). 7/12 FAILED via loopback exhaust. Round-4 shift:
+    runtime tools (check_python, git_*, mark_complete) were hidden from the
+    LLM's tool manifest because the previous round's prompts encouraged
+    over-engineering and tools-as-verbs distracted the model.
+    Outcome: FAILED.
+
+  discord-bot.run5: |
+    Run 5 (lessons-learned.md). 9/12 FAILED. Fetch issue still recurring before
+    save_as was integrated.
+    Outcome: FAILED.
+
+  discord-bot.run6-coder: |
+    Run 6 (lessons-learned.md). qwen2.5-coder:7b instead of instruct. 0/12
+    aborted: coder model emits tool calls as JSON-in-content rather than
+    tool-call format. JSON-in-content fallback parser exists but coder still
+    produced worse results than instruct. Aborted; not worth more time
+    without a fundamentally different model.
+    Outcome: ABORTED.
+
+  discord-bot.run7: |
+    Run 7 (lessons-learned.md). 7/12 FAILED.
+    Outcome: FAILED.
+
+  discord-bot.run8: |
+    Run 8 (lessons-learned.md). 8/12 stopped early.
+    Outcome: STOPPED.
+
+  discord-bot.run9: |
+    Run 9 (lessons-learned.md). 9/12 first pass. After Round 5 (save_as +
+    bounded retry), re-run with fetch hardening landed at 10/12 user-
+    approved.
+    Outcome: DONE (approved).
+
+  discord-bot.run10: |
+    Run 10 (lessons-learned.md). 10/12. Round 6: Task.output_path banner in
+    prompt + soft-warn on write_file path mismatch — model kept writing
+    `kb/design` instead of `design/modules.md`.
+    Outcome: DONE.
+
+  discord-bot.run11: |
+    Run 11 (lessons-learned.md). 9/12 FAILED. Transcription bug:
+    `discord.InterACTION` typo, duplicated `import random` after the model
+    re-emitted 25 lines of bot.py via write_file. 938s, 300k/16k tokens.
+    This run motivated Round 8 — the three edit primitives (replace,
+    insert_before, append) — and is the canonical case study for "templates
+    + edit primitives reduce transcription bugs".
+    Outcome: FAILED.
+
+  discord-bot.run12: |
+    Run 12 (lessons-learned.md). 12/12 via 1 loopback. 458s, 54k/3k tokens.
+    First run with edit primitives in place; no transcription bugs.
+    Outcome: DONE.
+
+  discord-bot.run13: |
+    Run 13 (lessons-learned.md). **12/12 zero loopbacks. 316s, 47k/2.4k tokens.
+    REFERENCE GREEN RUN.** Round 9 surfaces (artifact snapshot + write-event
+    cards + per-task /agora comment) + Round 10 reactions/replies parser +
+    Round 11 no_code_after_main_block AST detector all converging. The
+    narrative model "what working looks like".
+    Outcome: DONE first-pass.
+
+  # ───────────────────────────────────────────────────────────────────
+  # FastAPI-CRUD family — qwen2.5:7b, lessons-learned.md Runs 14-16
+  # ───────────────────────────────────────────────────────────────────
+
+  fastapi-crud.run14: |
+    Run 14 (lessons-learned.md). 9/13 FAILED via git_commit bug: `nothing to
+    commit` exception escaped the auto-hook. 548s, 45k/2k. Drove Round 12:
+    try/except wrap on git_commit + /agora review reject aliases.
+    Outcome: FAILED.
+
+  fastapi-crud.run15: |
+    Run 15 (lessons-learned.md). 10/13 DONE (approved with failures). 397s,
+    77k/3.7k. Validated /agora review reject/retry/ok alias parsing.
+    Outcome: DONE (approved despite gaps).
+
+  fastapi-crud.live: |
+    Run 16 (lessons-learned.md). **13/13 via 1 loopback. 359s, 57k/3.7k. REFERENCE
+    SECOND-DOMAIN GREEN RUN with pytest passing on produced code.** Round 13
+    narration-redirect (`_maybe_queue_narration_redirect`) addressed the
+    "Let's read app.py..." stalls. The base dir (no .runN suffix) holds
+    the canonical post-Run-16 state — user moved on to discord-bot-full
+    rather than archiving with a number.
+    Outcome: DONE first-pass with pytest green.
+
+  # ───────────────────────────────────────────────────────────────────
+  # Discord-bot-full — qwen2.5:7b, lessons-learned.md Run 17
+  # 23-task multi-module DAG. The .live entry below is the Run 17 reference.
+  # ───────────────────────────────────────────────────────────────────
+
+  discord-bot-full.run1-aborted: |
+    Pre-Run-17 trial (2026-04-17 23:47). 8/12 of the early DAG completed
+    before build_bridge_send failed; user aborted to inspect the failure
+    rather than letting loopback exhaust. The build_bridge_send failure
+    surfaced from the matrix-nio bridge complexity that Run 17 later
+    handled cleanly with literal-template staging.
+    Outcome: USER ABORTED.
+
+  discord-bot-full.run2-killed: |
+    Pre-Run-17 trial (2026-04-17 23:56 - 2026-04-18 00:04). 7/9 tasks
+    before user killed the run. Same failure mode as run1-aborted:
+    design_bridge_spec returned empty after reading a 64 KB docs page,
+    cascading downstream.
+    Outcome: USER KILLED.
+
+  discord-bot-full.live: |
+    Run 17 (lessons-learned.md). **23/23 zero loopbacks. ~600s, 80k/3.9k. REFERENCE
+    SCALE-UP RUN.** Multi-module (config.py + matrix_bridge.py + bot.py + two
+    test files), eight slash commands bridging Agora's /agora command surface
+    via matrix-nio. Every task passed first attempt. 4/4 pytest green on
+    shipped code. Two innovations made this work on the same 7B that
+    previously hit the ceiling: (a) in-phase auto-retry absorbing two
+    transient flakes that would have needed cross-phase loopbacks before,
+    (b) staging every Python-producing task with a literal template so the
+    architect's "design" steps couldn't return empty.
+    Outcome: DONE first-pass.
+
+  # ───────────────────────────────────────────────────────────────────
+  # Code-review — qwen2.5:7b, post-Run-17, 2026-04-18 small hours.
+  # ───────────────────────────────────────────────────────────────────
+
+  code-review.run1-noheader: |
+    First code-review flow run. The reviewer agent emitted markdown without
+    section headers, so the downstream REPORT.md aggregation produced an
+    unstructured wall. Aborted; suffix records the failure mode.
+    Outcome: ABORTED.
+
+  code-review.run2-eos: |
+    Second code-review flow run. End-of-stream cut-off — reviewer's response
+    truncated mid-sentence. 7B incoming token budget likely exceeded per
+    file (the bot.py file under review was nearly 4 KB; with system prompt +
+    review template it pushed past num_ctx).
+    Outcome: ABORTED. The code-review flow was never confirmed reference-
+    quality on 7B; the practical conclusion is that code review of this
+    shape is not 7B-tractable.
+
+  code-review.live: |
+    Latest code-review base dir. Holds the most recent reviewer run's
+    REPORT.md plus per-file reviews (bot.py.md, config.py.md,
+    matrix_bridge.py.md, test_bot_commands.py.md, test_matrix_bridge.py.md).
+    Status: shipped artifacts but quality is 7B-bounded — the reviews
+    default to "looks clean" on every file regardless of actual issues. See
+    findings.md "what didn't" section.
+
+  # ───────────────────────────────────────────────────────────────────
+  # Plan-builder — multi-provider, the post-2026-04-17 era.
+  # Drove the structural validation L1/L2/L3 + C1/C5/C4a/C4b hardening.
+  # ───────────────────────────────────────────────────────────────────
+
+  plan-builder.run1-silent: |
+    First plan-builder flow run, 2026-04-18, qwen2.5:7b. "Silent" failure:
+    architect produced no output and the framework didn't notice fast
+    enough. Drove introduction of llm-empty-return guard.
+    Outcome: ABORTED.
+
+  plan-builder.run2-polls-broken: |
+    Second run, 2026-04-18, qwen2.5:7b. Discovered MSC3381 poll handling
+    bug — voter agent couldn't parse poll responses. Drove bugfix in
+    observe/polls.py.
+    Outcome: ABORTED.
+
+  plan-builder.run3-pre-C: |
+    Pre-"approach C" run (2026-04-21, qwen2.5:7b via sprint75d). Plan-builder
+    produced a plan that EXECUTED but was broken: api_spec contained
+    duplicate module headers + free-text prose that parsed fine but emitted
+    a useless DAG. This run is the immediate motivation for Approach C
+    (C1 brief-deliverable predicate + C5 api_spec validity hardening).
+    Outcome: PRODUCED A PLAN BUT IT WAS STRUCTURALLY BROKEN.
+
+  plan-builder.run4-C-7b-failed: |
+    First post-Approach-C run on 7B (2026-04-22, qwen2.5:7b). Even with
+    C1 predicate explicitly listing brief deliverables, the 7B model could
+    not absorb the feedback — produced the same broken plan shape three
+    retries in a row. Validated the diagnosis "framework is fine, model is
+    the bottleneck" and gated further plan-builder work on 14B+ hardware.
+    Outcome: FAILED. Confirmed capability ceiling.
+
+  plan-builder.run5-gpt4omini-messy: |
+    First gpt-4o-mini run on plan-builder (2026-04-22). Completed — plan
+    came out coherent — but had the "messy" hallmark: api_spec sections
+    were concatenated rather than split per module, so the executor
+    scaffolded only the first module. Cost ~$0.025/run. Drove C5
+    duplicate-module-header rejection.
+    Outcome: COMPLETED with structural defect.
+
+  plan-builder.run6-c5-tight-iter: |
+    C5 active + tightened max_iterations (5→8 on define_api). 4o-mini.
+    Architect kept retrying without absorbing C5 feedback. Showed C5
+    rejection alone wasn't enough; the architect needed instruction-level
+    guidance to rewrite-on-retry rather than just edit.
+    Outcome: STOPPED EARLY.
+
+  plan-builder.run7-c5-edit-loop: |
+    C5 active. Architect got stuck in edit_file_replace loops because
+    old_string wasn't unique. 11/21 tasks. Drove the edit-tool ergonomics
+    fix: `_format_match_locations` now shows line numbers of every
+    candidate match in the error message + upsert-tool hints.
+    Outcome: STOPPED in edit loop. Triggered the most user-visible 4o-mini
+    UX improvement.
+
+  plan-builder.run8-c5-minimal-instr: |
+    C5 active + minimal instructions. Tested whether a leaner system prompt
+    helped or hurt. Result: hurt — without explicit "rewrite-on-retry"
+    guidance the architect made the same edits over and over. 4o-mini.
+    Outcome: STOPPED.
+
+  plan-builder.run9-bullet-slipped: |
+    A markdown bullet (`- src/cli.py`) slipped past C5 validation because
+    `ast.parse` accepts it as `-(src/cli.py)` (binary op). Drove
+    `_find_stray_top_level_statements` in plan/api_spec.py — rejects any
+    top-level node that isn't ClassDef/FunctionDef/Import/docstring.
+    4o-mini.
+    Outcome: COMPLETED with structural defect; framework hardened in
+    response.
+
+  plan-builder.run10-api-spec-deleted: |
+    Architect called delete_file on plan/api_spec.md after define_api
+    succeeded. Drove tool lockdown: ALL file-mutation tools (write_file,
+    delete_file, edit_file_*, fetch_url, add_class*, add_function*) hidden
+    from author_* stages. 4o-mini.
+    Outcome: COMPLETED with cleanup needed; framework hardened.
+
+  plan-builder.run11-plan-dir-path: |
+    Architect wrote `output_path: plan/core_domain_module.py`. C4a only
+    checked src/*.py at the time, so it missed. Drove C4a expansion to
+    cover any non-test .py file. 4o-mini.
+    Outcome: COMPLETED with placement defect; framework hardened.
+
+  plan-builder.run12-phase2-wired: |
+    First run with Phase 2 (return-type drift rejection in fill_test_body).
+    4o-mini. Phase 2 caught a planted-test test that asserted dict where the
+    spec said tuple. Worked correctly.
+    Outcome: COMPLETED, Phase 2 validated.
+
+  plan-builder.run13-test-module: |
+    Architect kept including `## module: src/tests/test_url_shortener.py`
+    sections in the api_spec across three retries despite C5 rejection.
+    Drove the auto-strip fix: `strip_test_module_sections` runs in
+    write_file when the path is plan/api_spec.md. 4o-mini.
+    Outcome: ABORTED retries; framework hardened with auto-heal.
+
+  plan-builder.run14-4omini-clean: |
+    **REFERENCE PLAN-BUILDER GREEN RUN.** 4o-mini, all C1/C4a/C4b/C5/Phase-2
+    gates active, structural validation in place. Plan came out clean —
+    api_spec well-formed, DAG covers all brief deliverables. Cost ~$0.025.
+    The "what plan-builder looks like working" reference for findings.md.
+    Outcome: COMPLETED CLEAN.
+
+  plan-builder.live: |
+    Latest plan-builder base dir. Holds the most recent successful
+    plan-builder output (post-run-14 state). Use as the canonical plan-
+    builder artifact set when sampling for narrative or rerun tests.
+
+  # ───────────────────────────────────────────────────────────────────
+  # URL-shortener-MVP — the cross-tier comparison test bed.
+  # ───────────────────────────────────────────────────────────────────
+
+  url-shortener-mvp.run1-7b-broken: |
+    First URL-shortener executor run on qwen2.5:7b (sprint77c log).
+    62-minute duration shows the run got stuck in long retry loops; 2/10
+    tasks completed. The CAPABILITY-CEILING BASELINE for cross-tier
+    comparison: identical DAG, what 7B does with it.
+    Outcome: BROKEN. Defines the floor.
+
+  url-shortener-mvp.run2-editloop-killed: |
+    First gpt-4o-mini run on URL-shortener (executor_gpt4omini.log).
+    Got stuck in edit_file_replace non-unique-match retry loop on the same
+    add_class output that triggered the path-mismatch warning during
+    setup_project. User killed. Drove the edit-tool ergonomics fix
+    (see plan-builder.run7-c5-edit-loop for the same fix on the planner
+    side).
+    Outcome: USER KILLED.
+
+  url-shortener-mvp.run3-pre-c5: |
+    Second 4o-mini executor run (executor_gpt4omini_v2.log). Pre-C5
+    api_spec validity hardening, so the plan it consumed had concatenated
+    module sections — executor scaffolded one module then stopped.
+    Outcome: PARTIAL.
+
+  url-shortener-mvp.run4-naming-mismatch: |
+    4o-mini, after C5 + edit-tool fix (executor_gpt4omini_c5.log). Plan was
+    coherent but the architect wrote to a path that didn't match its
+    declared output_path — catching this drove `_validate_src_path_in_api_spec`
+    in plan/builder.py with structured error messages.
+    Outcome: PARTIAL.
+
+  url-shortener-mvp.run6-phase2-wired: |
+    4o-mini with Phase-2 (return-type drift) wired (executor_gpt4omini_c5final.log).
+    Brief run, 5 seconds — plan was structurally valid this time but
+    something else cut the run short. (Run 5 was skipped in the numbering;
+    user reused 6 as the next sequential index after a different intervention.)
+    Outcome: SHORT.
+
+  url-shortener-mvp.run7-4omini-typo: |
+    Final 4o-mini URL-shortener run (executor_phase23.log). Plan was clean,
+    executor ran, but the produced code had a value-level typo the
+    framework couldn't catch without running tests. The "framework hit its
+    ceiling for sub-Sonnet model" run.
+    Outcome: PARTIAL — framework gates passed, value-level test failed.
+
+  url-shortener-mvp.live: |
+    Latest URL-shortener base dir. Holds the gpt-4o run state — structural
+    gates all passed, 4/5 contract tests passed, 1 tester-tuple-shape bug.
+    The cross-tier comparison anchor. Per session memory: ~$0.40/run cost,
+    ~16k effective working memory used (out of 128k context window).
+
+  # ───────────────────────────────────────────────────────────────────
+  # Other base dirs / oddballs
+  # ───────────────────────────────────────────────────────────────────
+
+  repos.run1: |
+    Legacy directory from a pre-archive workspace layout where each project
+    lived under a `repos/` parent. Empty inside; no git history, no logs.
+    Kept in the registry as evidence that the workspace layout changed
+    early in the project (around 2026-04-16, before Run 1 proper).
+    Outcome: GHOST DIR, no run.
+
+  fastapi-crud-from-yaml.live: |
+    YAML-driven re-run of FastAPI-CRUD via a flow file rather than a
+    Python runner. Used to validate that flows/fastapi-crud.plan.yaml
+    consumed by run_plan.py reproduces the Run-16-equivalent shape. Smoke
+    test for the plan-runner refactor — not a comparison data point in
+    itself.

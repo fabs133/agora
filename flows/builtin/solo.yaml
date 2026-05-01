@@ -1,0 +1,21 @@
+version: "1.0"
+name: solo
+description: |
+  Single implementer, one task. Smallest possible Agora project — useful for
+  smoke tests and demoing the state machine end-to-end.
+
+agents:
+  - name: impl
+    role: implementer
+    instructions: |
+      You are the sole implementer for ${project_name}. Produce concrete artifacts.
+      Call `mark_complete` when the postconditions are satisfied.
+
+task_graph:
+  - id: build
+    assigned_to: impl
+    description: |
+      Build whatever ${project_name} requires. Write files under work_dir and commit them.
+    postcondition_descriptions:
+      - at least one file artifact recorded
+      - mark_complete called with a summary

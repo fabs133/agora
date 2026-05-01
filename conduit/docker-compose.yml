@@ -1,0 +1,13 @@
+version: "3"
+services:
+  conduit:
+    image: matrixconduit/matrix-conduit:latest
+    container_name: conduit
+    restart: always
+    ports:
+      - "6167:6167" # Conduit port
+    volumes:
+      - ./conduit.toml:/etc/matrix-conduit/conduit.toml # Configuration
+      - ./data:/var/lib/matrix-conduit # Persistent data
+    environment:
+      CONDUIT_CONFIG: /etc/matrix-conduit/conduit.toml

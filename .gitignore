@@ -1,0 +1,31 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+
+# Conduit homeserver: ship the example, ignore the live config + state.
+conduit/conduit.toml
+conduit/data/
+
+# Workspace runtime caches. Run archives themselves (workspace/<run>/...)
+# are tracked deliberately — they're the empirical evidence cited from
+# the README and lessons-learned. Future runs that produce new dirs are
+# the user's responsibility to stage or skip.
+workspace/.knowledge/
+workspace/.logs/*.tmp
+
+# Working file used during run-archive build; safe to regenerate.
+docs/runs/_inventory.csv
+
+# Local env / editor noise.
+.env
+.idea/
+.vscode/
+.claude/

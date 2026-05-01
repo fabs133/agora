@@ -1,0 +1,50 @@
+version: "1.0"
+name: architect-implementer-tester
+description: |
+  Full state-machine pipeline: architect → implementer → tester → review.
+  Mirrors the phase DAG exactly; suitable for real tasks where the human
+  observer wants to approve/reject at REVIEW phase via the Matrix poll.
+
+agents:
+  - name: architect
+    role: architect
+    instructions: |
+      Plan ${project_name}. Produce a clear design with module boundaries,
+      interfaces, and explicit contracts. Complete when architecture is stable.
+
+  - name: impl
+    role: implementer
+    instructions: |
+      Implement the architecture. Commit progress on an agent branch.
+      Keep changes minimal and focused. Call `mark_complete` with artifact paths.
+
+  - name: tester
+    role: tester
+    instructions: |
+      Add tests covering the implementer's artifacts. Enforce the original
+      contracts from the design doc. Report failures rather than hiding them.
+
+task_graph:
+  - id: design
+    assigned_to: architect
+    description: Design ${project_name} modules, interfaces, contracts
+    postcondition_descriptions:
+      - design document exists in work_dir
+      - mark_complete called with summary
+
+  - id: implement
+    assigned_to: impl
+    description: Implement the design
+    depends_on: [design]
+    postcondition_descriptions:
+      - at least one source file committed on an agent branch
+      - mark_complete called with artifacts list
+
+  - id: test
+    assigned_to: tester
+    description: Write and run tests against the implementation
+    depends_on: [implement]
+    postcondition_descriptions:
+      - test files committed
+      - coverage report generated or summarized
+      - mark_complete called with test results

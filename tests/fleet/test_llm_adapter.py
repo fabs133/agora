@@ -1,0 +1,294 @@
+import pytest
+
+from agora.core.errors import AgoraError
+from agora.fleet.llm_adapter import (
+    AnthropicAdapter,
+    LLMProtocol,
+    LLMResponse,
+    OllamaAdapter,
+    ToolCall,
+    create_llm_adapter,
+)
+
+
+def test_create_adapter_routes_to_anthropic() -> None:
+    pytest.importorskip("anthropic")
+    adapter = create_llm_adapter("claude-sonnet-4", api_key="sk-test")
+    assert isinstance(adapter, AnthropicAdapter)
+
+
+def test_create_adapter_routes_to_ollama() -> None:
+    adapter = create_llm_adapter("ollama/llama3.1")
+    assert isinstance(adapter, OllamaAdapter)
+    assert adapter.base_url == "http://localhost:11434"
+
+
+def test_create_adapter_unknown_model_raises() -> None:
+    with pytest.raises(AgoraError, match="no adapter"):
+        create_llm_adapter("gpt-4")
+
+
+def test_create_adapter_anthropic_without_key_raises() -> None:
+    # Missing-key guard is checked before the import happens; error message
+    # points users at the Ollama / subprocess paths.
+    with pytest.raises(AgoraError, match="api_key|subscription|ollama"):
+        create_llm_adapter("claude-sonnet-4")
+
+
+def test_create_adapter_routes_to_claude_code_subprocess(monkeypatch) -> None:
+    from agora.fleet.claude_code_adapter import ClaudeCodeSubprocessAdapter
+
+    monkeypatch.setattr("shutil.which", lambda _b: "/fake/path/claude")
+    adapter = create_llm_adapter(
+        "claude-code/subscription", binary="claude", allow=True
+    )
+    assert isinstance(adapter, ClaudeCodeSubprocessAdapter)
+
+
+def test_ollama_adapter_strips_prefix_in_payload(monkeypatch) -> None:
+    """Model payload sent to Ollama must not include the 'ollama/' prefix."""
+    import asyncio
+
+    captured: dict = {}
+
+    class _FakeResponse:
+        status = 200
+
+        async def json(self):
+            return {"message": {"content": "ok", "tool_calls": []}, "done_reason": "stop"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    class _FakeSession:
+        def __init__(self, *_a, **_k): ...
+        def post(self, _url, json=None):
+            captured["payload"] = json
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    adapter = OllamaAdapter(timeout_seconds=5)
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    assert captured["payload"]["model"] == "qwen2.5-coder:7b-instruct"
+
+
+def test_ollama_adapter_shapes_tool_results_as_role_tool() -> None:
+    adapter = OllamaAdapter()
+    turn = adapter.format_tool_results(
+        calls=[ToolCall(id="0", name="write_file", arguments={})],
+        results=["wrote 3 bytes"],
+    )
+    assert turn["role"] == "tool"
+    assert "write_file" in turn["content"] or "wrote" in turn["content"]
+
+
+def test_anthropic_adapter_shapes_tool_results_as_blocks() -> None:
+    from agora.fleet.llm_adapter import _AnthropicShape
+
+    shape = _AnthropicShape()
+    turn = shape.format_tool_results(
+        calls=[ToolCall(id="call-1", name="write_file", arguments={})],
+        results=["wrote"],
+    )
+    assert turn["role"] == "user"
+    blocks = turn["content"]
+    assert blocks[0]["type"] == "tool_result"
+    assert blocks[0]["tool_use_id"] == "call-1"
+
+
+def test_llm_response_dataclass_defaults() -> None:
+    resp = LLMResponse(content="hi")
+    assert resp.tool_calls == ()
+    assert resp.usage == {}
+    assert resp.stop_reason == ""
+
+
+def test_toolcall_is_hashable_dataclass() -> None:
+    call = ToolCall(id="1", name="x", arguments={"k": "v"})
+    assert call.name == "x"
+    assert call.arguments == {"k": "v"}
+
+
+def test_llm_protocol_runtime_check(fake_matrix_client) -> None:  # noqa: ARG001
+    from tests.conftest import FakeLLM
+
+    llm = FakeLLM([])
+    assert isinstance(llm, LLMProtocol)
+
+
+# ---- Ollama serialisation (fix for interleaved turns on single-slot daemons) ----
+
+
+class _SlowSession:
+    """Context-manager aiohttp.ClientSession stub that records entry/exit times.
+
+    The post() coroutine sleeps for ``response_delay`` seconds before returning
+    a fake 200 JSON body. Tests use this to observe whether two concurrent
+    OllamaAdapter.complete() calls overlap or serialise.
+    """
+
+    events: list[tuple[str, float]] = []
+
+    def __init__(self, *args, **kwargs):  # noqa: ARG002
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return None
+
+    def post(self, _url, json=None):  # noqa: ARG002
+        return _SlowResponse(self)
+
+
+class _SlowResponse:
+    response_delay: float = 0.15
+    _counter: int = 0
+
+    def __init__(self, session):
+        self._session = session
+
+    async def __aenter__(self):
+        import asyncio as _a
+        import time as _t
+
+        _SlowResponse._counter += 1
+        my_id = _SlowResponse._counter
+        _SlowSession.events.append((f"enter-{my_id}", _t.monotonic()))
+        await _a.sleep(self.response_delay)
+        _SlowSession.events.append((f"reply-{my_id}", _t.monotonic()))
+        self._my_id = my_id
+        return self
+
+    async def __aexit__(self, *a):
+        import time as _t
+
+        _SlowSession.events.append((f"exit-{self._my_id}", _t.monotonic()))
+        return None
+
+    status = 200
+
+    async def json(self):
+        return {
+            "message": {"content": "ok", "tool_calls": []},
+            "done_reason": "stop",
+        }
+
+    async def text(self):
+        return ""
+
+
+@pytest.fixture
+def _reset_ollama_semaphores():
+    """Clear the module-level semaphore cache so each test starts fresh."""
+    from agora.fleet import llm_adapter as _mod
+
+    before = dict(_mod._OLLAMA_SEMAPHORES)
+    _mod._OLLAMA_SEMAPHORES.clear()
+    _SlowSession.events.clear()
+    _SlowResponse._counter = 0
+    yield
+    _mod._OLLAMA_SEMAPHORES.clear()
+    _mod._OLLAMA_SEMAPHORES.update(before)
+
+
+async def test_ollama_adapter_serialises_concurrent_calls(
+    monkeypatch, _reset_ollama_semaphores
+) -> None:
+    """Two concurrent complete() calls with max_concurrent=1 must NOT overlap."""
+    import asyncio
+
+    monkeypatch.setattr("aiohttp.ClientSession", _SlowSession)
+
+    adapter = OllamaAdapter(
+        base_url="http://localhost:11434",
+        timeout_seconds=5,
+        num_ctx=None,
+        max_concurrent=1,
+    )
+
+    async def _call():
+        return await adapter.complete(
+            [{"role": "user", "content": "hi"}], model="ollama/test"
+        )
+
+    await asyncio.gather(_call(), _call())
+
+    # Parse the event log: (label, monotonic_time).
+    by_label = {label: ts for label, ts in _SlowSession.events}
+    # The second call's "enter" happens AFTER the first call's "exit"
+    # (serial execution). Using strict '>=' is fine because asyncio's
+    # monotonic clock is granular.
+    assert by_label["exit-1"] <= by_label["enter-2"] + 0.01, (
+        f"calls overlapped; events: {_SlowSession.events}"
+    )
+
+
+async def test_ollama_adapter_respects_custom_max_concurrent(
+    monkeypatch, _reset_ollama_semaphores
+) -> None:
+    """max_concurrent=2 allows two overlapping calls."""
+    import asyncio
+
+    monkeypatch.setattr("aiohttp.ClientSession", _SlowSession)
+
+    adapter = OllamaAdapter(
+        base_url="http://localhost:11434",
+        timeout_seconds=5,
+        num_ctx=None,
+        max_concurrent=2,
+    )
+
+    async def _call():
+        return await adapter.complete(
+            [{"role": "user", "content": "hi"}], model="ollama/test"
+        )
+
+    await asyncio.gather(_call(), _call())
+
+    by_label = {label: ts for label, ts in _SlowSession.events}
+    # Both "enter" events fire before either "exit" — overlapped.
+    assert by_label["enter-2"] < by_label["exit-1"], (
+        f"calls did not overlap; events: {_SlowSession.events}"
+    )
+
+
+async def test_ollama_semaphore_is_shared_across_adapter_instances(
+    monkeypatch, _reset_ollama_semaphores
+) -> None:
+    """Two different OllamaAdapter instances pointing at the same base_url share a lock."""
+    import asyncio
+
+    monkeypatch.setattr("aiohttp.ClientSession", _SlowSession)
+
+    a1 = OllamaAdapter(
+        base_url="http://localhost:11434", timeout_seconds=5, num_ctx=None, max_concurrent=1
+    )
+    a2 = OllamaAdapter(
+        base_url="http://localhost:11434", timeout_seconds=5, num_ctx=None, max_concurrent=1
+    )
+
+    async def _call(ad):
+        return await ad.complete([{"role": "user", "content": "hi"}], model="ollama/test")
+
+    await asyncio.gather(_call(a1), _call(a2))
+
+    by_label = {label: ts for label, ts in _SlowSession.events}
+    assert by_label["exit-1"] <= by_label["enter-2"] + 0.01, (
+        f"instances did not share lock; events: {_SlowSession.events}"
+    )

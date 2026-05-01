@@ -1,0 +1,592 @@
+version: '2.0'
+name: fastapi-crud
+description: 13-task FastAPI CRUD plan; round-trip fixture for agora.plan loader.
+agents:
+- name: architect
+  role: architect
+  model: ${model}
+  instructions: "You are the ARCHITECT. Follow each task's description literally \u2014\
+    \ one concrete\naction per task. Always finish with `mark_complete(summary=...,\
+    \ artifacts=[...])`.\nPrefer calling a single tool at a time.\n"
+  knowledge_files: []
+- name: impl
+  role: implementer
+  model: ${model}
+  instructions: 'You are the IMPLEMENTER. Focus on ONE thing per task: write the requested
+    file
+
+    with `write_file` (new files) or `edit_file_*` (modifying existing files). The
+
+    framework handles validation, git commits, and task completion automatically.
+
+
+    If a previous tool call returned a validation error on the next turn (syntax,
+
+    import, or missing name), read the file and re-write it with the fix.
+
+    '
+  knowledge_files: []
+- name: tester
+  role: tester
+  model: ${model}
+  instructions: 'You are the TESTER. Focus on ONE thing per task: write the requested
+    test
+
+    file with `write_file`. The framework handles validation and completion
+
+    automatically.
+
+    '
+  knowledge_files: []
+task_graph:
+- id: fetch_intro
+  assigned_to: architect
+  description: "STEP: Fetch the FastAPI first-steps tutorial and save it locally.\n\
+    INPUTS: URL https://fastapi.tiangolo.com/tutorial/first-steps/\nOUTPUT: kb/intro.md\n\
+    REQUIREMENT: kb/intro.md must exist and contain real FastAPI tutorial text.\n\
+    TOOLS: 1) fetch_url url=https://fastapi.tiangolo.com/tutorial/first-steps/ save_as=kb/intro.md\
+    \ (writes atomically \u2014 do NOT call write_file). 2) mark_complete summary='fetched\
+    \ intro' artifacts=['kb/intro.md'].\nAlways call mark_complete with artifacts=[\"\
+    kb/intro.md\"] when done."
+  depends_on: []
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: kb/intro.md
+  - name: mark_complete
+    args: {}
+  output_path: kb/intro.md
+- id: fetch_body
+  assigned_to: architect
+  description: "STEP: Fetch the FastAPI request-body tutorial and save it locally.\n\
+    INPUTS: URL https://fastapi.tiangolo.com/tutorial/body/\nOUTPUT: kb/body.md\n\
+    REQUIREMENT: kb/body.md must exist and mention pydantic / BaseModel.\nTOOLS: 1)\
+    \ fetch_url url=https://fastapi.tiangolo.com/tutorial/body/ save_as=kb/body.md\
+    \ (writes atomically \u2014 do NOT call write_file). 2) mark_complete summary='fetched\
+    \ body tutorial' artifacts=['kb/body.md'].\nAlways call mark_complete with artifacts=[\"\
+    kb/body.md\"] when done."
+  depends_on: []
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: kb/body.md
+  - name: mark_complete
+    args: {}
+  output_path: kb/body.md
+- id: design_modules
+  assigned_to: architect
+  description: 'STEP: Write a short module layout for the FastAPI CRUD project.
+
+    INPUTS: Read kb/intro.md and kb/body.md.
+
+    OUTPUT: design/modules.md
+
+    REQUIREMENT: Must list files: app.py (FastAPI app), requirements.txt, README.md,
+    test_app.py. One line per file, with a 1-sentence purpose.
+
+    TOOLS: 1) read_file path=kb/intro.md. 2) read_file path=kb/body.md. 3) write_file
+    path=design/modules.md content=<markdown with bulleted file list>. 4) mark_complete
+    summary=''modules'' artifacts=[''design/modules.md''].
+
+    Always call mark_complete with artifacts=["design/modules.md"] when done.'
+  depends_on:
+  - fetch_intro
+  - fetch_body
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: design/modules.md
+  - name: file_contains
+    args:
+      rel: design/modules.md
+      substring: app.py
+  - name: mark_complete
+    args: {}
+  output_path: design/modules.md
+- id: design_endpoints
+  assigned_to: architect
+  description: 'STEP: Write signatures for the five CRUD endpoints over an Item resource.
+
+    INPUTS: Read kb/body.md.
+
+    OUTPUT: design/endpoints.md
+
+    REQUIREMENT: Must include five endpoint signatures: POST /items (create), GET
+    /items (list), GET /items/{item_id} (read), PUT /items/{item_id} (update), DELETE
+    /items/{item_id} (delete). Item is a pydantic BaseModel with fields: name:str,
+    price:float.
+
+    TOOLS: 1) read_file path=kb/body.md. 2) write_file path=design/endpoints.md content=<markdown
+    listing the five endpoints>. 3) mark_complete summary=''endpoints'' artifacts=[''design/endpoints.md''].
+
+    Always call mark_complete with artifacts=["design/endpoints.md"] when done.'
+  depends_on:
+  - fetch_intro
+  - fetch_body
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: design/endpoints.md
+  - name: file_contains
+    args:
+      rel: design/endpoints.md
+      substring: POST
+  - name: file_contains
+    args:
+      rel: design/endpoints.md
+      substring: GET
+  - name: file_contains
+    args:
+      rel: design/endpoints.md
+      substring: PUT
+  - name: file_contains
+    args:
+      rel: design/endpoints.md
+      substring: DELETE
+  - name: mark_complete
+    args: {}
+  output_path: design/endpoints.md
+- id: build_skeleton
+  assigned_to: impl
+  description: 'STEP: Write app.py with FastAPI app + Item model + in-memory store
+    (no endpoints yet).
+
+    INPUTS: Read design/modules.md and design/endpoints.md.
+
+    OUTPUT: app.py
+
+    REQUIREMENT: app.py must: import FastAPI and BaseModel, define class Item(BaseModel)
+    with fields name:str and price:float, create app = FastAPI(), define items: dict[int,
+    Item] = {} and next_id: int = 1, and under if __name__ == ''__main__'' call uvicorn.run(app).
+    NO endpoint handlers yet.
+
+    TOOLS: 1) read_file path=design/modules.md. 2) read_file path=design/endpoints.md.
+    3) write_file path=app.py content=<python skeleton>. 4) mark_complete summary=''skeleton''
+    artifacts=[''app.py''].
+
+    Always call mark_complete with artifacts=["app.py"] when done.'
+  depends_on:
+  - design_modules
+  - design_endpoints
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: app.py
+  - name: py_compiles
+    args:
+      rel: app.py
+  - name: python_imports
+    args:
+      rel: app.py
+  - name: no_code_after_main_block
+    args:
+      rel: app.py
+  - name: file_contains
+    args:
+      rel: app.py
+      substring: FastAPI
+  - name: file_contains
+    args:
+      rel: app.py
+      substring: BaseModel
+  - name: mark_complete
+    args: {}
+  output_path: app.py
+  stages:
+  - name: write_app_skeleton
+    instruction: "Write `app.py` with this exact structure:\n\n```python\nimport uvicorn\n\
+      from fastapi import FastAPI\nfrom pydantic import BaseModel\n\n\nclass Item(BaseModel):\n\
+      \    name: str\n    price: float\n\n\napp = FastAPI()\nitems: dict[int, Item]\
+      \ = {}\nnext_id: int = 1\n\n\nif __name__ == '__main__':\n    uvicorn.run(app)\n\
+      ```\n\nCall write_file path='app.py' content=<the code above verbatim>."
+    context_files:
+    - design/modules.md
+    - design/endpoints.md
+    max_iterations: 6
+- id: build_create
+  assigned_to: impl
+  description: 'STEP: Add the POST /items endpoint to app.py.
+
+    INPUTS: Read app.py.
+
+    OUTPUT: app.py
+
+    REQUIREMENT: app.py must keep skeleton AND add an @app.post(''/items'') handler
+    that stores the item in the dict, assigns it the next id (incrementing next_id),
+    and returns {''id'': id, ''item'': item}.
+
+    TOOLS: 1) read_file path=app.py. 2) edit_file_insert_before path=''app.py'' anchor="if
+    __name__" snippet=<the new @app.post decorator block>. Do NOT call write_file.
+    Do NOT re-emit existing app.py content. 3) mark_complete summary=''/items POST
+    added'' artifacts=[''app.py''].
+
+    Always call mark_complete with artifacts=["app.py"] when done.'
+  depends_on:
+  - build_skeleton
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: app.py
+  - name: py_compiles
+    args:
+      rel: app.py
+  - name: python_imports
+    args:
+      rel: app.py
+  - name: no_code_after_main_block
+    args:
+      rel: app.py
+  - name: file_contains
+    args:
+      rel: app.py
+      substring: '@app.post'
+  - name: mark_complete
+    args: {}
+  output_path: app.py
+  stages:
+  - name: add_create
+    instruction: "Add the POST /items endpoint to app.py. Call ONE tool:\n\nedit_file_insert_before(\n\
+      \    path='app.py',\n    anchor=\"if __name__\",\n    snippet=\"\"\"\n@app.post('/items')\n\
+      def create_item(item: Item):\n    global next_id\n    item_id = next_id\n  \
+      \  items[item_id] = item\n    next_id += 1\n    return {'id': item_id, 'item':\
+      \ item}\n\n\"\"\",\n)\n\nDo NOT call write_file. Do NOT call edit_file_append\
+      \ \u2014 handlers MUST appear BEFORE `if __name__`."
+    context_files:
+    - app.py
+    max_iterations: 5
+- id: build_list
+  assigned_to: impl
+  description: "STEP: Add GET /items (list all) and GET /items/{item_id} (read one)\
+    \ to app.py.\nINPUTS: Read app.py.\nOUTPUT: app.py\nREQUIREMENT: app.py must add\
+    \ TWO @app.get handlers: @app.get('/items') returning the items dict, and @app.get('/items/{item_id}')\
+    \ that looks up the id and returns the item (or raises HTTPException 404).\nTOOLS:\
+    \ 1) read_file path=app.py. 2) edit_file_insert_before path='app.py' anchor=\"\
+    if __name__\" snippet=<both @app.get decorator blocks + an import for HTTPException>.\
+    \ Do NOT call write_file. Do NOT use edit_file_append \u2014 handlers appended\
+    \ after `if __name__` won't register at runtime. 3) mark_complete summary='GET\
+    \ handlers added' artifacts=['app.py'].\nAlways call mark_complete with artifacts=[\"\
+    app.py\"] when done."
+  depends_on:
+  - build_create
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: app.py
+  - name: py_compiles
+    args:
+      rel: app.py
+  - name: python_imports
+    args:
+      rel: app.py
+  - name: no_code_after_main_block
+    args:
+      rel: app.py
+  - name: file_contains
+    args:
+      rel: app.py
+      substring: '@app.get'
+  - name: file_contains
+    args:
+      rel: app.py
+      substring: HTTPException
+  - name: mark_complete
+    args: {}
+  output_path: app.py
+  stages:
+  - name: add_list
+    instruction: "Add GET /items and GET /items/{item_id}. Call TWO tools:\n\n1) edit_file_replace(\n\
+      \     path='app.py',\n     old_string='from fastapi import FastAPI',\n     new_string='from\
+      \ fastapi import FastAPI, HTTPException',\n   )\n\n2) edit_file_insert_before(\n\
+      \     path='app.py',\n     anchor=\"if __name__\",\n     snippet=\"\"\"\n@app.get('/items')\n\
+      def list_items():\n    return items\n\n@app.get('/items/{item_id}')\ndef read_item(item_id:\
+      \ int):\n    if item_id not in items:\n        raise HTTPException(status_code=404,\
+      \ detail='not found')\n    return items[item_id]\n\n\"\"\",\n   )\n\nDo NOT\
+      \ call write_file. Do NOT call edit_file_append."
+    context_files:
+    - app.py
+    max_iterations: 6
+- id: build_update
+  assigned_to: impl
+  description: 'STEP: Add PUT /items/{item_id} (update) to app.py.
+
+    INPUTS: Read app.py.
+
+    OUTPUT: app.py
+
+    REQUIREMENT: app.py must add an @app.put(''/items/{item_id}'') handler that replaces
+    the item at that id. If the id is unknown, raise HTTPException status_code=404.
+
+    TOOLS: 1) read_file path=app.py. 2) edit_file_insert_before path=''app.py'' anchor="if
+    __name__" snippet=<the @app.put decorator block>. Do NOT call write_file. Do NOT
+    use edit_file_append. 3) mark_complete summary=''PUT added'' artifacts=[''app.py''].
+
+    Always call mark_complete with artifacts=["app.py"] when done.'
+  depends_on:
+  - build_list
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: app.py
+  - name: py_compiles
+    args:
+      rel: app.py
+  - name: python_imports
+    args:
+      rel: app.py
+  - name: no_code_after_main_block
+    args:
+      rel: app.py
+  - name: file_contains
+    args:
+      rel: app.py
+      substring: '@app.put'
+  - name: mark_complete
+    args: {}
+  output_path: app.py
+  stages:
+  - name: add_update
+    instruction: "Add PUT /items/{item_id}. Call ONE tool:\n\nedit_file_insert_before(\n\
+      \    path='app.py',\n    anchor=\"if __name__\",\n    snippet=\"\"\"\n@app.put('/items/{item_id}')\n\
+      def update_item(item_id: int, item: Item):\n    if item_id not in items:\n \
+      \       raise HTTPException(status_code=404, detail='not found')\n    items[item_id]\
+      \ = item\n    return {'id': item_id, 'item': item}\n\n\"\"\",\n)\n\nDo NOT call\
+      \ write_file. Do NOT call edit_file_append."
+    context_files:
+    - app.py
+    max_iterations: 5
+- id: build_delete
+  assigned_to: impl
+  description: 'STEP: Add DELETE /items/{item_id} to app.py.
+
+    INPUTS: Read app.py.
+
+    OUTPUT: app.py
+
+    REQUIREMENT: app.py must add an @app.delete(''/items/{item_id}'') handler that
+    deletes the item and returns {''deleted'': item_id}. HTTPException 404 on unknown
+    id.
+
+    TOOLS: 1) read_file path=app.py. 2) edit_file_insert_before path=''app.py'' anchor="if
+    __name__" snippet=<the @app.delete decorator block>. Do NOT call write_file. Do
+    NOT use edit_file_append. 3) mark_complete summary=''DELETE added'' artifacts=[''app.py''].
+
+    Always call mark_complete with artifacts=["app.py"] when done.'
+  depends_on:
+  - build_update
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: app.py
+  - name: py_compiles
+    args:
+      rel: app.py
+  - name: python_imports
+    args:
+      rel: app.py
+  - name: no_code_after_main_block
+    args:
+      rel: app.py
+  - name: file_contains
+    args:
+      rel: app.py
+      substring: '@app.delete'
+  - name: mark_complete
+    args: {}
+  output_path: app.py
+  stages:
+  - name: add_delete
+    instruction: "Add DELETE /items/{item_id}. Call ONE tool:\n\nedit_file_insert_before(\n\
+      \    path='app.py',\n    anchor=\"if __name__\",\n    snippet=\"\"\"\n@app.delete('/items/{item_id}')\n\
+      def delete_item(item_id: int):\n    if item_id not in items:\n        raise\
+      \ HTTPException(status_code=404, detail='not found')\n    del items[item_id]\n\
+      \    return {'deleted': item_id}\n\n\"\"\",\n)\n\nDo NOT call write_file. Do\
+      \ NOT call edit_file_append."
+    context_files:
+    - app.py
+    max_iterations: 5
+- id: write_requirements
+  assigned_to: impl
+  description: "STEP: Write requirements.txt with FastAPI + uvicorn + pydantic + httpx\
+    \ pinned.\nINPUTS: None.\nOUTPUT: requirements.txt\nREQUIREMENT: requirements.txt\
+    \ must list these packages, one per line: fastapi>=0.110, uvicorn[standard]>=0.27,\
+    \ pydantic>=2.0, httpx>=0.25. Every line must be a valid PEP 508 spec \u2014 NO\
+    \ import statements, NO free prose.\nTOOLS: 1) write_file path=requirements.txt\
+    \ content='fastapi>=0.110\\nuvicorn[standard]>=0.27\\npydantic>=2.0\\nhttpx>=0.25\\\
+    n'. 2) mark_complete summary='requirements' artifacts=['requirements.txt'].\n\
+    Always call mark_complete with artifacts=[\"requirements.txt\"] when done."
+  depends_on:
+  - build_skeleton
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: requirements.txt
+  - name: file_contains
+    args:
+      rel: requirements.txt
+      substring: fastapi
+  - name: requirements_parse
+    args:
+      rel: requirements.txt
+  - name: mark_complete
+    args: {}
+  output_path: requirements.txt
+  stages:
+  - name: write
+    instruction: 'Write the file `requirements.txt` with EXACTLY these four lines
+      (no import statements, no comments):
+
+
+      fastapi>=0.110
+
+      uvicorn[standard]>=0.27
+
+      pydantic>=2.0
+
+      httpx>=0.25
+
+
+      Call write_file path=''requirements.txt'' content=''fastapi>=0.110\nuvicorn[standard]>=0.27\npydantic>=2.0\nhttpx>=0.25\n''.'
+    context_files: []
+    max_iterations: 4
+- id: write_readme
+  assigned_to: impl
+  description: 'STEP: Write a short README.md explaining how to run the FastAPI service.
+
+    INPUTS: Read app.py.
+
+    OUTPUT: README.md
+
+    REQUIREMENT: README.md must mention `uvicorn app:app --reload` as the run command
+    and list the five endpoints (POST /items, GET /items, GET /items/{item_id}, PUT
+    /items/{item_id}, DELETE /items/{item_id}).
+
+    TOOLS: 1) read_file path=app.py. 2) write_file path=README.md content=<short markdown>.
+    3) mark_complete summary=''readme'' artifacts=[''README.md''].
+
+    Always call mark_complete with artifacts=["README.md"] when done.'
+  depends_on:
+  - build_skeleton
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: README.md
+  - name: file_contains
+    args:
+      rel: README.md
+      substring: uvicorn
+  - name: file_contains
+    args:
+      rel: README.md
+      substring: /items
+  - name: mark_complete
+    args: {}
+  output_path: README.md
+- id: write_tests
+  assigned_to: tester
+  description: "STEP: Write test_app.py with pytest-style tests using FastAPI TestClient.\n\
+    INPUTS: Read app.py.\nOUTPUT: test_app.py\nREQUIREMENT: test_app.py must contain\
+    \ at least two `def test_` functions using fastapi.testclient.TestClient against\
+    \ the app. Use this exact template:\n\n```python\nfrom fastapi.testclient import\
+    \ TestClient\nimport app as app_module\n\nclient = TestClient(app_module.app)\n\
+    \ndef test_create_and_list():\n    app_module.items.clear()\n    app_module.next_id\
+    \ = 1\n    resp = client.post('/items', json={'name': 'x', 'price': 1.0})\n  \
+    \  assert resp.status_code == 200\n    resp = client.get('/items')\n    assert\
+    \ resp.status_code == 200\n    assert len(resp.json()) == 1\n\ndef test_404_on_missing():\n\
+    \    app_module.items.clear()\n    resp = client.get('/items/999')\n    assert\
+    \ resp.status_code == 404\n```\n\nPytest MUST pass. Do NOT require a database.\n\
+    TOOLS: 1) read_file path=app.py. 2) write_file path=test_app.py content=<the code\
+    \ above verbatim>. 3) mark_complete summary='tests' artifacts=['test_app.py'].\n\
+    Always call mark_complete with artifacts=[\"test_app.py\"] when done."
+  depends_on:
+  - build_skeleton
+  - write_requirements
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: file_exists
+    args:
+      rel: test_app.py
+  - name: py_compiles
+    args:
+      rel: test_app.py
+  - name: file_contains
+    args:
+      rel: test_app.py
+      substring: def test_
+  - name: file_contains
+    args:
+      rel: test_app.py
+      substring: TestClient
+  - name: pytest_passes
+    args:
+      rel: test_app.py
+  - name: mark_complete
+    args: {}
+  output_path: test_app.py
+  stages:
+  - name: write_tests
+    instruction: "Write `test_app.py` with this exact template:\n\n```python\nfrom\
+      \ fastapi.testclient import TestClient\nimport app as app_module\n\nclient =\
+      \ TestClient(app_module.app)\n\n\ndef test_create_and_list():\n    app_module.items.clear()\n\
+      \    app_module.next_id = 1\n    resp = client.post('/items', json={'name':\
+      \ 'x', 'price': 1.0})\n    assert resp.status_code == 200\n    resp = client.get('/items')\n\
+      \    assert resp.status_code == 200\n    assert len(resp.json()) == 1\n\n\n\
+      def test_404_on_missing():\n    app_module.items.clear()\n    resp = client.get('/items/999')\n\
+      \    assert resp.status_code == 404\n```\n\nCall write_file path='test_app.py'\
+      \ content=<the code above verbatim>."
+    context_files:
+    - app.py
+    max_iterations: 6
+- id: integration_check
+  assigned_to: tester
+  description: "STEP: Confirm the repo is complete. DO NOT modify any files.\nINPUTS:\
+    \ The entire workspace.\nOUTPUT: (no new file \u2014 this task only verifies)\n\
+    REQUIREMENT: Just call mark_complete. Gate postconditions run automatically: app.py\
+    \ imports cleanly, no module-scope code after `if __name__`, requirements.txt\
+    \ parses, test_app.py passes pytest.\nTOOLS: 1) mark_complete summary='integration\
+    \ OK' artifacts=[].\nAlways call mark_complete with artifacts=[\"(no new file\
+    \ \u2014 this task only verifies)\"] when done."
+  depends_on:
+  - build_delete
+  - write_requirements
+  - write_readme
+  - write_tests
+  precondition_descriptions: []
+  postcondition_descriptions: []
+  postconditions:
+  - name: python_imports
+    args:
+      rel: app.py
+  - name: no_code_after_main_block
+    args:
+      rel: app.py
+  - name: requirements_parse
+    args:
+      rel: requirements.txt
+  - name: pytest_passes
+    args:
+      rel: test_app.py
+  - name: mark_complete
+    args: {}

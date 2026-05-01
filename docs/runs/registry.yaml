@@ -1,0 +1,2179 @@
+schema_version: 1
+generated_by: scripts/extract_run_metadata.py
+cost_source_legend:
+  recorded: value parsed from log line
+  estimated: value from session-memory per-tier estimate; see findings.md
+  unknown: no model detected or no estimate available
+runs:
+- run_id: code-review.live
+  project: code-review
+  suffix: live
+  dir_path: <repo>/workspace/code-review
+  git:
+    commit_count: 6
+    first_iso: '2026-04-18T00:29:37+02:00'
+    last_iso: '2026-04-18T00:30:03+02:00'
+  log_paths:
+  - code_review_run.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 332.0
+  loopback_count: 0
+  tasks:
+  - name: review_bot_py
+    agent: reviewer
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: review_config_py
+    agent: reviewer
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: review_matrix_bridge_py
+    agent: reviewer
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: review_test_bot_commands_py
+    agent: reviewer
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: review_test_matrix_bridge_py
+    agent: reviewer
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Latest code-review base dir. Holds the most recent reviewer run's\nREPORT.md plus per-file reviews\
+    \ (bot.py.md, config.py.md,\nmatrix_bridge.py.md, test_bot_commands.py.md, test_matrix_bridge.py.md).\n\
+    Status: shipped artifacts but quality is 7B-bounded \u2014 the reviews\ndefault to \"looks clean\"\
+    \ on every file regardless of actual issues. See\nfindings.md \"what didn't\" section."
+- run_id: code-review.run1-noheader
+  project: code-review
+  suffix: run1-noheader
+  dir_path: <repo>/workspace/code-review.run1-noheader
+  git:
+    commit_count: 6
+    first_iso: '2026-04-18T00:25:49+02:00'
+    last_iso: '2026-04-18T00:26:20+02:00'
+  log_paths:
+  - code_review_run.run1.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 40.0
+  loopback_count: 0
+  tasks:
+  - name: review_bot_py
+    agent: reviewer
+    iterations: 2
+    success: false
+    tool_call_count: 1
+  - name: review_config_py
+    agent: reviewer
+    iterations: 2
+    success: false
+    tool_call_count: 1
+  - name: review_matrix_bridge_py
+    agent: reviewer
+    iterations: 2
+    success: false
+    tool_call_count: 1
+  - name: review_test_bot_commands_py
+    agent: reviewer
+    iterations: 2
+    success: false
+    tool_call_count: 1
+  - name: review_test_matrix_bridge_py
+    agent: reviewer
+    iterations: 2
+    success: false
+    tool_call_count: 1
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'First code-review flow run. The reviewer agent emitted markdown without
+
+    section headers, so the downstream REPORT.md aggregation produced an
+
+    unstructured wall. Aborted; suffix records the failure mode.
+
+    Outcome: ABORTED.'
+- run_id: code-review.run2-eos
+  project: code-review
+  suffix: run2-eos
+  dir_path: <repo>/workspace/code-review.run2-eos
+  git:
+    commit_count: 1
+    first_iso: '2026-04-18T00:27:47+02:00'
+    last_iso: '2026-04-18T00:27:47+02:00'
+  log_paths:
+  - code_review_run.run2.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 42.0
+  loopback_count: 0
+  tasks:
+  - name: review_bot_py
+    agent: reviewer
+    iterations: 1
+    success: false
+    tool_call_count: 0
+  - name: review_config_py
+    agent: reviewer
+    iterations: 1
+    success: false
+    tool_call_count: 0
+  - name: review_matrix_bridge_py
+    agent: reviewer
+    iterations: 1
+    success: false
+    tool_call_count: 0
+  - name: review_test_bot_commands_py
+    agent: reviewer
+    iterations: 1
+    success: false
+    tool_call_count: 0
+  - name: review_test_matrix_bridge_py
+    agent: reviewer
+    iterations: 1
+    success: false
+    tool_call_count: 0
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Second code-review flow run. End-of-stream cut-off \u2014 reviewer's response\ntruncated mid-sentence.\
+    \ 7B incoming token budget likely exceeded per\nfile (the bot.py file under review was nearly 4 KB;\
+    \ with system prompt +\nreview template it pushed past num_ctx).\nOutcome: ABORTED. The code-review\
+    \ flow was never confirmed reference-\nquality on 7B; the practical conclusion is that code review\
+    \ of this\nshape is not 7B-tractable."
+- run_id: discord-bot-full.live
+  project: discord-bot-full
+  suffix: live
+  dir_path: <repo>/workspace/discord-bot-full
+  git:
+    commit_count: 23
+    first_iso: '2026-04-18T00:05:59+02:00'
+    last_iso: '2026-04-18T00:14:25+02:00'
+  log_paths:
+  - full_bot_run.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 597.0
+  loopback_count: 0
+  tasks:
+  - name: build_bridge_send
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_bridge_skeleton
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_cmd_abort
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_cmd_comment
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_cmd_help
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_cmd_note
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_cmd_pause
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_cmd_redirect
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_cmd_resume
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_cmd_review
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_config
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_skeleton
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: design_bridge_spec
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: design_commands_spec
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: design_modules
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 4
+  - name: fetch_commands
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: fetch_intro
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: fetch_nio
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: integration_check
+    agent: tester
+    iterations: 1
+    success: true
+    tool_call_count: 0
+  - name: write_readme
+    agent: impl
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: write_requirements
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: write_tests_bridge
+    agent: tester
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: write_tests_commands
+    agent: tester
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 17 (lessons-learned.md). **23/23 zero loopbacks. ~600s, 80k/3.9k. REFERENCE
+
+    SCALE-UP RUN.** Multi-module (config.py + matrix_bridge.py + bot.py + two
+
+    test files), eight slash commands bridging Agora''s /agora command surface
+
+    via matrix-nio. Every task passed first attempt. 4/4 pytest green on
+
+    shipped code. Two innovations made this work on the same 7B that
+
+    previously hit the ceiling: (a) in-phase auto-retry absorbing two
+
+    transient flakes that would have needed cross-phase loopbacks before,
+
+    (b) staging every Python-producing task with a literal template so the
+
+    architect''s "design" steps couldn''t return empty.
+
+    Outcome: DONE first-pass.'
+- run_id: discord-bot-full.run1-aborted
+  project: discord-bot-full
+  suffix: run1-aborted
+  dir_path: <repo>/workspace/discord-bot-full.run1-aborted
+  git:
+    commit_count: 9
+    first_iso: '2026-04-17T23:47:12+02:00'
+    last_iso: '2026-04-17T23:53:12+02:00'
+  log_paths:
+  - full_bot_run.run1.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 380.0
+  loopback_count: 0
+  tasks:
+  - name: build_bridge_send
+    agent: impl
+    iterations: 1
+    success: false
+    tool_call_count: 0
+  - name: build_bridge_skeleton
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: build_config
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: design_bridge_spec
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: design_commands_spec
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: design_modules
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 4
+  - name: fetch_commands
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: fetch_intro
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: fetch_nio
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Pre-Run-17 trial (2026-04-17 23:47). 8/12 of the early DAG completed
+
+    before build_bridge_send failed; user aborted to inspect the failure
+
+    rather than letting loopback exhaust. The build_bridge_send failure
+
+    surfaced from the matrix-nio bridge complexity that Run 17 later
+
+    handled cleanly with literal-template staging.
+
+    Outcome: USER ABORTED.'
+- run_id: discord-bot-full.run2-killed
+  project: discord-bot-full
+  suffix: run2-killed
+  dir_path: <repo>/workspace/discord-bot-full.run2-killed
+  git:
+    commit_count: 8
+    first_iso: '2026-04-17T23:56:14+02:00'
+    last_iso: '2026-04-18T00:04:23+02:00'
+  log_paths:
+  - full_bot_run.run2.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 497.0
+  loopback_count: 0
+  tasks:
+  - name: build_bridge_skeleton
+    agent: impl
+    iterations: 0
+    success: null
+    tool_call_count: 0
+  - name: build_config
+    agent: impl
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: design_bridge_spec
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 4
+  - name: design_commands_spec
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: design_modules
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 4
+  - name: fetch_commands
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: fetch_intro
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  - name: fetch_nio
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Pre-Run-17 trial (2026-04-17 23:56 - 2026-04-18 00:04). 7/9 tasks
+
+    before user killed the run. Same failure mode as run1-aborted:
+
+    design_bridge_spec returned empty after reading a 64 KB docs page,
+
+    cascading downstream.
+
+    Outcome: USER KILLED.'
+- run_id: discord-bot.run1
+  project: discord-bot
+  suffix: run1
+  dir_path: <repo>/workspace/discord-bot.run1
+  git:
+    commit_count: 0
+    first_iso: ''
+    last_iso: ''
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 1 (lessons-learned.md). First-ever Agora run. 6/11 first-pass tasks; the
+
+    rest landed via user `approve` reactions in Element. Established the
+
+    postcondition pattern: tasks FAIL silently if mark_complete misses, so
+
+    the four static postconditions (file_exists, file_contains, mark_complete,
+
+    py_compiles) were added as the first hardening round.
+
+    Outcome: DONE via user approve.'
+- run_id: discord-bot.run10
+  project: discord-bot
+  suffix: run10
+  dir_path: <repo>/workspace/discord-bot.run10
+  git:
+    commit_count: 3
+    first_iso: '2026-04-17T16:48:37+02:00'
+    last_iso: '2026-04-17T16:48:46+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Run 10 (lessons-learned.md). 10/12. Round 6: Task.output_path banner in\nprompt + soft-warn on write_file\
+    \ path mismatch \u2014 model kept writing\n`kb/design` instead of `design/modules.md`.\nOutcome: DONE."
+- run_id: discord-bot.run11
+  project: discord-bot
+  suffix: run11
+  dir_path: <repo>/workspace/discord-bot.run11
+  git:
+    commit_count: 10
+    first_iso: '2026-04-17T16:59:08+02:00'
+    last_iso: '2026-04-17T17:02:52+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Run 11 (lessons-learned.md). 9/12 FAILED. Transcription bug:\n`discord.InterACTION` typo, duplicated\
+    \ `import random` after the model\nre-emitted 25 lines of bot.py via write_file. 938s, 300k/16k tokens.\n\
+    This run motivated Round 8 \u2014 the three edit primitives (replace,\ninsert_before, append) \u2014\
+    \ and is the canonical case study for \"templates\n+ edit primitives reduce transcription bugs\".\n\
+    Outcome: FAILED."
+- run_id: discord-bot.run12
+  project: discord-bot
+  suffix: run12
+  dir_path: <repo>/workspace/discord-bot.run12
+  git:
+    commit_count: 17
+    first_iso: '2026-04-17T17:22:34+02:00'
+    last_iso: '2026-04-17T17:27:51+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 12 (lessons-learned.md). 12/12 via 1 loopback. 458s, 54k/3k tokens.
+
+    First run with edit primitives in place; no transcription bugs.
+
+    Outcome: DONE.'
+- run_id: discord-bot.run13
+  project: discord-bot
+  suffix: run13
+  dir_path: <repo>/workspace/discord-bot.run13
+  git:
+    commit_count: 14
+    first_iso: '2026-04-17T18:06:43+02:00'
+    last_iso: '2026-04-17T18:10:16+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 13 (lessons-learned.md). **12/12 zero loopbacks. 316s, 47k/2.4k tokens.
+
+    REFERENCE GREEN RUN.** Round 9 surfaces (artifact snapshot + write-event
+
+    cards + per-task /agora comment) + Round 10 reactions/replies parser +
+
+    Round 11 no_code_after_main_block AST detector all converging. The
+
+    narrative model "what working looks like".
+
+    Outcome: DONE first-pass.'
+- run_id: discord-bot.run2
+  project: discord-bot
+  suffix: run2
+  dir_path: <repo>/workspace/discord-bot.run2
+  git:
+    commit_count: 9
+    first_iso: '2026-04-16T17:35:54+02:00'
+    last_iso: '2026-04-16T17:48:27+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 2 (lessons-learned.md). 9/12. Round 2 changes: unified work_dir + git
+
+    repo (was separate before), AST undefined-name check, DAG reshape so
+
+    documentation-task failures don''t block downstream code tasks.
+
+    Outcome: DONE.'
+- run_id: discord-bot.run3
+  project: discord-bot
+  suffix: run3
+  dir_path: <repo>/workspace/discord-bot.run3
+  git:
+    commit_count: 8
+    first_iso: '2026-04-16T18:09:48+02:00'
+    last_iso: '2026-04-16T18:17:56+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Run 3 (lessons-learned.md). 9/12 first pass but FAILED via cascade: a\nsingle LLM flake on fetch_commands\
+    \ cascaded through the whole DAG\nbecause fetch wasn't atomic (had to be echoed back as a tool arg,\
+    \ which\nthe model then truncated). This run is the origin of the `save_as`\nprimitive and bounded\
+    \ HTTP retries \u2014 Round 5 in the evolution table.\nOutcome: FAILED. Drove the most consequential\
+    \ framework change."
+- run_id: discord-bot.run4
+  project: discord-bot
+  suffix: run4
+  dir_path: <repo>/workspace/discord-bot.run4
+  git:
+    commit_count: 9
+    first_iso: '2026-04-16T18:28:03+02:00'
+    last_iso: '2026-04-16T18:42:25+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 4 (lessons-learned.md). 7/12 FAILED via loopback exhaust. Round-4 shift:
+
+    runtime tools (check_python, git_*, mark_complete) were hidden from the
+
+    LLM''s tool manifest because the previous round''s prompts encouraged
+
+    over-engineering and tools-as-verbs distracted the model.
+
+    Outcome: FAILED.'
+- run_id: discord-bot.run5
+  project: discord-bot
+  suffix: run5
+  dir_path: <repo>/workspace/discord-bot.run5
+  git:
+    commit_count: 5
+    first_iso: '2026-04-16T19:00:26+02:00'
+    last_iso: '2026-04-16T19:08:33+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 5 (lessons-learned.md). 9/12 FAILED. Fetch issue still recurring before
+
+    save_as was integrated.
+
+    Outcome: FAILED.'
+- run_id: discord-bot.run6-coder
+  project: discord-bot
+  suffix: run6-coder
+  dir_path: <repo>/workspace/discord-bot.run6-coder
+  git:
+    commit_count: 1
+    first_iso: '2026-04-16T19:21:34+02:00'
+    last_iso: '2026-04-16T19:21:34+02:00'
+  log_paths: []
+  model: qwen2.5-coder:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 6 (lessons-learned.md). qwen2.5-coder:7b instead of instruct. 0/12
+
+    aborted: coder model emits tool calls as JSON-in-content rather than
+
+    tool-call format. JSON-in-content fallback parser exists but coder still
+
+    produced worse results than instruct. Aborted; not worth more time
+
+    without a fundamentally different model.
+
+    Outcome: ABORTED.'
+- run_id: discord-bot.run7
+  project: discord-bot
+  suffix: run7
+  dir_path: <repo>/workspace/discord-bot.run7
+  git:
+    commit_count: 7
+    first_iso: '2026-04-16T19:24:01+02:00'
+    last_iso: '2026-04-16T19:31:25+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 7 (lessons-learned.md). 7/12 FAILED.
+
+    Outcome: FAILED.'
+- run_id: discord-bot.run8
+  project: discord-bot
+  suffix: run8
+  dir_path: <repo>/workspace/discord-bot.run8
+  git:
+    commit_count: 2
+    first_iso: '2026-04-17T16:14:24+02:00'
+    last_iso: '2026-04-17T16:15:03+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 8 (lessons-learned.md). 8/12 stopped early.
+
+    Outcome: STOPPED.'
+- run_id: discord-bot.run9
+  project: discord-bot
+  suffix: run9
+  dir_path: <repo>/workspace/discord-bot.run9
+  git:
+    commit_count: 5
+    first_iso: '2026-04-17T16:31:41+02:00'
+    last_iso: '2026-04-17T16:34:48+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 9 (lessons-learned.md). 9/12 first pass. After Round 5 (save_as +
+
+    bounded retry), re-run with fetch hardening landed at 10/12 user-
+
+    approved.
+
+    Outcome: DONE (approved).'
+- run_id: fastapi-crud.live
+  project: fastapi-crud
+  suffix: live
+  dir_path: <repo>/workspace/fastapi-crud
+  git:
+    commit_count: 14
+    first_iso: '2026-04-17T23:04:40+02:00'
+    last_iso: '2026-04-17T23:09:12+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Run 16 (lessons-learned.md). **13/13 via 1 loopback. 359s, 57k/3.7k. REFERENCE\nSECOND-DOMAIN GREEN\
+    \ RUN with pytest passing on produced code.** Round 13\nnarration-redirect (`_maybe_queue_narration_redirect`)\
+    \ addressed the\n\"Let's read app.py...\" stalls. The base dir (no .runN suffix) holds\nthe canonical\
+    \ post-Run-16 state \u2014 user moved on to discord-bot-full\nrather than archiving with a number.\n\
+    Outcome: DONE first-pass with pytest green."
+- run_id: fastapi-crud-from-yaml.live
+  project: fastapi-crud-from-yaml
+  suffix: live
+  dir_path: <repo>/workspace/fastapi-crud-from-yaml
+  git:
+    commit_count: 15
+    first_iso: '2026-04-18T12:09:17+02:00'
+    last_iso: '2026-04-18T12:15:15+02:00'
+  log_paths: []
+  model: null
+  provider: null
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: null
+    source: unknown
+    note: model not detected from logs
+  notes: "YAML-driven re-run of FastAPI-CRUD via a flow file rather than a\nPython runner. Used to validate\
+    \ that flows/fastapi-crud.plan.yaml\nconsumed by run_plan.py reproduces the Run-16-equivalent shape.\
+    \ Smoke\ntest for the plan-runner refactor \u2014 not a comparison data point in\nitself."
+- run_id: fastapi-crud.run14
+  project: fastapi-crud
+  suffix: run14
+  dir_path: <repo>/workspace/fastapi-crud.run14
+  git:
+    commit_count: 14
+    first_iso: '2026-04-17T18:27:45+02:00'
+    last_iso: '2026-04-17T18:35:52+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 14 (lessons-learned.md). 9/13 FAILED via git_commit bug: `nothing to
+
+    commit` exception escaped the auto-hook. 548s, 45k/2k. Drove Round 12:
+
+    try/except wrap on git_commit + /agora review reject aliases.
+
+    Outcome: FAILED.'
+- run_id: fastapi-crud.run15
+  project: fastapi-crud
+  suffix: run15
+  dir_path: <repo>/workspace/fastapi-crud.run15
+  git:
+    commit_count: 16
+    first_iso: '2026-04-17T18:38:45+02:00'
+    last_iso: '2026-04-17T18:43:55+02:00'
+  log_paths: []
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Run 15 (lessons-learned.md). 10/13 DONE (approved with failures). 397s,
+
+    77k/3.7k. Validated /agora review reject/retry/ok alias parsing.
+
+    Outcome: DONE (approved despite gaps).'
+- run_id: plan-builder.live
+  project: plan-builder
+  suffix: live
+  dir_path: <repo>/workspace/plan-builder
+  git:
+    commit_count: 4
+    first_iso: '2026-04-22T19:56:25+02:00'
+    last_iso: '2026-04-22T19:58:19+02:00'
+  log_paths:
+  - planner_gpt4o.log
+  - voter_gpt4o.log
+  model: gpt-4o
+  provider: openai
+  duration_seconds: 173.0
+  loopback_count: 0
+  tasks:
+  - name: author_agents
+    agent: architect
+    iterations: 6
+    success: true
+    tool_call_count: 3
+  - name: author_tasks
+    agent: architect
+    iterations: 11
+    success: true
+    tool_call_count: 14
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 3
+  - name: finalize_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 5
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: review_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: validate_agents_vs_tasks
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.4
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Latest plan-builder base dir. Holds the most recent successful
+
+    plan-builder output (post-run-14 state). Use as the canonical plan-
+
+    builder artifact set when sampling for narrative or rerun tests.'
+- run_id: plan-builder.run1-silent
+  project: plan-builder
+  suffix: run1-silent
+  dir_path: <repo>/workspace/plan-builder.run1-silent
+  git:
+    commit_count: 2
+    first_iso: '2026-04-18T12:28:01+02:00'
+    last_iso: '2026-04-18T12:28:09+02:00'
+  log_paths:
+  - plan_builder_run.run1.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 14.0
+  loopback_count: 0
+  tasks:
+  - name: ask_decisions
+    agent: architect
+    iterations: 0
+    success: null
+    tool_call_count: 1
+  - name: gather_context
+    agent: architect
+    iterations: 2
+    success: true
+    tool_call_count: 1
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'First plan-builder flow run, 2026-04-18, qwen2.5:7b. "Silent" failure:
+
+    architect produced no output and the framework didn''t notice fast
+
+    enough. Drove introduction of llm-empty-return guard.
+
+    Outcome: ABORTED.'
+- run_id: plan-builder.run10-api-spec-deleted
+  project: plan-builder
+  suffix: run10-api-spec-deleted
+  dir_path: <repo>/workspace/plan-builder.run10-api-spec-deleted
+  git:
+    commit_count: 7
+    first_iso: '2026-04-22T18:07:36+02:00'
+    last_iso: '2026-04-22T18:10:18+02:00'
+  log_paths:
+  - planner_gpt4omini_c5e.log
+  - voter_gpt4omini_c5e.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 239.0
+  loopback_count: 0
+  tasks:
+  - name: author_agents
+    agent: architect
+    iterations: 6
+    success: true
+    tool_call_count: 3
+  - name: author_tasks
+    agent: architect
+    iterations: 11
+    success: true
+    tool_call_count: 10
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 8
+    success: true
+    tool_call_count: 10
+  - name: finalize_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: review_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: validate_agents_vs_tasks
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Architect called delete_file on plan/api_spec.md after define_api
+
+    succeeded. Drove tool lockdown: ALL file-mutation tools (write_file,
+
+    delete_file, edit_file_*, fetch_url, add_class*, add_function*) hidden
+
+    from author_* stages. 4o-mini.
+
+    Outcome: COMPLETED with cleanup needed; framework hardened.'
+- run_id: plan-builder.run11-plan-dir-path
+  project: plan-builder
+  suffix: run11-plan-dir-path
+  dir_path: <repo>/workspace/plan-builder.run11-plan-dir-path
+  git:
+    commit_count: 5
+    first_iso: '2026-04-22T18:20:53+02:00'
+    last_iso: '2026-04-22T18:23:04+02:00'
+  log_paths:
+  - planner_gpt4omini_c5f.log
+  - voter_gpt4omini_c5f.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 475.0
+  loopback_count: 0
+  tasks:
+  - name: author_agents
+    agent: architect
+    iterations: 6
+    success: true
+    tool_call_count: 3
+  - name: author_tasks
+    agent: architect
+    iterations: 12
+    success: true
+    tool_call_count: 8
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 7
+    success: true
+    tool_call_count: 8
+  - name: finalize_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: review_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: validate_agents_vs_tasks
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Architect wrote `output_path: plan/core_domain_module.py`. C4a only
+
+    checked src/*.py at the time, so it missed. Drove C4a expansion to
+
+    cover any non-test .py file. 4o-mini.
+
+    Outcome: COMPLETED with placement defect; framework hardened.'
+- run_id: plan-builder.run12-phase2-wired
+  project: plan-builder
+  suffix: run12-phase2-wired
+  dir_path: <repo>/workspace/plan-builder.run12-phase2-wired
+  git:
+    commit_count: 7
+    first_iso: '2026-04-22T18:39:59+02:00'
+    last_iso: '2026-04-22T18:46:20+02:00'
+  log_paths:
+  - planner_gpt4omini_c5g.log
+  - voter_gpt4omini_c5g.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 749.0
+  loopback_count: 1
+  tasks:
+  - name: author_agents
+    agent: architect
+    iterations: 6
+    success: true
+    tool_call_count: 3
+  - name: author_tasks
+    agent: architect
+    iterations: 13
+    success: true
+    tool_call_count: 9
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 8
+    success: true
+    tool_call_count: 43
+  - name: finalize_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: review_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: validate_agents_vs_tasks
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'First run with Phase 2 (return-type drift rejection in fill_test_body).
+
+    4o-mini. Phase 2 caught a planted-test test that asserted dict where the
+
+    spec said tuple. Worked correctly.
+
+    Outcome: COMPLETED, Phase 2 validated.'
+- run_id: plan-builder.run13-test-module
+  project: plan-builder
+  suffix: run13-test-module
+  dir_path: <repo>/workspace/plan-builder.run13-test-module
+  git:
+    commit_count: 5
+    first_iso: '2026-04-22T19:39:16+02:00'
+    last_iso: '2026-04-22T19:41:36+02:00'
+  log_paths:
+  - planner_phase23.log
+  - voter_phase23.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 141.0
+  loopback_count: 0
+  tasks:
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 8
+    success: false
+    tool_call_count: 19
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Architect kept including `## module: src/tests/test_url_shortener.py`
+
+    sections in the api_spec across three retries despite C5 rejection.
+
+    Drove the auto-strip fix: `strip_test_module_sections` runs in
+
+    write_file when the path is plan/api_spec.md. 4o-mini.
+
+    Outcome: ABORTED retries; framework hardened with auto-heal.'
+- run_id: plan-builder.run14-4omini-clean
+  project: plan-builder
+  suffix: run14-4omini-clean
+  dir_path: <repo>/workspace/plan-builder.run14-4omini-clean
+  git:
+    commit_count: 4
+    first_iso: '2026-04-22T19:46:00+02:00'
+    last_iso: '2026-04-22T19:47:52+02:00'
+  log_paths:
+  - planner_phase23b.log
+  - voter_phase23b.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 165.0
+  loopback_count: 0
+  tasks:
+  - name: author_agents
+    agent: architect
+    iterations: 6
+    success: true
+    tool_call_count: 3
+  - name: author_tasks
+    agent: architect
+    iterations: 12
+    success: true
+    tool_call_count: 8
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: finalize_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: review_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: validate_agents_vs_tasks
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "**REFERENCE PLAN-BUILDER GREEN RUN.** 4o-mini, all C1/C4a/C4b/C5/Phase-2\ngates active, structural\
+    \ validation in place. Plan came out clean \u2014\napi_spec well-formed, DAG covers all brief deliverables.\
+    \ Cost ~$0.025.\nThe \"what plan-builder looks like working\" reference for findings.md.\nOutcome:\
+    \ COMPLETED CLEAN."
+- run_id: plan-builder.run2-polls-broken
+  project: plan-builder
+  suffix: run2-polls-broken
+  dir_path: <repo>/workspace/plan-builder.run2-polls-broken
+  git:
+    commit_count: 2
+    first_iso: '2026-04-18T12:34:39+02:00'
+    last_iso: '2026-04-18T12:34:51+02:00'
+  log_paths:
+  - plan_builder_run.run2.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 660.0
+  loopback_count: 0
+  tasks:
+  - name: gather_context
+    agent: architect
+    iterations: 5
+    success: true
+    tool_call_count: 5
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: null
+    tool_call_count: 4
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Second run, 2026-04-18, qwen2.5:7b. Discovered MSC3381 poll handling\nbug \u2014 voter agent\
+    \ couldn't parse poll responses. Drove bugfix in\nobserve/polls.py.\nOutcome: ABORTED."
+- run_id: plan-builder.run3-pre-C
+  project: plan-builder
+  suffix: run3-pre-C
+  dir_path: <repo>/workspace/plan-builder.run3-pre-C
+  git:
+    commit_count: 4
+    first_iso: '2026-04-21T06:41:26+02:00'
+    last_iso: '2026-04-21T06:43:30+02:00'
+  log_paths:
+  - planner_sprint75d.log
+  - voter_sprint75d.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 496.0
+  loopback_count: 0
+  tasks:
+  - name: author_agents
+    agent: architect
+    iterations: 6
+    success: true
+    tool_call_count: 3
+  - name: author_tasks
+    agent: architect
+    iterations: 9
+    success: true
+    tool_call_count: 5
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 5
+    success: true
+    tool_call_count: 7
+  - name: finalize_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 3
+  - name: research_library
+    agent: architect
+    iterations: 5
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: review_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: validate_agents_vs_tasks
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'Pre-"approach C" run (2026-04-21, qwen2.5:7b via sprint75d). Plan-builder
+
+    produced a plan that EXECUTED but was broken: api_spec contained
+
+    duplicate module headers + free-text prose that parsed fine but emitted
+
+    a useless DAG. This run is the immediate motivation for Approach C
+
+    (C1 brief-deliverable predicate + C5 api_spec validity hardening).
+
+    Outcome: PRODUCED A PLAN BUT IT WAS STRUCTURALLY BROKEN.'
+- run_id: plan-builder.run4-C-7b-failed
+  project: plan-builder
+  suffix: run4-C-7b-failed
+  dir_path: <repo>/workspace/plan-builder.run4-C-7b-failed
+  git:
+    commit_count: 4
+    first_iso: '2026-04-22T12:47:43+02:00'
+    last_iso: '2026-04-22T12:49:53+02:00'
+  log_paths:
+  - planner_sprint_C.log
+  - voter_sprint_C.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 803.0
+  loopback_count: 1
+  tasks:
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 3
+    success: false
+    tool_call_count: 9
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 4
+  - name: research_library
+    agent: architect
+    iterations: 6
+    success: true
+    tool_call_count: 5
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "First post-Approach-C run on 7B (2026-04-22, qwen2.5:7b). Even with\nC1 predicate explicitly\
+    \ listing brief deliverables, the 7B model could\nnot absorb the feedback \u2014 produced the same\
+    \ broken plan shape three\nretries in a row. Validated the diagnosis \"framework is fine, model is\n\
+    the bottleneck\" and gated further plan-builder work on 14B+ hardware.\nOutcome: FAILED. Confirmed\
+    \ capability ceiling."
+- run_id: plan-builder.run5-gpt4omini-messy
+  project: plan-builder
+  suffix: run5-gpt4omini-messy
+  dir_path: <repo>/workspace/plan-builder.run5-gpt4omini-messy
+  git:
+    commit_count: 10
+    first_iso: '2026-04-22T16:17:28+02:00'
+    last_iso: '2026-04-22T16:20:52+02:00'
+  log_paths:
+  - planner_gpt4omini.log
+  - voter_gpt4omini.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 350.0
+  loopback_count: 0
+  tasks:
+  - name: author_agents
+    agent: architect
+    iterations: 6
+    success: true
+    tool_call_count: 3
+  - name: author_tasks
+    agent: architect
+    iterations: 11
+    success: true
+    tool_call_count: 26
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 5
+  - name: finalize_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 5
+    success: true
+    tool_call_count: 5
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: review_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: validate_agents_vs_tasks
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "First gpt-4o-mini run on plan-builder (2026-04-22). Completed \u2014 plan\ncame out coherent\
+    \ \u2014 but had the \"messy\" hallmark: api_spec sections\nwere concatenated rather than split per\
+    \ module, so the executor\nscaffolded only the first module. Cost ~$0.025/run. Drove C5\nduplicate-module-header\
+    \ rejection.\nOutcome: COMPLETED with structural defect."
+- run_id: plan-builder.run6-c5-tight-iter
+  project: plan-builder
+  suffix: run6-c5-tight-iter
+  dir_path: <repo>/workspace/plan-builder.run6-c5-tight-iter
+  git:
+    commit_count: 5
+    first_iso: '2026-04-22T17:08:58+02:00'
+    last_iso: '2026-04-22T17:11:19+02:00'
+  log_paths:
+  - planner_gpt4omini_c5.log
+  - voter_gpt4omini_c5.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 141.0
+  loopback_count: 0
+  tasks:
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 5
+    success: false
+    tool_call_count: 14
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "C5 active + tightened max_iterations (5\u21928 on define_api). 4o-mini.\nArchitect kept retrying\
+    \ without absorbing C5 feedback. Showed C5\nrejection alone wasn't enough; the architect needed instruction-level\n\
+    guidance to rewrite-on-retry rather than just edit.\nOutcome: STOPPED EARLY."
+- run_id: plan-builder.run7-c5-edit-loop
+  project: plan-builder
+  suffix: run7-c5-edit-loop
+  dir_path: <repo>/workspace/plan-builder.run7-c5-edit-loop
+  git:
+    commit_count: 11
+    first_iso: '2026-04-22T17:16:42+02:00'
+    last_iso: '2026-04-22T17:25:04+02:00'
+  log_paths:
+  - planner_gpt4omini_c5b.log
+  - voter_gpt4omini_c5b.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 506.0
+  loopback_count: 0
+  tasks:
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 8
+    success: false
+    tool_call_count: 39
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 3
+  - name: research_library
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'C5 active. Architect got stuck in edit_file_replace loops because
+
+    old_string wasn''t unique. 11/21 tasks. Drove the edit-tool ergonomics
+
+    fix: `_format_match_locations` now shows line numbers of every
+
+    candidate match in the error message + upsert-tool hints.
+
+    Outcome: STOPPED in edit loop. Triggered the most user-visible 4o-mini
+
+    UX improvement.'
+- run_id: plan-builder.run8-c5-minimal-instr
+  project: plan-builder
+  suffix: run8-c5-minimal-instr
+  dir_path: <repo>/workspace/plan-builder.run8-c5-minimal-instr
+  git:
+    commit_count: 4
+    first_iso: '2026-04-22T17:28:56+02:00'
+    last_iso: '2026-04-22T17:30:58+02:00'
+  log_paths:
+  - planner_gpt4omini_c5c.log
+  - voter_gpt4omini_c5c.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 490.0
+  loopback_count: 0
+  tasks:
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 8
+    success: false
+    tool_call_count: 40
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 5
+    success: true
+    tool_call_count: 5
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "C5 active + minimal instructions. Tested whether a leaner system prompt\nhelped or hurt. Result:\
+    \ hurt \u2014 without explicit \"rewrite-on-retry\"\nguidance the architect made the same edits over\
+    \ and over. 4o-mini.\nOutcome: STOPPED."
+- run_id: plan-builder.run9-bullet-slipped
+  project: plan-builder
+  suffix: run9-bullet-slipped
+  dir_path: <repo>/workspace/plan-builder.run9-bullet-slipped
+  git:
+    commit_count: 12
+    first_iso: '2026-04-22T17:53:58+02:00'
+    last_iso: '2026-04-22T17:59:12+02:00'
+  log_paths:
+  - planner_gpt4omini_c5d.log
+  - voter_gpt4omini_c5d.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 344.0
+  loopback_count: 0
+  tasks:
+  - name: author_agents
+    agent: architect
+    iterations: 6
+    success: true
+    tool_call_count: 3
+  - name: author_tasks
+    agent: architect
+    iterations: 14
+    success: true
+    tool_call_count: 40
+  - name: decide_library
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: decide_storage
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: define_api
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 5
+  - name: finalize_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: gather_context
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  - name: research_library
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 4
+  - name: review_brief
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: review_plan
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  - name: validate_agents_vs_tasks
+    agent: architect
+    iterations: 0
+    success: true
+    tool_call_count: 0
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "A markdown bullet (`- src/cli.py`) slipped past C5 validation because\n`ast.parse` accepts it\
+    \ as `-(src/cli.py)` (binary op). Drove\n`_find_stray_top_level_statements` in plan/api_spec.py \u2014\
+    \ rejects any\ntop-level node that isn't ClassDef/FunctionDef/Import/docstring.\n4o-mini.\nOutcome:\
+    \ COMPLETED with structural defect; framework hardened in\nresponse."
+- run_id: repos.run1
+  project: repos
+  suffix: run1
+  dir_path: <repo>/workspace/repos.run1
+  git:
+    commit_count: 0
+    first_iso: ''
+    last_iso: ''
+  log_paths: []
+  model: null
+  provider: null
+  duration_seconds: null
+  loopback_count: 0
+  tasks: []
+  cost:
+    value_usd: null
+    source: unknown
+    note: model not detected from logs
+  notes: 'Legacy directory from a pre-archive workspace layout where each project
+
+    lived under a `repos/` parent. Empty inside; no git history, no logs.
+
+    Kept in the registry as evidence that the workspace layout changed
+
+    early in the project (around 2026-04-16, before Run 1 proper).
+
+    Outcome: GHOST DIR, no run.'
+- run_id: url-shortener-mvp.live
+  project: url-shortener-mvp
+  suffix: live
+  dir_path: <repo>/workspace/url-shortener-mvp
+  git:
+    commit_count: 3
+    first_iso: '2026-04-22T20:01:00+02:00'
+    last_iso: '2026-04-22T20:02:44+02:00'
+  log_paths:
+  - executor_gpt4o.log
+  model: gpt-4o
+  provider: openai
+  duration_seconds: 116.0
+  loopback_count: 0
+  tasks:
+  - name: implement_core_domain_module
+    agent: implementer
+    iterations: 16
+    success: false
+    tool_call_count: 36
+  - name: pytest_tests_contract
+    agent: tester
+    iterations: 7
+    success: true
+    tool_call_count: 14
+  - name: setup_project
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 7
+  cost:
+    value_usd: 0.4
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Latest URL-shortener base dir. Holds the gpt-4o run state \u2014 structural\ngates all passed,\
+    \ 4/5 contract tests passed, 1 tester-tuple-shape bug.\nThe cross-tier comparison anchor. Per session\
+    \ memory: ~$0.40/run cost,\n~16k effective working memory used (out of 128k context window)."
+- run_id: url-shortener-mvp.run1-7b-broken
+  project: url-shortener-mvp
+  suffix: run1-7b-broken
+  dir_path: <repo>/workspace/url-shortener-mvp.run1-7b-broken
+  git:
+    commit_count: 2
+    first_iso: '2026-04-21T23:09:47+02:00'
+    last_iso: '2026-04-21T23:09:58+02:00'
+  log_paths:
+  - executor_sprint77c.log
+  model: qwen2.5:7b
+  provider: ollama
+  duration_seconds: 3722.0
+  loopback_count: 1
+  tasks:
+  - name: core_domain_module
+    agent: implementer
+    iterations: 8
+    success: false
+    tool_call_count: 7
+  - name: pytest_tests_contract
+    agent: tester
+    iterations: 6
+    success: true
+    tool_call_count: 5
+  - name: pytest_tests_test_add
+    agent: tester
+    iterations: 10
+    success: false
+    tool_call_count: 104
+  - name: pytest_tests_test_list
+    agent: tester
+    iterations: 9
+    success: false
+    tool_call_count: 83
+  - name: pytest_tests_test_lookup
+    agent: tester
+    iterations: 8
+    success: false
+    tool_call_count: 22
+  - name: setup_project
+    agent: architect
+    iterations: 4
+    success: true
+    tool_call_count: 5
+  cost:
+    value_usd: 0.0
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'First URL-shortener executor run on qwen2.5:7b (sprint77c log).
+
+    62-minute duration shows the run got stuck in long retry loops; 2/10
+
+    tasks completed. The CAPABILITY-CEILING BASELINE for cross-tier
+
+    comparison: identical DAG, what 7B does with it.
+
+    Outcome: BROKEN. Defines the floor.'
+- run_id: url-shortener-mvp.run2-editloop-killed
+  project: url-shortener-mvp
+  suffix: run2-editloop-killed
+  dir_path: <repo>/workspace/url-shortener-mvp.run2-editloop-killed
+  git:
+    commit_count: 3
+    first_iso: '2026-04-22T16:26:24+02:00'
+    last_iso: '2026-04-22T16:28:03+02:00'
+  log_paths:
+  - executor_gpt4omini.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 147.0
+  loopback_count: 0
+  tasks:
+  - name: core_domain_module
+    agent: implementer
+    iterations: 20
+    success: false
+    tool_call_count: 40
+  - name: pytest_tests_contract
+    agent: tester
+    iterations: 7
+    success: true
+    tool_call_count: 14
+  - name: setup_project
+    agent: architect
+    iterations: 5
+    success: true
+    tool_call_count: 4
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: 'First gpt-4o-mini run on URL-shortener (executor_gpt4omini.log).
+
+    Got stuck in edit_file_replace non-unique-match retry loop on the same
+
+    add_class output that triggered the path-mismatch warning during
+
+    setup_project. User killed. Drove the edit-tool ergonomics fix
+
+    (see plan-builder.run7-c5-edit-loop for the same fix on the planner
+
+    side).
+
+    Outcome: USER KILLED.'
+- run_id: url-shortener-mvp.run3-pre-c5
+  project: url-shortener-mvp
+  suffix: run3-pre-c5
+  dir_path: <repo>/workspace/url-shortener-mvp.run3-pre-c5
+  git:
+    commit_count: 3
+    first_iso: '2026-04-22T16:42:42+02:00'
+    last_iso: '2026-04-22T16:44:17+02:00'
+  log_paths:
+  - executor_gpt4omini_v2.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 145.0
+  loopback_count: 0
+  tasks:
+  - name: core_domain_module
+    agent: implementer
+    iterations: 17
+    success: false
+    tool_call_count: 39
+  - name: pytest_tests_contract
+    agent: tester
+    iterations: 5
+    success: true
+    tool_call_count: 13
+  - name: setup_project
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 4
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Second 4o-mini executor run (executor_gpt4omini_v2.log). Pre-C5\napi_spec validity hardening,\
+    \ so the plan it consumed had concatenated\nmodule sections \u2014 executor scaffolded one module\
+    \ then stopped.\nOutcome: PARTIAL."
+- run_id: url-shortener-mvp.run4-naming-mismatch
+  project: url-shortener-mvp
+  suffix: run4-naming-mismatch
+  dir_path: <repo>/workspace/url-shortener-mvp.run4-naming-mismatch
+  git:
+    commit_count: 4
+    first_iso: '2026-04-22T18:13:22+02:00'
+    last_iso: '2026-04-22T18:14:31+02:00'
+  log_paths:
+  - executor_gpt4omini_c5.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 100.0
+  loopback_count: 0
+  tasks:
+  - name: core_domain_module
+    agent: implementer
+    iterations: 10
+    success: false
+    tool_call_count: 16
+  - name: pytest_tests_contract
+    agent: tester
+    iterations: 3
+    success: true
+    tool_call_count: 6
+  - name: setup_project
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 2
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "4o-mini, after C5 + edit-tool fix (executor_gpt4omini_c5.log). Plan was\ncoherent but the architect\
+    \ wrote to a path that didn't match its\ndeclared output_path \u2014 catching this drove `_validate_src_path_in_api_spec`\n\
+    in plan/builder.py with structured error messages.\nOutcome: PARTIAL."
+- run_id: url-shortener-mvp.run6-phase2-wired
+  project: url-shortener-mvp
+  suffix: run6-phase2-wired
+  dir_path: <repo>/workspace/url-shortener-mvp.run6-phase2-wired
+  git:
+    commit_count: 2
+    first_iso: '2026-04-22T18:52:24+02:00'
+    last_iso: '2026-04-22T18:52:29+02:00'
+  log_paths:
+  - executor_gpt4omini_c5final.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 109.0
+  loopback_count: 0
+  tasks:
+  - name: core_domain_module
+    agent: implementer
+    iterations: 12
+    success: false
+    tool_call_count: 28
+  - name: pytest_tests_contract
+    agent: tester
+    iterations: 4
+    success: true
+    tool_call_count: 11
+  - name: setup_project
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 3
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "4o-mini with Phase-2 (return-type drift) wired (executor_gpt4omini_c5final.log).\nBrief run,\
+    \ 5 seconds \u2014 plan was structurally valid this time but\nsomething else cut the run short. (Run\
+    \ 5 was skipped in the numbering;\nuser reused 6 as the next sequential index after a different intervention.)\n\
+    Outcome: SHORT."
+- run_id: url-shortener-mvp.run7-4omini-typo
+  project: url-shortener-mvp
+  suffix: run7-4omini-typo
+  dir_path: <repo>/workspace/url-shortener-mvp.run7-4omini-typo
+  git:
+    commit_count: 2
+    first_iso: '2026-04-22T19:50:09+02:00'
+    last_iso: '2026-04-22T19:50:15+02:00'
+  log_paths:
+  - executor_phase23.log
+  model: gpt-4o-mini
+  provider: openai
+  duration_seconds: 152.0
+  loopback_count: 0
+  tasks:
+  - name: core_domain_module
+    agent: implementer
+    iterations: 19
+    success: false
+    tool_call_count: 54
+  - name: pytest_tests_contract
+    agent: tester
+    iterations: 4
+    success: true
+    tool_call_count: 11
+  - name: setup_project
+    agent: architect
+    iterations: 3
+    success: true
+    tool_call_count: 3
+  cost:
+    value_usd: 0.025
+    source: estimated
+    note: from session memory; per-run figure
+  notes: "Final 4o-mini URL-shortener run (executor_phase23.log). Plan was clean,\nexecutor ran, but the\
+    \ produced code had a value-level typo the\nframework couldn't catch without running tests. The \"\
+    framework hit its\nceiling for sub-Sonnet model\" run.\nOutcome: PARTIAL \u2014 framework gates passed,\
+    \ value-level test failed."

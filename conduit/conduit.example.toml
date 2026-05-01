@@ -1,0 +1,27 @@
+# Conduit homeserver — example config for local Agora development.
+#
+# Setup:
+#   cp conduit.example.toml conduit.toml
+#   # then edit registration_token below before bringing the container up.
+#
+# The live conduit.toml is gitignored; only this example is tracked.
+# docker-compose.yml mounts ./conduit.toml inside the container.
+
+[global]
+server_name = "agora.local"
+database_backend = "rocksdb"
+database_path = "/var/lib/matrix-conduit/"
+address = "0.0.0.0"
+port = 6167
+max_request_size = 20_000_000 # 20MB
+
+# Registration is on by default for local development. Anyone who can
+# reach this homeserver can register an account if they know the token,
+# so set this to a private value before exposing the port to a network.
+allow_registration = true
+registration_token = "REPLACE_ME_BEFORE_FIRST_RUN"
+
+allow_check_for_updates = false
+allow_federation = false
+enable_lightning_bolt = false
+trusted_servers = []

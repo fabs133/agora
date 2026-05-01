@@ -1,0 +1,77 @@
+"""Manifold Specification Pattern.
+
+A ``Specification`` combines preconditions (must hold before execution) and
+postconditions (must hold after). Each specification has a deterministic
+fingerprint derived from its content; identical fingerprints drive retry
+deduplication in later sprints.
+
+Predicates are callables of shape ``(context: dict) -> (passed: bool, reason: str)``.
+They are pure — they do not mutate the context.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+from agora.core.types import Fingerprint
+
+PredicateFn = Callable[[dict[str, Any]], tuple[bool, str]]
+
+
+@dataclass(frozen=True)
+class Predicate:
+    """A named condition evaluated against a context dict."""
+
+    name: str
+    description: str
+    evaluate: PredicateFn = field(compare=False)
+
+
+@dataclass(frozen=True)
+class Specification:
+    preconditions: tuple[Predicate, ...] = ()
+    postconditions: tuple[Predicate, ...] = ()
+    description: str = ""
+
+    @property
+    def fingerprint(self) -> Fingerprint:
+        """SHA-256 over canonical content: description + sorted predicate identities."""
+        parts: list[str] = [f"desc={self.description}"]
+        for label, preds in (("pre", self.preconditions), ("post", self.postconditions)):
+            tokens = sorted(f"{p.name}|{p.description}" for p in preds)
+            parts.append(f"{label}=" + ";".join(tokens))
+        canonical = "\n".join(parts).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
+
+def evaluate_preconditions(
+    spec: Specification, context: dict[str, Any]
+) -> list[tuple[str, str]]:
+    """Return ``[(predicate_name, failure_reason), ...]`` for failed preconditions."""
+    return _evaluate(spec.preconditions, context)
+
+
+def evaluate_postconditions(
+    spec: Specification, context: dict[str, Any]
+) -> list[tuple[str, str]]:
+    """Return ``[(predicate_name, failure_reason), ...]`` for failed postconditions."""
+    return _evaluate(spec.postconditions, context)
+
+
+def _evaluate(
+    preds: tuple[Predicate, ...], context: dict[str, Any]
+) -> list[tuple[str, str]]:
+    failures: list[tuple[str, str]] = []
+    for pred in preds:
+        passed, reason = pred.evaluate(context)
+        if not passed:
+            failures.append((pred.name, reason))
+    return failures
+
+
+def make_predicate(name: str, description: str, check: PredicateFn) -> Predicate:
+    """Convenience constructor for predicates."""
+    return Predicate(name=name, description=description, evaluate=check)

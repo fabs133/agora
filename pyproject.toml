@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agora"
+version = "0.1.0"
+description = "Multi-agent orchestration framework built on Matrix + Manifold contracts."
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = [
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "matrix-nio>=0.25",
+    "aiohttp>=3.9",
+    "GitPython>=3.1",
+    "typer>=0.12",
+    "pydantic-settings>=2.2",
+    "mcp>=1.0",
+    "trafilatura>=1.12",
+]
+
+[project.scripts]
+agora = "agora.cli:app"
+
+[project.optional-dependencies]
+llm = [
+    "anthropic>=0.40",
+]
+# Multi-provider adapter: one SDK routes to OpenAI, Anthropic, Gemini,
+# Mistral, Groq, Bedrock, etc. via a single normalised interface. Pick
+# the provider via the model-string prefix: "openai/gpt-4o-mini",
+# "anthropic/claude-haiku-4-5", "gemini/gemini-1.5-flash", etc.
+litellm = [
+    "litellm>=1.52",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"
+
+[tool.coverage.run]
+source = ["src/agora"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]

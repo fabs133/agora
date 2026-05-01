@@ -1,0 +1,35 @@
+version: "1.0"
+name: architect-implementer
+description: |
+  Two-agent handoff: an architect designs the system, an implementer builds it.
+  Demonstrates task dependencies across agents.
+
+agents:
+  - name: architect
+    role: architect
+    instructions: |
+      Plan the ${project_name} system. Produce a design document covering:
+      module structure, interfaces, contracts. Call `mark_complete` when done.
+  - name: impl
+    role: implementer
+    instructions: |
+      Read the architect's design document from work_dir, then implement it.
+      Stage every file with a git_commit. Call `mark_complete` with the list
+      of artifact paths.
+
+task_graph:
+  - id: design
+    assigned_to: architect
+    description: Design ${project_name} — modules, interfaces, contracts
+    postcondition_descriptions:
+      - produces a design document
+      - mark_complete called with summary
+
+  - id: build
+    assigned_to: impl
+    description: Implement the architecture from the design document
+    depends_on: [design]
+    postcondition_descriptions:
+      - produces at least one source file
+      - git commit recorded
+      - mark_complete called with artifacts list

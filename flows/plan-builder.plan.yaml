@@ -1,0 +1,881 @@
+version: '2.0'
+name: plan-builder
+description: |
+  Interactive plan-authoring runner (v2.3).
+
+  The goal: user provides a rough project goal, planner produces a validated
+  v2.0 plan.yaml the rest of Agora can execute via scripts/run_plan.py.
+
+  Flow (10 tasks):
+    1. gather_context            — LLM writes brief.md from the raw goal.
+    2. review_brief              — declarative decision: approve/revise.
+    3. decide_library            — declarative decision: pick core library.
+    4. decide_storage            — declarative decision: pick storage backend.
+    5. research_library          — LLM fetches real docs for the chosen library.
+    6. author_agents             — Agent-builder fleet: per-agent stages each
+                                    call plan_upsert_agent ONCE, followed by a
+                                    compile-check framework stage. Final roster
+                                    validator gates 3 agents (architect/impl/
+                                    tester), each with non-empty instructions.
+    7. author_tasks              — Per-task author stages chained with snapshot
+                                    framework stages so each stage sees the real
+                                    task_ids already authored (no blind deps).
+    8. validate_agents_vs_tasks  — Framework cross-check: every agent has a task;
+                                    every task's assigned_to is in the roster.
+    9. finalize_plan             — framework_finalize_plan: mechanical YAML
+                                    serialization + round-trip validation.
+   10. review_plan               — declarative decision: approve/revise.
+
+  The LLM never writes YAML or parses markdown task-lists. It makes structural
+  decisions via typed plan_* tool calls whose JSON schemas are validated at
+  the tool boundary — invalid calls return structured error strings the model
+  can correct on the next turn (standard tool-feedback loop).
+
+agents:
+  - name: architect
+    role: architect
+    model: ${model}
+    instructions: |
+      You are the PLANNING ARCHITECT. Your job is to turn a user's rough goal
+      into a validated v2.0 plan.yaml that the framework can execute. You do
+      this through a fixed sequence of narrow tasks.
+
+      Critical rules:
+      - You NEVER write YAML or parse prose task-lists. You call THREE typed
+        tool functions to build a plan:
+          * plan_upsert_agent(name, role, instructions, model?)
+                                             — add or update ONE agent
+                                               (one call per per-agent stage).
+          * plan_add_task_spec(...)          — add ONE task with its spec
+                                               AND postconditions atomically
+                                               (ONE call per per-task stage).
+          * plan_finalize(output_path=...)   — serialize + validate. The
+                                               framework calls this for you
+                                               automatically; you don't need to.
+        There is no bare "add task", "attach postcondition", or "set agents"
+        tool — every agent is authored via plan_upsert_agent, every task via
+        plan_add_task_spec (which REQUIRES a non-empty postconditions list).
+      - Tools return "OK: ..." on success and "ERROR: ..." on validation
+        failure. If you get an ERROR, read the message carefully and retry
+        the call with corrected arguments.
+      - Declarative decision stages (ask_brief_approval / ask_library /
+        ask_storage / ask_plan_approval) are framework-handled — you don't
+        see them and don't call any tool during those stages.
+      - When the task asks you to read a decision file (plan/decision_*.txt),
+        use read_file; the file contains exactly one word — the user's answer.
+
+task_graph:
+  # ============================================================ 1. gather_context
+  - id: gather_context
+    assigned_to: architect
+    description: |
+      STEP: Confirm the pre-scaffolded brief at plan/brief.md, optionally enriching
+        the summary sentence or adding missing deliverables. The skeleton with
+        ``## Key deliverables`` is already written by the runner.
+      INPUTS: plan/brief.md (already exists), plan/kb/goal.md (raw goal).
+      OUTPUT: plan/brief.md (edited in place — do NOT rewrite).
+      TOOLS: 1) read_file plan/brief.md to inspect.
+        2) (optional) edit_file_replace if a deliverable is clearly missing.
+        3) mark_complete summary='brief confirmed' artifacts=['plan/brief.md'].
+    output_path: plan/brief.md
+    postconditions:
+      - name: file_exists
+        args: {rel: plan/brief.md}
+      - name: file_contains
+        args: {rel: plan/brief.md, substring: 'Key deliverables'}
+      - name: mark_complete
+        args: {}
+    stages:
+      - name: write_brief
+        max_iterations: 3
+        context_files: [plan/brief.md, plan/kb/goal.md]
+        # Scope-out the plan-authoring tools: this stage ONLY confirms brief.md.
+        hide_tools:
+          - plan_upsert_agent
+          - plan_add_task_spec
+          - plan_finalize
+        instruction: |
+          The brief has already been scaffolded at `plan/brief.md` by the
+          framework. It contains `# Brief: ...`, a summary paragraph, and
+          a `## Key deliverables` section with bullets derived from the goal.
+
+          Your job — in this priority order:
+          1. read_file plan/brief.md to inspect it
+          2. If it already covers the goal, call mark_complete and stop
+          3. If a deliverable from plan/kb/goal.md is MISSING, add ONE
+             edit_file_replace appending a new unique bullet. Never add
+             a bullet whose text is similar to an existing one — duplicates
+             break the downstream test scaffolder.
+
+          Do NOT write_file — the file already exists.
+          Do NOT remove the `## Key deliverables` header.
+          Do NOT duplicate bullets you can already see in the file.
+
+          When satisfied, call mark_complete summary='brief confirmed'
+          artifacts=['plan/brief.md'].
+
+  # ============================================================ 2. review_brief
+  - id: review_brief
+    assigned_to: architect
+    description: Surface brief + await approval (framework-handled decision stage).
+    output_path: plan/brief_approval.txt
+    depends_on: [gather_context]
+    postconditions:
+      - name: file_exists
+        args: {rel: plan/brief_approval.txt}
+      - name: file_contains
+        args: {rel: plan/brief_approval.txt, substring: approve}
+    stages:
+      - name: ask_brief_approval
+        kind: decision
+        decision_id: brief_approval
+        question: "Does the brief in plan/brief.md capture your intent?"
+        options: [approve, revise]
+        output_path: plan/brief_approval.txt
+
+  # ============================================================ 3. decide_library
+  - id: decide_library
+    assigned_to: architect
+    description: Ask user to pick the core library (framework-handled decision).
+    output_path: plan/decision_library.txt
+    depends_on: [review_brief]
+    postconditions:
+      - name: file_exists
+        args: {rel: plan/decision_library.txt}
+    stages:
+      - name: ask_library
+        kind: decision
+        decision_id: library
+        question: "Which core library should this project be built on?"
+        options: [stdlib-only, fastapi, flask, click]
+        output_path: plan/decision_library.txt
+
+  # ============================================================ 4. decide_storage
+  - id: decide_storage
+    assigned_to: architect
+    description: Ask user to pick storage backend (framework-handled decision).
+    output_path: plan/decision_storage.txt
+    depends_on: [decide_library]
+    postconditions:
+      - name: file_exists
+        args: {rel: plan/decision_storage.txt}
+    stages:
+      - name: ask_storage
+        kind: decision
+        decision_id: storage
+        question: "How should data be persisted?"
+        options: [in-memory, json-file, sqlite]
+        output_path: plan/decision_storage.txt
+
+  # ============================================================ 5. research_library
+  - id: research_library
+    assigned_to: architect
+    description: |
+      STEP: Fetch the real documentation page for the chosen library and
+        write grounded research notes.
+      INPUTS: plan/decision_library.txt (one-word answer), plan/kb/library_urls.md.
+      OUTPUT: plan/research_notes.md (grounded in fetched doc content).
+      REQUIREMENT: research_notes.md must name the chosen library and quote
+        at least one real identifier (import path, class/function name, or
+        exact command) from the fetched page. The intermediate fetched page
+        lands at plan/kb/library_docs.md.
+      TOOLS: 1) read_file plan/decision_library.txt.
+        2) read_file plan/kb/library_urls.md.
+        3) fetch_url url=<URL from the map for the chosen library>
+           save_as=plan/kb/library_docs.md.
+        4) write_file plan/research_notes.md <grounded markdown>.
+        5) mark_complete.
+    output_path: plan/research_notes.md
+    depends_on: [decide_storage]
+    postconditions:
+      - name: file_exists
+        args: {rel: plan/kb/library_docs.md}
+      - name: file_exists
+        args: {rel: plan/research_notes.md}
+      - name: file_contains
+        args: {rel: plan/research_notes.md, substring: import}
+      - name: mark_complete
+        args: {}
+    stages:
+      - name: fetch_and_summarize
+        max_iterations: 8
+        context_files:
+          - plan/decision_library.txt
+          - plan/kb/library_urls.md
+        # Same reasoning as gather_context: this stage only fetches + writes.
+        hide_tools:
+          - plan_upsert_agent
+          - plan_add_task_spec
+          - plan_finalize
+        instruction: |
+          The library answer is in plan/decision_library.txt (one word).
+          plan/kb/library_urls.md maps each answer to a canonical docs URL.
+
+          Steps:
+          1) read_file plan/decision_library.txt  → memorise the answer.
+          2) read_file plan/kb/library_urls.md    → find the URL for that answer.
+          3) fetch_url url=<that URL> save_as=plan/kb/library_docs.md
+             (saves atomically — do NOT call write_file separately).
+          4) write_file path=plan/research_notes.md with this shape:
+
+             # Research: <library name>
+
+             ## Entry point
+             - Import: `from <pkg> import <name>` (quote REAL from fetched docs)
+             - Typical usage: 1-2 lines of code, literal from the docs.
+
+             ## Gotchas
+             - Two short bullets, each quoting real identifiers or behaviour.
+
+          Keep research_notes.md under 300 words. Ground every claim in text
+          you fetched — do not invent API surface.
+
+  # ============================================================ 5b. define_api
+  #
+  # v2.7: Shared API spec — authored ONCE by the architect with access to
+  # the brief + research notes. The emitted ``plan/api_spec.md`` becomes the
+  # single source of truth for module surface (class/function names,
+  # signatures). Downstream executor scaffolders generate matching
+  # `from src.X import Y` in tests AND matching `def Y(...): raise
+  # NotImplementedError` stubs in src/, so tester and implementer can never
+  # disagree on the API.
+  #
+  # Without this step the tester hallucinates one API, the implementer writes
+  # a different one, and the contract gate fails every run — observed in
+  # Sprint 7.1-7.4 live runs (arithmetic tests vs URL shortener; five
+  # stacked class defs; tests import src.nonexistent).
+  - id: define_api
+    assigned_to: architect
+    description: |
+      STEP: Read the brief + library decision + research notes, then write
+        the CONCRETE API surface the project will expose — class names,
+        method names, function names, with full type signatures.
+      INPUTS: plan/brief.md, plan/decision_library.txt, plan/research_notes.md,
+        plan/decision_storage.txt.
+      OUTPUT: plan/api_spec.md — ONE section per module the project will
+        contain. The executor will scaffold src/ files and test imports
+        from THIS file.
+      REQUIREMENT: each module section starts with ``## module: src/<name>.py``.
+        Under each, provide class/function signatures in Python syntax with
+        ``...`` bodies (stub style). Include parameter types + return types
+        where reasonable.
+    output_path: plan/api_spec.md
+    depends_on: [research_library, decide_library, decide_storage]
+    postconditions:
+      - name: file_exists
+        args: {rel: plan/api_spec.md}
+      # Sprint 7.5(d): validates ≥1 module section, each body parses,
+      # and no top-level function has `self` as first param. Observed
+      # failure: architect wrote module-level `def add_url(self, ...):`
+      # which broke every downstream test import. Early validation
+      # forces a retry with structural feedback.
+      - name: api_spec_is_valid
+        args: {rel: plan/api_spec.md}
+      # v2.8 (Approach C — C1): every brief deliverable must map to at
+      # least one method/function in api_spec. Catches the observed
+      # failure where the architect covers add/lookup/list but silently
+      # drops "Persist to disk". On failure the in-phase retry fires
+      # with a structured message naming the missing bullet + expected
+      # keywords.
+      - name: api_spec_covers_brief_deliverables
+        args: {rel: plan/api_spec.md, brief_rel: plan/brief.md}
+      - name: mark_complete
+        args: {}
+    stages:
+      - name: author_spec
+        kind: llm
+        # v2.9 (C5): bumped from 5 → 8 so retries have headroom after
+        # api_spec_is_valid / covers_brief failures. Observed failure
+        # 2026-04-22 PM: model spent turn 1 reading inputs, turn 2-3
+        # on fetch_url noise, then ran out before it could write_file
+        # a corrected spec. 8 turns leaves slack for one wrong-tool
+        # turn plus the rewrite.
+        max_iterations: 8
+        context_files:
+          - plan/brief.md
+          - plan/decision_library.txt
+          - plan/decision_storage.txt
+          - plan/research_notes.md
+        # No plan-authoring tools — this stage just writes the markdown.
+        # v2.8 (Approach C): also hide the module-editor tools. Observed
+        # in planner_sprint75d.log: after successfully writing api_spec.md
+        # at turn 2, the architect kept going and called add_class /
+        # add_function on src/url_shortener.py — orphan side-effects on
+        # the planner's own workspace. Scoping them out prevents the
+        # leak and tightens the stage to "write markdown only".
+        # v2.9 (C5): also hide fetch_url + ALL edit_file_* tools.
+        # Observed failure 2026-04-22 PM: on retry, GPT-4o-mini tried
+        # fetch_url on hallucinated documentation URLs (404), then
+        # used edit_file_replace / edit_file_append to *grow* the
+        # prior-attempt's api_spec.md by appending fixes instead of
+        # rewriting cleanly. The file ballooned into a concatenated
+        # mess with duplicate module headers that C5 then rejected,
+        # and the model's response was to add MORE content rather
+        # than start fresh. Leaving ONLY write_file forces a full
+        # atomic rewrite on every attempt — the natural mode for
+        # this kind of small markdown authoring task.
+        hide_tools:
+          - plan_upsert_agent
+          - plan_add_task_spec
+          - plan_finalize
+          - add_class
+          - add_function
+          - add_class_method
+          - fetch_url
+          - edit_file_append
+          - edit_file_replace
+          - edit_file_insert_before
+        instruction: |
+          Write `plan/api_spec.md` — the AUTHORITATIVE API surface for this
+          project. The executor will generate src/ file stubs AND test
+          imports from this file, so every symbol you list here must be
+          one the implementation will actually expose.
+
+          EXACT shape (follow this verbatim):
+
+              # API spec
+
+              ## module: src/<module_name>.py
+
+              class ClassName:
+                  def __init__(self, arg: type) -> None: ...
+                  def method_name(self, arg: type) -> return_type: ...
+
+              def top_level_function(arg: type) -> return_type: ...
+
+              ## module: src/<other_module>.py
+
+              def another_function(arg: type) -> return_type: ...
+
+          CRITICAL RULES (the framework validates these — if violated, the
+          task fails and retries):
+          - EVERY `## Key deliverables` bullet in plan/brief.md must map
+            to at least one method/function in the spec. The framework
+            validator rejects a spec that misses a deliverable — read
+            the brief FIRST and list each bullet before writing. Common
+            gotcha: "Persist to disk" is a separate deliverable that
+            needs its OWN method(s). Having `list_mappings` is NOT
+            enough to cover "persist" — add `save(path: str) -> None`
+            and `load(path: str) -> None` as explicit methods.
+          - One `## module: src/<path>.py` header per PRODUCTION module
+            you'll create. PRODUCTION means real src/ code the application
+            ships — NOT test files. Do NOT list `src/tests/...` or
+            `tests/...` in the spec. Tests are scaffolded by a separate
+            pipeline and should never appear here.
+          - Do NOT repeat a module header. Each ``## module: src/<path>.py``
+            must appear at most ONCE in the file. If you want to revise
+            a module, rewrite the whole file with write_file — do not
+            append a second section.
+          - Under each header, pure Python signatures with `...` bodies.
+          - NO `self` parameter in top-level functions. `self` only
+            appears as the first parameter of METHODS inside a
+            `class` block. If you're tempted to write `def foo(self, ...):`
+            at module level, you meant to put it inside a class.
+          - No imports. Do NOT write `from typing import ...` at the top
+            of a module section. Use bare `Optional`, `list[str]`, etc. —
+            the parser only inspects signatures, not resolved names. The
+            scaffolder will emit stubs with forward-ref-style annotations
+            that are fine at parse time.
+          - Keep the API FOCUSED but COMPLETE — cover every deliverable
+            bullet with at least one method, without inventing scope
+            that isn't in the brief. A stateful CLI usually needs ONE
+            class with 5-8 methods (including save/load for persistence).
+          - If the brief implies a stateful object (e.g. "URL shortener
+            that stores mappings"), define it as a class with methods.
+            Prefer ONE class per module over loose module-level functions.
+          - No prose between signatures. Do not add "notes" sections.
+            A parseable python file is the goal.
+
+          Tools to use: read_file for inputs, write_file 'plan/api_spec.md'
+          with the above content, mark_complete summary='api spec written'.
+          On a retry (if the prior attempt failed validation), call
+          write_file to REPLACE the file entirely with a corrected
+          version — do not try to edit the existing file incrementally.
+
+  # ============================================================ 6. author_agents
+  #
+  # v2.3: Agent-builder fleet. ONE task with narrow per-agent stages plus
+  # framework-owned reset + snapshot + per-agent validate + roster validate
+  # stages. Each author_<role> stage calls plan_upsert_agent exactly once;
+  # a validate stage immediately after compile-checks the just-authored
+  # agent. On failure the whole task retries from the top (plan_reset_agents
+  # wipes the roster, then author stages re-run with structural feedback in
+  # the retry's learning injection).
+  - id: author_agents
+    assigned_to: architect
+    description: |
+      STEP: Declare 3 agents (architect / implementer / tester) for the
+        authored plan via narrow per-agent stages.
+      INPUTS: plan/brief.md, plan/research_notes.md, plan/.draft_state.md.
+      OUTPUT: populated ``plan_draft.agents`` (3 agents minimum).
+      REQUIREMENT: each agent has non-empty instructions; roster passes
+        compile check (min 2, ≥1 builder role, no dup (name,role) pairs).
+      TOOLS: plan_upsert_agent(...) ONCE per author stage.
+    depends_on: [research_library, define_api]
+    postconditions:
+      - name: plan_draft_has_min_agents
+        args: {min_agents: 3}
+      - name: plan_draft_all_agents_valid
+        args: {}
+      - name: mark_complete
+        args: {}
+    stages:
+      # Wipe the roster before authoring so retries start clean (in-phase
+      # auto-retry re-runs all stages from this point).
+      - name: reset_agents
+        kind: plan_reset_agents
+
+      # -------------------- architect agent --------------------
+      - name: author_architect
+        max_iterations: 3
+        context_files: [plan/brief.md, plan/research_notes.md]
+        # Author stages only call plan_upsert_agent — hide the task / finalize
+        # tools so the model can't overshoot into task authoring or premature
+        # finalization.
+        hide_tools:
+          - plan_add_task_spec
+          - plan_finalize
+        instruction: |
+          Add ONE agent: the architect. Call plan_upsert_agent exactly ONCE
+          with:
+            name:         "architect"   (snake_case id the plan will use)
+            role:         "architect"
+            instructions: 2-4 sentences describing what the architect is
+                          responsible for in THIS project (refer to the brief).
+                          E.g. "Defines module boundaries and postconditions.
+                          Produces a module outline + postcondition catalog."
+            model:        "" (optional; leave empty)
+
+          After the tool returns "OK: ...", STOP — reply with a short
+          confirmation like "architect agent added". Do NOT call any more
+          tools.
+      - name: validate_architect
+        kind: plan_validate_agent
+        validation_args:
+          expected_name: architect
+          expected_role: architect
+
+      # Snapshot so the next author stage sees the current roster.
+      - name: snapshot_after_architect
+        kind: plan_snapshot_draft
+        output_path: plan/.draft_state.md
+
+      # -------------------- implementer agent --------------------
+      - name: author_implementer
+        max_iterations: 3
+        context_files:
+          - plan/brief.md
+          - plan/research_notes.md
+          - plan/.draft_state.md
+        hide_tools:
+          - plan_add_task_spec
+          - plan_finalize
+        instruction: |
+          Add ONE agent: the implementer. Call plan_upsert_agent exactly ONCE
+          with:
+            name:         "implementer"
+            role:         "implementer"
+            instructions: 2-4 sentences describing what the implementer does.
+                          E.g. "Writes the CLI entry point and core module
+                          one file at a time. Grounds choices in research_notes.md."
+            model:        ""
+
+          plan/.draft_state.md shows the current agents (architect should
+          already be there). Do NOT re-declare architect.
+
+          After "OK: ...", STOP — reply with short confirmation, no more tools.
+      - name: validate_implementer
+        kind: plan_validate_agent
+        validation_args:
+          expected_name: implementer
+          expected_role: implementer
+
+      - name: snapshot_after_implementer
+        kind: plan_snapshot_draft
+        output_path: plan/.draft_state.md
+
+      # -------------------- tester agent --------------------
+      - name: author_tester
+        max_iterations: 3
+        context_files:
+          - plan/brief.md
+          - plan/.draft_state.md
+        hide_tools:
+          - plan_add_task_spec
+          - plan_finalize
+        instruction: |
+          Add ONE agent: the tester. Call plan_upsert_agent exactly ONCE
+          with:
+            name:         "tester"
+            role:         "tester"
+            instructions: 2-4 sentences describing what the tester does.
+                          E.g. "Writes pytest tests covering brief deliverables.
+                          Uses fixtures + mocks where appropriate; no network."
+            model:        ""
+
+          plan/.draft_state.md shows current agents (architect, implementer).
+          Do NOT re-declare them.
+
+          After "OK: ...", STOP — short confirmation only, no more tools.
+      - name: validate_tester
+        kind: plan_validate_agent
+        validation_args:
+          expected_name: tester
+          expected_role: tester
+
+      # Roster-level final check.
+      - name: validate_roster
+        kind: plan_validate_roster
+
+      # Final snapshot so author_tasks sees the complete roster.
+      - name: snapshot_final
+        kind: plan_snapshot_draft
+        output_path: plan/.draft_state.md
+
+  # ============================================================ 7. author_tasks
+  #
+  # ONE task with N narrow per-task stages. Each stage has ONE job: call
+  # plan_add_task_spec exactly once to atomically add a single task + its
+  # postconditions. The LLM never has to track multiple tasks at once or
+  # loop over a growing list — every stage starts with a fresh focus window
+  # on a single slot.
+  #
+  # The strict gate (every task has a postcondition) now holds trivially
+  # because the compound tool attaches postconditions in the same call that
+  # adds the task. If the LLM fails to call the tool correctly, the error
+  # surfaces stage-locally and the in-phase retry kicks in with the right
+  # scope — not "redo all 8 tasks", just "redo task slot N".
+  - id: author_tasks
+    assigned_to: architect
+    description: |
+      STEP: Populate the plan's task graph via N narrow per-task author stages.
+      INPUTS: brief, research_notes, decisions, postcondition_catalog.
+      OUTPUT: ``plan_draft.tasks`` with ≥ 4 tasks, each with ≥ 1 postcondition.
+      REQUIREMENT: every task_id unique, depends_on references earlier slots.
+      TOOLS: plan_add_task_spec(...) once per stage.
+    depends_on: [author_agents]
+    postconditions:
+      - name: plan_draft_has_min_tasks
+        args: {min_tasks: 4}
+      - name: plan_draft_every_task_has_postcondition
+        args: {}
+      - name: mark_complete
+        args: {}
+    stages:
+      # Reset the draft's task graph first. On a fresh run this is a no-op;
+      # on an in-phase retry it clears the tasks added in the prior attempt
+      # so the author stages below don't accumulate duplicates.
+      - name: reset_draft_tasks
+        kind: plan_reset_tasks
+
+      # Four mandatory author stages — no optional slots. The model saw the
+      # optional stages as an invitation to fabricate bogus tasks that leaked
+      # planner-workspace paths ('plan/brief.md' etc.) back into the authored
+      # plan. Tight scope = fewer failure modes. max_iterations=5 gives the
+      # model headroom: typically ONE plan_add_task_spec call on turn 1, then
+      # a free-text confirmation on turn 2 ends the stage. The cap only
+      # matters when the model over-calls, in which case the first successful
+      # call's effect (the task being added) persists anyway.
+      # v2.3: snapshot stages between per-task author stages so each stage
+      # sees the real task_ids from prior stages and can pick them for
+      # ``depends_on``. Without this, the model blind-guesses ids like
+      # "core_module" when the actual prior id was "setup_project_dir" —
+      # observed in live runs, causing cli_logic + tests to fail with
+      # "task 'X' does not exist" ERROR cycles until max_iterations.
+      - name: snapshot_before_setup
+        kind: plan_snapshot_draft
+        output_path: plan/.draft_state.md
+
+      - name: author_project_setup
+        max_iterations: 5
+        context_files:
+          - plan/brief.md
+          - plan/research_notes.md
+          - plan/decision_library.txt
+          - plan/decision_storage.txt
+          - plan/kb/postcondition_catalog.md
+          - plan/.draft_state.md
+        # Per-task stages only call plan_add_task_spec — hide the agent /
+        # finalize tools so the model can't trash the roster or finalize early.
+        # v2.9 (C5 follow-up): author_<task> stages are pure
+        # plan_add_task_spec callers — lock down ALL file-mutation tools
+        # so the architect can't corrupt the prior-phase artifacts
+        # (plan/brief.md, plan/api_spec.md, etc.) while authoring tasks.
+        # Observed failure 2026-04-22 PM: author_core_module called
+        # delete_file('plan/api_spec.md') which wiped the spec after
+        # define_api had successfully authored it, producing an
+        # empty-api_spec plan that cascaded into tester/impl naming
+        # mismatches downstream.
+        hide_tools:
+          - plan_upsert_agent
+          - plan_finalize
+          - write_file
+          - delete_file
+          - edit_file_replace
+          - edit_file_insert_before
+          - edit_file_append
+          - fetch_url
+          - add_class
+          - add_function
+          - add_class_method
+        instruction: |
+          Add ONE task to the plan: the project-setup task (scaffolding,
+          requirements.txt, package skeleton).
+
+          Call plan_add_task_spec(...) exactly ONCE with:
+            task_id:        concrete snake_case id derived from the brief —
+                            e.g. "setup_project". NEVER use placeholder
+                            names like "slot_1".
+            description:    one sentence on what this task produces.
+            assigned_to:    any agent name from plan/.draft_state.md (the
+                            framework re-balances task-to-agent assignments
+                            after all author stages via plan_link_tasks_to_agents,
+                            so don't overthink this — "implementer" is a safe
+                            default).
+            depends_on:     [] (this is the first task).
+            output_path:    primary output file relative to work_dir
+                            (e.g. "requirements.txt" or "src/__init__.py").
+            postconditions: list of {name, args} dicts. Minimum:
+                            [{"name": "mark_complete"}]. Common extras:
+                              {"name": "file_exists", "args": {"rel": "<path>"}}
+                              {"name": "requirements_parse",
+                               "args": {"rel": "requirements.txt"}}
+
+          IMPORTANT: After plan_add_task_spec returns "OK: ...", STOP. Reply
+          with a one-line free-text confirmation like "setup task added".
+          Do NOT call any more tools. The framework finalizes the stage
+          automatically once you stop calling tools.
+
+      - name: snapshot_before_core
+        kind: plan_snapshot_draft
+        output_path: plan/.draft_state.md
+
+      - name: author_core_module
+        max_iterations: 5
+        context_files:
+          - plan/brief.md
+          - plan/research_notes.md
+          - plan/decision_library.txt
+          - plan/kb/postcondition_catalog.md
+          - plan/.draft_state.md
+        # v2.9 (C5 follow-up): author_<task> stages are pure
+        # plan_add_task_spec callers — lock down ALL file-mutation tools
+        # so the architect can't corrupt the prior-phase artifacts
+        # (plan/brief.md, plan/api_spec.md, etc.) while authoring tasks.
+        # Observed failure 2026-04-22 PM: author_core_module called
+        # delete_file('plan/api_spec.md') which wiped the spec after
+        # define_api had successfully authored it, producing an
+        # empty-api_spec plan that cascaded into tester/impl naming
+        # mismatches downstream.
+        hide_tools:
+          - plan_upsert_agent
+          - plan_finalize
+          - write_file
+          - delete_file
+          - edit_file_replace
+          - edit_file_insert_before
+          - edit_file_append
+          - fetch_url
+          - add_class
+          - add_function
+          - add_class_method
+        instruction: |
+          Add ONE task: the core domain module (the data layer — e.g. the
+          URL→hash record type, hash generation, persistence adapter).
+
+          plan/.draft_state.md shows the current agents + the setup task_id
+          you authored in the prior stage. Use that setup task_id literally
+          as your ``depends_on`` entry — DO NOT guess a name.
+
+          Call plan_add_task_spec(...) exactly ONCE with assigned_to from
+          the roster (use "implementer"; the framework re-links as needed).
+
+          Typical postconditions for a Python file that exposes a CLASS:
+            [{"name": "file_exists", "args": {"rel": "<path>"}},
+             {"name": "py_compiles", "args": {"rel": "<path>"}},
+             {"name": "class_attributes_consistent",
+              "args": {"rel": "<path>"}},
+             {"name": "mark_complete"}]
+
+          ``class_attributes_consistent`` is STRONGLY RECOMMENDED for any
+          task that writes a src/*.py containing a class. It catches the
+          classic field-name typo ("__init__ sets self.url_mapping but
+          add_url reads self.url_hash_map") at write time, before pytest
+          has to catch it at runtime. Include it whenever output_path is
+          a Python file that holds a class.
+
+          After the tool returns "OK: ...", STOP — reply with a short
+          confirmation and no more tool calls.
+
+      - name: snapshot_before_cli
+        kind: plan_snapshot_draft
+        output_path: plan/.draft_state.md
+
+      - name: author_cli_logic
+        max_iterations: 5
+        context_files:
+          - plan/brief.md
+          - plan/research_notes.md
+          - plan/decision_library.txt
+          - plan/kb/postcondition_catalog.md
+          - plan/.draft_state.md
+        # v2.9 (C5 follow-up): author_<task> stages are pure
+        # plan_add_task_spec callers — lock down ALL file-mutation tools
+        # so the architect can't corrupt the prior-phase artifacts
+        # (plan/brief.md, plan/api_spec.md, etc.) while authoring tasks.
+        # Observed failure 2026-04-22 PM: author_core_module called
+        # delete_file('plan/api_spec.md') which wiped the spec after
+        # define_api had successfully authored it, producing an
+        # empty-api_spec plan that cascaded into tester/impl naming
+        # mismatches downstream.
+        hide_tools:
+          - plan_upsert_agent
+          - plan_finalize
+          - write_file
+          - delete_file
+          - edit_file_replace
+          - edit_file_insert_before
+          - edit_file_append
+          - fetch_url
+          - add_class
+          - add_function
+          - add_class_method
+        instruction: |
+          Add ONE task: the CLI entry point — the module that implements
+          the command-line interface (e.g. argparse setup, the add/lookup/
+          list subcommands, main() function). This is a REQUIRED task for
+          the plan to be runnable; do NOT skip it.
+
+          plan/.draft_state.md lists the two prior task_ids. Use the
+          core-module task_id as your ``depends_on`` entry LITERALLY.
+
+          Call plan_add_task_spec(...) exactly ONCE with assigned_to from
+          the roster (use "implementer"; the framework re-links as needed).
+          ``output_path`` should be the CLI module path (e.g. "src/cli.py").
+
+          Typical postconditions:
+            [{"name": "file_exists", "args": {"rel": "src/cli.py"}},
+             {"name": "py_compiles", "args": {"rel": "src/cli.py"}},
+             {"name": "mark_complete"}]
+
+          If src/cli.py exposes a class (less common — CLI entry points
+          are usually function-based), also add:
+             {"name": "class_attributes_consistent",
+              "args": {"rel": "src/cli.py"}}
+          This catches self.X typos at write time.
+
+          After "OK: ...", STOP — short free-text confirmation only.
+
+      - name: snapshot_before_tests
+        kind: plan_snapshot_draft
+        output_path: plan/.draft_state.md
+
+      - name: author_tests
+        max_iterations: 5
+        context_files:
+          - plan/brief.md
+          - plan/kb/postcondition_catalog.md
+          - plan/.draft_state.md
+        # v2.9 (C5 follow-up): author_<task> stages are pure
+        # plan_add_task_spec callers — lock down ALL file-mutation tools
+        # so the architect can't corrupt the prior-phase artifacts
+        # (plan/brief.md, plan/api_spec.md, etc.) while authoring tasks.
+        # Observed failure 2026-04-22 PM: author_core_module called
+        # delete_file('plan/api_spec.md') which wiped the spec after
+        # define_api had successfully authored it, producing an
+        # empty-api_spec plan that cascaded into tester/impl naming
+        # mismatches downstream.
+        hide_tools:
+          - plan_upsert_agent
+          - plan_finalize
+          - write_file
+          - delete_file
+          - edit_file_replace
+          - edit_file_insert_before
+          - edit_file_append
+          - fetch_url
+          - add_class
+          - add_function
+          - add_class_method
+        instruction: |
+          Add ONE task: pytest tests covering the deliverables from the
+          brief (add/lookup/list plus edge cases).
+
+          plan/.draft_state.md lists prior task_ids. Use the CLI-logic
+          task_id as your ``depends_on`` entry LITERALLY.
+
+          Call plan_add_task_spec(...) exactly ONCE with assigned_to from
+          the roster ("tester" is a sensible default; the framework re-links
+          as needed).
+
+          Typical postconditions:
+            [{"name": "file_exists", "args": {"rel": "tests/test_<thing>.py"}},
+             {"name": "pytest_passes", "args": {"rel": "tests/"}},
+             {"name": "mark_complete"}]
+
+          After "OK: ...", STOP — short free-text confirmation only.
+
+      # Final framework stage: rebalance task-to-agent assignments so every
+      # agent has ≥1 task. Fills gaps (empty assigned_to → role heuristic)
+      # then reassigns one task from over-loaded agents to any orphans.
+      # Zero-cost when assignments are already clean.
+      - name: link_tasks_to_agents
+        kind: plan_link_tasks_to_agents
+
+  # ============================================================ 8. validate_agents_vs_tasks
+  #
+  # v2.3: Coverage-only cross-check. Fails the task if any agent has no
+  # task or any task's assigned_to is not in the roster. No LLM involved.
+  # Failure triggers in-phase retry which re-runs the validator (same
+  # result); after retries exhaust the phase advances — the user sees a
+  # clear diagnostic in the logs pointing at the orphan/unassigned case.
+  - id: validate_agents_vs_tasks
+    assigned_to: architect
+    description: |
+      Framework-driven cross-check: every agent has ≥1 task assigned;
+      every task's assigned_to is in the roster; no orphan agents.
+    depends_on: [author_tasks]
+    postconditions:
+      - name: mark_complete
+        args: {}
+    stages:
+      - name: run_crosscheck
+        kind: plan_validate_agents_vs_tasks
+
+  # ============================================================ 9. finalize_plan
+  - id: finalize_plan
+    assigned_to: architect
+    description: |
+      Framework-driven stage: serializes ``ctx.plan_draft`` to YAML and
+      round-trips through ``load_plan`` + ``instantiate_plan``. No LLM is
+      invoked — empirically the 7B planner cannot reliably pick
+      ``plan_finalize`` from among its sibling plan_* tools, so the
+      framework just does the mechanical step itself.
+    output_path: plan/out.plan.yaml
+    depends_on: [validate_agents_vs_tasks]
+    postconditions:
+      - name: file_exists
+        args: {rel: plan/out.plan.yaml}
+    stages:
+      - name: finalize
+        kind: framework_finalize_plan
+        output_path: plan/out.plan.yaml
+
+  # ============================================================ 9. review_plan
+  - id: review_plan
+    assigned_to: architect
+    description: Surface the emitted plan + await approval (framework-handled).
+    output_path: plan/plan_approval.txt
+    depends_on: [finalize_plan]
+    postconditions:
+      - name: file_exists
+        args: {rel: plan/plan_approval.txt}
+      - name: file_contains
+        args: {rel: plan/plan_approval.txt, substring: approve}
+    stages:
+      - name: ask_plan_approval
+        kind: decision
+        decision_id: plan_approval
+        question: "The plan is written to plan/out.plan.yaml — approve it for execution?"
+        options: [approve, revise]
+        output_path: plan/plan_approval.txt
