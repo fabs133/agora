@@ -32,6 +32,22 @@ class Predicate:
 
 @dataclass(frozen=True)
 class Specification:
+    """Pre/post conditions that gate task execution.
+
+    A ``Specification`` is attached to each :class:`~agora.core.task.Task`.
+    The framework evaluates ``preconditions`` before the task runs and
+    ``postconditions`` after; a task is considered ``success`` iff every
+    postcondition evaluates ``True``. The LLM's ``mark_complete`` call is
+    observed but does not determine outcome — postconditions are the ground
+    truth.
+
+    All fields are immutable; the ``fingerprint`` property derives a stable
+    SHA-256 identity from ``description`` plus the canonicalised predicate
+    set. Identical fingerprints across two specifications mean they evaluate
+    the same conditions, which the framework uses to deduplicate retries
+    and learnings.
+    """
+
     preconditions: tuple[Predicate, ...] = ()
     postconditions: tuple[Predicate, ...] = ()
     description: str = ""

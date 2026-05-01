@@ -138,7 +138,26 @@ class StagedTask:
 
 
 class StageRunner:
-    """Execute a :class:`StagedTask` stage-by-stage, then evaluate the task spec."""
+    """Execute a :class:`StagedTask` stage-by-stage, then evaluate the task spec.
+
+    Built for hard-to-generate tasks where a single 20-iteration loop blows
+    past num_ctx or lets the model drift. The runner reuses the underlying
+    :class:`~agora.fleet.agent_runtime.AgentRuntime` machinery (system
+    prompts, tool execution, postcondition evaluation) but resets the
+    message history at every stage boundary, capping per-stage iterations
+    aggressively. Two wins for weak models: fresh context per stage so
+    accumulated tokens don't pile up, and one-action stages so the model
+    decides less and hallucinates less.
+
+    Three stage kinds are dispatched here:
+
+    - ``"llm"`` (default) — a focused agent turn against the configured LLM.
+    - ``"decision"`` — bypasses the LLM, posts a Matrix poll + reaction
+      card, waits for the user's answer, writes the chosen option id to
+      ``stage.output_path``.
+    - ``"framework"`` — pure mechanical step (e.g. ``framework_finalize_plan``)
+      that the framework executes itself rather than asking the LLM.
+    """
 
     def __init__(self, runtime: AgentRuntime) -> None:
         self._runtime = runtime
@@ -150,6 +169,18 @@ class StageRunner:
         staged: StagedTask,
         identity: AgentIdentity,
     ) -> TaskResult:
+        """Run every stage in order, then evaluate the wrapped task's postconditions.
+
+        Returns the same :class:`~agora.fleet.agent_runtime.TaskResult` shape
+        as a non-staged task — postconditions are checked once at the end
+        over the cumulative artefacts, so callers can treat staged and
+        non-staged tasks uniformly.
+
+        On stage failure (validation predicate returns False, decision-stage
+        timeout, framework-stage exception), the runner short-circuits and
+        returns a failure result without running later stages. The remaining
+        stages do not execute.
+        """
         task = staged.task
         self._ctx.expected_output_path = task.output_path
         self._ctx.task_focus = task.description or task.spec.description or task.id

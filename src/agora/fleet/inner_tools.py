@@ -36,6 +36,32 @@ ROLE_TOOL_SETS: dict[AgentRole, tuple[str, ...]] = {
 
 @dataclass
 class ToolContext:
+    """Per-task execution context threaded through every inner tool call.
+
+    The ``ToolContext`` holds the work directory, the Matrix client, the
+    git repo manager, and per-task mutable state (``written_files``,
+    ``progress_log``, ``completions``, ``reported_learnings``, the
+    ``plan_draft`` for plan-authoring stages). It's the single object every
+    tool factory receives, so adding a new piece of per-task state is a
+    one-line change here.
+
+    Several flags gate what tools are exposed to the model:
+
+    - ``auto_hooks_enabled`` — when True, the framework runs validation +
+      ``git_commit`` + ``mark_complete`` automatically after ``write_file``,
+      and those tools are hidden from the LLM manifest.
+    - ``plan_authoring_enabled`` — gates the ``plan_*`` tool category;
+      only the plan-builder runner enables this.
+    - ``write_file_blocked`` — flipped by the overwrite guard once the
+      model tries to clobber a file outside its declared output path. Stays
+      set for the rest of the task so ``write_file`` is dropped from the
+      manifest, forcing the model onto the edit primitives.
+
+    Most fields default to safe no-op values; tests construct ``ToolContext``
+    instances with fakes for ``matrix_client`` and ``git_repo`` to exercise
+    tools in isolation.
+    """
+
     work_dir: str
     matrix_client: MatrixClientProtocol
     agent_room_id: RoomId

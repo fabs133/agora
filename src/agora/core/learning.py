@@ -15,6 +15,18 @@ REINFORCE_BOOST = 0.15
 
 @dataclass(frozen=True)
 class Learning:
+    """A failure trace lifted from a postcondition into the next agent prompt.
+
+    Learnings are the framework's loopback mechanism: when a task fails a
+    postcondition, the orchestrator synthesises a ``Learning`` from the
+    ``(task_id, predicate_name, reason)`` tuple via
+    :func:`agora.fleet.auto_learning.synthesize_failure_learning` and injects
+    it into the agent's system prompt for the retry. ``confidence`` is
+    boosted by :func:`reinforce` when the same failure recurs and decays
+    over time via :func:`decay_learnings`; only learnings with confidence
+    above ``CONFIDENCE_THRESHOLD`` (0.3) are surfaced to the model.
+    """
+
     id: str
     category: LearningCategory
     content: str

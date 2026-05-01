@@ -31,6 +31,13 @@ DEFAULT_TIMEOUT_SECONDS = 600.0
 
 @dataclass(frozen=True)
 class ToolCall:
+    """One tool invocation in an assistant turn.
+
+    ``id`` is the provider-assigned identifier the runtime echoes back in
+    the tool-result message. ``name`` matches a registered inner tool;
+    ``arguments`` is the parsed JSON object the model emitted.
+    """
+
     id: str
     name: str
     arguments: dict[str, Any]
@@ -38,6 +45,16 @@ class ToolCall:
 
 @dataclass(frozen=True)
 class LLMResponse:
+    """One assistant turn from the underlying model.
+
+    ``content`` is the plaintext component (often empty when the turn is
+    pure tool-use). ``tool_calls`` are the tool invocations the runtime
+    will execute and feed results back for. ``usage`` carries provider
+    token counters; the LiteLLM adapter also surfaces ``cost_usd`` here.
+    ``stop_reason`` is the provider's termination signal, propagated so
+    callers can distinguish budget exhaustion from natural completion.
+    """
+
     content: str
     tool_calls: tuple[ToolCall, ...] = ()
     usage: dict[str, int] = field(default_factory=dict)
@@ -46,6 +63,19 @@ class LLMResponse:
 
 @runtime_checkable
 class LLMProtocol(Protocol):
+    """Minimal async interface every backend must satisfy.
+
+    Adapters know how to ferry messages and tool-call intents between the
+    model and the runtime, and how to shape their own provider-specific
+    assistant-turn and tool-result message bodies. Tool *execution* is
+    not part of this protocol — that lives in
+    :mod:`agora.fleet.agent_runtime`. Production implementations:
+    :class:`AnthropicAdapter`, :class:`OllamaAdapter`,
+    :class:`LiteLLMAdapter`, and the subprocess-driven
+    :class:`agora.fleet.claude_code_adapter.ClaudeCodeSubprocessAdapter`.
+    Tests inject a fake.
+    """
+
     async def complete(
         self,
         messages: list[dict[str, Any]],

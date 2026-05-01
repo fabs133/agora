@@ -25,6 +25,20 @@ VALID_TASK_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
 
 @dataclass(frozen=True)
 class Task:
+    """One unit of work in a project DAG.
+
+    Each task carries its own :class:`~agora.core.contract.Specification`
+    (preconditions + postconditions evaluated by the orchestrator) and a
+    ``depends_on`` tuple that defines the DAG edges. Status transitions go
+    through :func:`transition_task` to enforce the state machine in
+    ``VALID_TASK_TRANSITIONS``.
+
+    Tasks are immutable; mutations return a new instance via
+    :func:`dataclasses.replace`. ``artifacts`` and ``result_summary`` are
+    populated when the runtime evaluates the postconditions and the agent
+    completes its turn.
+    """
+
     id: TaskId
     spec: Specification
     description: str = ""

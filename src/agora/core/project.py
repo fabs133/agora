@@ -12,6 +12,13 @@ from agora.core.types import AgentId, ProjectId, ProjectPhase, TaskStatus
 
 
 class PhaseTransition(NamedTuple):
+    """One edge in the project phase state machine.
+
+    The ``condition`` string is human-readable rationale shown in the
+    observer surface; it does not gate the transition. Validity is determined
+    by membership in :data:`VALID_TRANSITIONS`.
+    """
+
     from_phase: ProjectPhase
     to_phase: ProjectPhase
     condition: str
@@ -19,6 +26,13 @@ class PhaseTransition(NamedTuple):
 
 @dataclass(frozen=True)
 class PhaseChange:
+    """A single phase transition recorded on a :class:`Project`.
+
+    Appended to ``Project.phase_history`` by :func:`transition_phase` with a
+    UTC ISO timestamp so the run timeline is reconstructable from the project
+    state alone.
+    """
+
     from_phase: ProjectPhase
     to_phase: ProjectPhase
     reason: str
@@ -56,6 +70,16 @@ _ALLOWED = {k: frozenset(v) for k, v in _ALLOWED.items()}
 
 @dataclass(frozen=True)
 class Project:
+    """A run-in-progress: agents, the task DAG, the phase state machine.
+
+    Projects are immutable; mutations return a new instance via
+    :func:`dataclasses.replace`. ``phase`` advances through the
+    :class:`~agora.core.types.ProjectPhase` state machine via
+    :func:`transition_phase`, with each transition appended to
+    ``phase_history`` for audit. ``git_repo_path`` is the per-project work
+    tree where the orchestrator writes artefacts and runs auto-commits.
+    """
+
     id: ProjectId
     name: str
     phase: ProjectPhase = ProjectPhase.INIT

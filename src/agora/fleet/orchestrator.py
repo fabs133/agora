@@ -53,6 +53,15 @@ VRAMGate = Callable[[str], Awaitable[None]]
 
 @dataclass
 class ReviewDecision:
+    """Outcome of the REVIEW phase poll / human approval.
+
+    ``approved=True`` advances the project to ``DONE``. ``approved=False``
+    with ``return_to_phase`` set drives the loop-back path — the
+    orchestrator re-opens the targeted phase, resets the relevant tasks
+    to ``PENDING``, and resumes execution. ``feedback`` is surfaced to the
+    next agent's prompt as a system-authored task comment.
+    """
+
     approved: bool
     feedback: str = ""
     return_to_phase: ProjectPhase | None = None
@@ -60,6 +69,14 @@ class ReviewDecision:
 
 @dataclass
 class ProjectResult:
+    """Aggregated outcome of one :meth:`Orchestrator.run_project` call.
+
+    ``success`` is the conjunction of every task's postcondition outcome
+    plus the review approval. ``task_results`` is in execution order;
+    ``total_tokens`` aggregates input/output token counts (and ``cost_usd``
+    when the LiteLLM adapter is in use) across all agents.
+    """
+
     project: Project
     success: bool
     task_results: list[TaskResult] = field(default_factory=list)
@@ -69,6 +86,23 @@ class ProjectResult:
 
 
 class Orchestrator:
+    """Top-level run driver: phase state machine + agent dispatch + observer.
+
+    The orchestrator does not call the LLM or Matrix directly. It composes
+    :class:`~agora.fleet.dispatcher.Dispatcher` (agent assignment),
+    :class:`~agora.fleet.agent_runtime.AgentRuntime` (per-task execution),
+    :class:`~agora.matrix.room_manager.RoomManager` (room creation),
+    and :class:`~agora.matrix.sync.EventDispatcher` (observer surface).
+
+    Three entry points: :meth:`single_task` for a one-shot, :meth:`run_project`
+    for a full phase-state-machine run, and :meth:`run_flow` to instantiate
+    a declarative :class:`~agora.core.flow.Flow` and then ``run_project`` it.
+
+    Per-project work directories live under ``work_dir/<project_name>/`` and
+    are unified with the per-project git repo so auto-hook commits and the
+    framework's view of artefacts share one tree.
+    """
+
     def __init__(
         self,
         matrix_client: MatrixClientProtocol,
@@ -569,6 +603,13 @@ class Orchestrator:
         )
 
     async def run_flow(self, flow: Flow, project_name: str) -> ProjectResult:
+        """Materialise a declarative :class:`~agora.core.flow.Flow` then run it.
+
+        Equivalent to ``instantiate_flow(flow, project_name)`` followed by
+        :meth:`run_project`. Use this when driving Agora from a YAML plan
+        file (``flows/*.plan.yaml``); use ``run_project`` directly when
+        agents and tasks are constructed in code.
+        """
         agents, tasks = instantiate_flow(flow, project_name)
         return await self.run_project(project_name, agents, tasks)
 

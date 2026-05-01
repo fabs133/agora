@@ -79,7 +79,25 @@ _REACTION_EVENT_TYPE = "m.reaction"
 
 
 class EventDispatcher:
-    """Routes parsed Agora events (and a few Matrix-native ones we care about)."""
+    """Routes parsed Agora events (and a few Matrix-native ones we care about).
+
+    Components register async handlers for specific event types via the
+    ``on_*`` methods; :meth:`handle` takes a raw Matrix event dict, parses
+    it into the matching domain type (``Task``, ``TaskResult``,
+    :class:`~agora.core.project.PhaseChange`, :class:`~agora.core.learning.Learning`,
+    :class:`ReactionEvent`, :class:`ReplyEvent`, plus MSC3381 poll responses
+    and ``/agora`` commands), and fans out to every registered handler in
+    registration order.
+
+    Idempotency: every parsed event is keyed by its Matrix ``event_id`` and
+    duplicate deliveries (which Conduit can produce on reconnect) are
+    silently skipped. Handlers run sequentially within a single event;
+    parallelism between distinct events is the caller's responsibility.
+
+    The dispatcher does not own a sync loop — the orchestrator wires one
+    up via :class:`agora.observe.sync_service.SyncService`, which calls
+    :meth:`handle` for each event yielded by ``AsyncClient.sync_forever``.
+    """
 
     def __init__(self) -> None:
         self._task_handlers: list[TaskHandler] = []

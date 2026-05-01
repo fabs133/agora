@@ -65,6 +65,19 @@ _ANSWER_TO_PHASE: dict[str, ProjectPhase | None] = {
 
 
 class ReviewCoordinator:
+    """Drives the REVIEW-phase poll/approval loop on the Matrix observer side.
+
+    Composed by the orchestrator and called once per project entering
+    REVIEW. The coordinator owns the lifecycle of a single MSC3381 poll
+    event plus its associated ``/agora review`` fallback command path,
+    routes both into one ``asyncio.Future``, and resolves to a
+    :class:`~agora.fleet.orchestrator.ReviewDecision`.
+
+    Free-text feedback in threaded replies under the poll message is
+    captured and surfaced on the decision so the next agent's prompt can
+    incorporate the human's reasoning when looping back.
+    """
+
     def __init__(
         self,
         matrix_client: MatrixClientProtocol,
@@ -86,6 +99,13 @@ class ReviewCoordinator:
         self._attached = False
 
     def attach(self) -> None:
+        """Register poll and command handlers on the event dispatcher.
+
+        Idempotent — calling twice on the same coordinator is a no-op.
+        Normally invoked implicitly by :meth:`request_review`; expose it
+        directly only if you need handlers wired before the first review
+        poll is posted (e.g. integration tests that pre-feed events).
+        """
         if self._attached:
             return
         self._dispatcher.on_poll_response(self._on_poll_response)

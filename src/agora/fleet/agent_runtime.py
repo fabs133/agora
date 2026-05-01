@@ -44,6 +44,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TaskResult:
+    """Outcome of a single :meth:`AgentRuntime.execute_task` call.
+
+    ``success`` is determined by the postconditions, not the LLM's
+    self-report (see :class:`agora.core.contract.Specification`).
+    ``postcondition_results`` lists ``(predicate_name, passed, reason)``
+    triples for every predicate evaluated; ``artifacts`` are the file paths
+    written through the inner tools; ``learnings`` are the failure traces
+    extracted from this turn for the next agent's prompt.
+    """
+
     task_id: TaskId
     success: bool
     output: str
@@ -57,6 +67,22 @@ class TaskResult:
 
 
 class AgentRuntime:
+    """The per-task tool-calling loop that backs every Agora run.
+
+    Each task goes through one ``execute_task`` call: build the system
+    prompt from the agent's identity (including any active learnings),
+    enter a bounded LLM ↔ tool loop, then evaluate postconditions against
+    the produced artefacts. The runtime is storage-agnostic — Matrix side
+    effects flow through the injected ``MatrixClientProtocol``, LLM calls
+    through ``LLMProtocol``, and tools through the ``ToolContext`` — so it
+    can run end-to-end against fakes in tests.
+
+    Composition: the orchestrator holds one ``AgentRuntime`` per agent;
+    staged tasks delegate to :class:`agora.fleet.stage_runner.StageRunner`,
+    which reuses the same ``_run_loop`` internals with a fresh per-stage
+    message history.
+    """
+
     def __init__(
         self,
         llm: LLMProtocol,
@@ -73,6 +99,21 @@ class AgentRuntime:
         identity: AgentIdentity,
         max_iterations: int = 20,
     ) -> TaskResult:
+        """Run one task end-to-end against the configured LLM and tools.
+
+        Builds the system prompt from ``identity.effective_instructions``
+        (which folds in any active learnings), enters the tool-call loop
+        bounded by ``max_iterations``, evaluates postconditions against
+        the result context, then asks the LLM for a short post-task
+        reflection to extract structured :class:`~agora.core.learning.Learning`
+        records.
+
+        ``success`` on the returned :class:`TaskResult` is True iff every
+        postcondition evaluates ``True`` — the LLM's ``mark_complete`` call
+        is observed but does not determine outcome. On weak models that exit
+        without ``mark_complete``, the auto-hooks layer synthesises one
+        from the written files so the predicate has something to observe.
+        """
         self._ctx.expected_output_path = task.output_path
         self._ctx.task_focus = task.description or task.spec.description or task.id
         system_prompt = self._compose_system_prompt(identity, task_id=task.id)
