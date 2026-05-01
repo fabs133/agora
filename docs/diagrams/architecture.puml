@@ -1,0 +1,83 @@
+@startuml architecture
+title Agora Architecture Overview
+
+skinparam ArrowColor #444
+skinparam ComponentBackgroundColor #F8F8F8
+skinparam ComponentBorderColor #444
+skinparam PackageBackgroundColor #F0F4F8
+skinparam PackageBorderColor #6A8AAA
+skinparam DefaultFontName Helvetica
+
+' Note on naming: package labels carry a *Pkg suffix to avoid colliding
+' with component aliases that share a base name (PlantUML throws an
+' opaque "Bad Request" when a package label and an inner alias collide).
+
+package "Runner script" as RunnerPkg {
+  ["scripts/run_*.py"] as Runner
+}
+
+package "Orchestration" as OrchPkg {
+  ["Orchestrator"] as Orch
+  ["Dispatcher"] as Disp
+  ["AgentRuntime"] as Runtime
+  ["StageRunner"] as Stages
+  ["Tool-call loop"] as Loop
+}
+
+package "Inner-tool layer" as InnerPkg {
+  ["inner_tools"] as Inner
+  ["auto_hooks"] as Hooks
+  ["auto_learning"] as Learn
+  ["Specification gates"] as Spec
+}
+
+package "LLM backends" as LLMPkg {
+  ["LLMProtocol"] as LLMP
+  ["OllamaAdapter"] as Ollama
+  ["AnthropicAdapter"] as Anthropic
+  ["LiteLLMAdapter"] as LiteLLM
+  ["ClaudeCodeSubproc"] as Subproc
+}
+
+package "Observer (Matrix side)" as ObsPkg {
+  ["Conduit homeserver"] as Conduit
+  ["EventDispatcher"] as Events
+  ["Renderer"] as Render
+  ["ReviewCoordinator"] as Review
+}
+
+database "Per-project Git repo" as Git
+database "workspace dir" as WD
+
+Runner --> Orch
+Orch --> Disp
+Orch --> Runtime
+Orch --> Stages
+Orch --> Conduit : create room
+Runtime --> Loop
+Stages --> Loop
+Loop --> Inner
+Loop --> LLMP
+Loop --> Spec
+Loop --> Render : phase / task events
+Inner --> Hooks : after write/edit
+Inner --> WD : artefacts
+Inner --> Render : write-event cards
+Hooks --> Git : auto-commit
+Spec --> Learn : on failure
+Learn --> Loop : injected into next prompt
+Ollama --> LLMP
+Anthropic --> LLMP
+LiteLLM --> LLMP
+Subproc --> LLMP
+Render --> Conduit : post events
+Conduit --> Events : sync_forever
+Events --> Review : poll responses
+Review --> Conduit : poll + replies
+
+note bottom of Spec
+  Postconditions are ground truth.
+  The LLM's mark_complete is observed
+  but does not gate task success.
+end note
+@enduml

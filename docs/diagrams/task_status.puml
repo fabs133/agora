@@ -1,0 +1,40 @@
+@startuml task_status
+title Task Status State Machine
+
+skinparam state {
+  BackgroundColor<<terminal>> #FFE4B5
+  BackgroundColor<<failure>> #FFCCCC
+  ArrowColor #444
+  FontName Helvetica
+}
+
+[*] --> PENDING
+
+PENDING --> ASSIGNED : dispatcher picks\nan agent
+ASSIGNED --> RUNNING : runtime starts\nthe tool-call loop
+RUNNING --> REVIEW : agent finishes\n(mark_complete or stop)
+REVIEW --> DONE : every postcondition\nevaluates True
+
+' failure paths
+PENDING -[#red]-> FAILED : prerequisite\ntask failed
+ASSIGNED -[#red]-> FAILED : assignment failed
+RUNNING -[#red]-> FAILED : iteration cap hit
+REVIEW -[#red]-> FAILED : a postcondition\nfailed
+REVIEW -[#blue]-> RUNNING : in-phase auto-retry\n(loopback within phase)
+ASSIGNED -[#blue]-> PENDING : control aborted /\nreassignment
+
+' retry path
+FAILED -[#blue]-> PENDING : phase loopback\nresets the task
+
+state DONE <<terminal>>
+state FAILED <<failure>>
+DONE --> [*]
+
+note right of REVIEW
+  ``success`` is determined here:
+  every Specification.postcondition
+  must evaluate True. The LLM's
+  mark_complete call is observed
+  but does not gate the outcome.
+end note
+@enduml

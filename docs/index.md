@@ -13,6 +13,8 @@ projects and four model tiers. See [the project log](lessons-learned.md) for
 the round-by-round evolution and [the run archive](runs/README.md) for the
 empirical evidence.
 
+![Agora architecture overview](diagrams/architecture.svg)
+
 ```{toctree}
 :caption: Getting started
 :maxdepth: 2

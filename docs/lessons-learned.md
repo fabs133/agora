@@ -42,42 +42,13 @@ is the artifact store; Ollama serves the models.
 
 ## Architecture at a glance
 
-```
-                           ┌───────────────────────┐
-                           │  run_<project>_test.py │  ← runner script
-                           │  (task DAG + staging)  │
-                           └───────────┬───────────┘
-                                       │
-                                       ▼
-           ┌──────────────────── Orchestrator ────────────────────┐
-           │                                                      │
-           │   ┌─ AgentRuntime ─┐       ┌─ StageRunner ─┐          │
-           │   │  (execute_task)│       │  (staged: N ) │          │
-           │   └──────┬─────────┘       └──────┬────────┘          │
-           │          └──── shared _run_loop ──┘                   │
-           │                   │                                  │
-           │                   ▼                                  │
-           │            Tool-call loop                            │
-           │             │                                        │
-           │             ├─▶ inner tools (write/read/edit/fetch)  │
-           │             ├─▶ auto-hooks (validate + git_commit)   │
-           │             ├─▶ write-event cards posted to observer │
-           │             │                                        │
-           │             └─ on exit: synthesize mark_complete,    │
-           │                 run postconditions, record auto-     │
-           │                 learnings, detect narration          │
-           └──────────────────────────┬───────────────────────────┘
-                                      │
-                                      ▼
-                   ┌──────── Observer layer ─────────┐
-                   │   Matrix rooms (Conduit)         │
-                   │   Renderer → Element cards       │
-                   │   EventDispatcher (reactions,    │
-                   │   replies, /agora commands)      │
-                   │   ReviewCoordinator (MSC3381     │
-                   │   poll + artifact snapshot)      │
-                   └──────────────────────────────────┘
-```
+![Agora architecture overview](diagrams/architecture.svg)
+
+The runner builds the task DAG, the orchestrator drives execution through
+the phase state machine, the agent runtime / stage runner share a tool-call
+loop that calls inner tools and the LLM, postcondition gates determine
+success, auto-learnings feed the next attempt, and the observer surface
+streams everything into Matrix. Source: [diagrams/architecture.puml](diagrams/architecture.puml).
 
 50 Python modules under `src/agora/`, 62 test modules under `tests/`. Core
 packages:
@@ -90,9 +61,25 @@ packages:
 - **`observe/`** — Element-side UX: formatters, polls, renderer, review,
   command parser.
 
+### State machines
+
+Two state machines gate execution. Mirrored from
+[`agora/core/project.py`](../src/agora/core/project.py) and
+[`agora/core/task.py`](../src/agora/core/task.py) respectively;
+loop-back paths in blue, unrecoverable-failure paths in red.
+
+| Project phases | Task status |
+|---|---|
+| ![Project phase state machine](diagrams/project_phases.svg) | ![Task status state machine](diagrams/task_status.svg) |
+
 ---
 
 ## The five load-bearing ideas
+
+The flow below is what each task actually goes through — every load-bearing
+idea named in this section corresponds to a step in the sequence.
+
+![Task execution sequence](diagrams/task_sequence.svg)
 
 Each of these solved a real failure mode observed in live runs. Remove any
 one and the framework regresses toward "just a 7B model trying its best".

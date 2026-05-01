@@ -59,6 +59,9 @@ exclude_patterns = [
     "runs/_inventory.csv",
     "runs/registry.yaml",
     "runs/registry_notes.yaml",
+    # The diagrams README is for GitHub repo browsing, not the docs site —
+    # the diagrams themselves are embedded in lessons-learned.md and index.md.
+    "diagrams/README.md",
 ]
 
 # -- HTML output -------------------------------------------------------------

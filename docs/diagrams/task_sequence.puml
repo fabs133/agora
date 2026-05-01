@@ -1,0 +1,62 @@
+@startuml task_sequence
+title One Task Execution — AgentRuntime.execute_task
+
+skinparam SequenceArrowColor #444
+skinparam SequenceLifeLineBorderColor #888
+skinparam SequenceLifeLineBackgroundColor #F8F8F8
+skinparam SequenceParticipant #F0F4F8
+skinparam DefaultFontName Helvetica
+
+participant "Orchestrator" as Orch
+participant "AgentRuntime" as Runtime
+participant "LLM\n(via LLMProtocol)" as LLM
+participant "Inner tools" as Tools
+participant "Auto-hooks" as Hooks
+participant "Postconditions\n(Specification)" as Spec
+participant "Auto-learning" as Learn
+participant "Observer\n(Matrix)" as Obs
+
+Orch -> Runtime : execute_task(task, identity)
+activate Runtime
+
+Runtime -> Runtime : compose system prompt\n(includes active learnings)
+Runtime -> Runtime : build user message\n(task.description + output_path banner)
+
+loop tool-call loop, bounded by max_iterations
+  Runtime -> LLM : complete(messages, tools, system)
+  LLM --> Runtime : LLMResponse(tool_calls, content)
+
+  alt LLM emitted tool calls
+    loop for each tool call
+      Runtime -> Tools : execute(name, arguments)
+      Tools --> Runtime : tool_result
+
+      opt write_file / edit_file_*
+        Tools -> Hooks : run_auto_hooks(path)
+        Hooks -> Tools : check_python OK\n+ run_python_import\n+ git_commit
+        Hooks -> Obs : write-event card
+      end
+    end
+    Runtime -> Runtime : append assistant turn\n+ tool results to messages
+  else LLM stopped
+    note right of Runtime : exit loop
+  end
+end
+
+Runtime -> Hooks : synthesize_mark_complete\n(if model never called it)
+Runtime -> Spec : evaluate_postconditions(spec, context)
+activate Spec
+Spec --> Runtime : [(predicate, passed, reason), ...]
+deactivate Spec
+
+alt every postcondition passed
+  Runtime -> Learn : reinforce active learnings
+else any failed
+  Runtime -> Learn : synthesize_failure_learning\n(task_id, predicate, reason)
+  Learn --> Runtime : Learning record
+  note right of Learn : Persisted to agent's room.\nInjected into next attempt's\nsystem prompt by\n_compose_system_prompt.
+end
+
+Runtime --> Orch : TaskResult(success, postcondition_results,\nartifacts, learnings, usage)
+deactivate Runtime
+@enduml

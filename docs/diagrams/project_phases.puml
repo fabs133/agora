@@ -1,0 +1,47 @@
+@startuml project_phases
+title Project Phase State Machine
+
+skinparam state {
+  BackgroundColor<<terminal>> #FFE4B5
+  BackgroundColor<<failed>> #FFCCCC
+  ArrowColor #444
+  FontName Helvetica
+}
+
+[*] --> INIT
+
+INIT --> ANALYSIS : project spec loaded\nagents spawned
+ANALYSIS --> ARCHITECTURE : requirements analyzed\ntasks decomposed
+ARCHITECTURE --> IMPLEMENTATION : architecture approved\ncontracts defined
+IMPLEMENTATION --> TESTING : all impl tasks complete
+TESTING --> REVIEW : tests pass\ncoverage threshold met
+
+REVIEW --> DONE : human / reviewer\napproves
+
+' loopback paths
+TESTING -[#blue]-> IMPLEMENTATION : tests fail
+REVIEW -[#blue]-> ANALYSIS : reject:\nrequirements unclear
+REVIEW -[#blue]-> ARCHITECTURE : reject:\ndesign issues
+REVIEW -[#blue]-> IMPLEMENTATION : reject:\nimplementation issues
+
+' terminal-on-failure (any non-terminal phase)
+INIT -[#red]-> FAILED : unrecoverable
+ANALYSIS -[#red]-> FAILED : unrecoverable
+ARCHITECTURE -[#red]-> FAILED : unrecoverable
+IMPLEMENTATION -[#red]-> FAILED : unrecoverable
+TESTING -[#red]-> FAILED : unrecoverable
+REVIEW -[#red]-> FAILED : unrecoverable
+
+state DONE <<terminal>>
+state FAILED <<failed>>
+DONE --> [*]
+FAILED --> [*]
+
+note right of REVIEW
+  Loopback paths reset the
+  targeted phase's tasks to
+  PENDING; learnings from
+  failed postconditions
+  carry into the retry's prompt.
+end note
+@enduml
