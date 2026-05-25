@@ -117,6 +117,93 @@ def test_ollama_adapter_strips_prefix_in_payload(monkeypatch) -> None:
     assert captured["payload"]["model"] == "qwen2.5-coder:7b-instruct"
 
 
+def _patch_ollama_capture(monkeypatch) -> dict:
+    """Install a fake aiohttp.ClientSession that records the posted payload."""
+    captured: dict = {}
+
+    class _FakeResponse:
+        status = 200
+
+        async def json(self):
+            return {"message": {"content": "ok", "tool_calls": []}, "done_reason": "stop"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    class _FakeSession:
+        def __init__(self, *_a, **_k): ...
+        def post(self, _url, json=None):
+            captured["payload"] = json
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    return captured
+
+
+def test_ollama_adapter_uses_configured_keep_alive(monkeypatch) -> None:
+    """keep_alive on the adapter governs the /api/chat payload field."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5, keep_alive="2h")
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    assert captured["payload"]["keep_alive"] == "2h"
+
+
+def test_ollama_adapter_default_max_tokens_governs_num_predict(monkeypatch) -> None:
+    """When the caller passes no max_tokens, adapter's default_max_tokens flows."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5, default_max_tokens=2048)
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    assert captured["payload"]["options"]["num_predict"] == 2048
+
+
+def test_ollama_adapter_explicit_max_tokens_overrides_default(monkeypatch) -> None:
+    """Callers (extract_learnings, distiller) keep their explicit budget."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5, default_max_tokens=2048)
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+            max_tokens=512,
+        )
+    )
+    assert captured["payload"]["options"]["num_predict"] == 512
+
+
+def test_create_adapter_forwards_keep_alive_and_default_max_tokens() -> None:
+    adapter = create_llm_adapter(
+        "ollama/llama3.1", keep_alive="1h", default_max_tokens=8192
+    )
+    assert isinstance(adapter, OllamaAdapter)
+    assert adapter.keep_alive == "1h"
+    assert adapter.default_max_tokens == 8192
+
+
 def test_ollama_adapter_shapes_tool_results_as_role_tool() -> None:
     adapter = OllamaAdapter()
     turn = adapter.format_tool_results(

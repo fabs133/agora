@@ -246,6 +246,8 @@ class OllamaAdapter:
         num_ctx: int | None = 16384,
         max_concurrent: int = 1,
         default_model: str = "",
+        keep_alive: str = "30m",
+        default_max_tokens: int = 4096,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.max_concurrent = max(1, int(max_concurrent))
@@ -260,6 +262,14 @@ class OllamaAdapter:
         # model can't reliably pick a valid id; the harness owns the runtime
         # model choice and wires it through the factory).
         self.default_model = default_model.removeprefix(self.OLLAMA_PREFIX) or default_model
+        # How long Ollama keeps the model resident after the response.
+        # Per /api/generate spec: accepts "30m", "1h", "0" (evict immediately).
+        self.keep_alive = keep_alive
+        # Fallback for ``complete()`` when callers don't pass max_tokens —
+        # mirrors the ``default_model`` pattern. agent_runtime's main loop
+        # passes ``model=`` but no max_tokens, so the profile's value flows
+        # through here.
+        self.default_max_tokens = int(default_max_tokens)
 
     # --- shaping ---
 
@@ -300,12 +310,18 @@ class OllamaAdapter:
         system: str = "",
         tools: list[dict[str, Any]] | None = None,
         model: str = "qwen2.5-coder:7b-instruct",
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         effective_model = (
             model.removeprefix(self.OLLAMA_PREFIX) or model or self.default_model
         )
-        options: dict[str, Any] = {"num_predict": max_tokens}
+        # None signals "use the adapter-level default" — call sites that pass
+        # a smaller budget explicitly (extract_learnings → 1024, distiller →
+        # 1024, derive_test_intent → 512) keep their override.
+        effective_max_tokens = (
+            self.default_max_tokens if max_tokens is None else int(max_tokens)
+        )
+        options: dict[str, Any] = {"num_predict": effective_max_tokens}
         if self.num_ctx is not None:
             options["num_ctx"] = self.num_ctx
         payload: dict[str, Any] = {
@@ -314,7 +330,7 @@ class OllamaAdapter:
                 [{"role": "system", "content": system}] if system else []
             ) + messages,
             "stream": False,
-            "keep_alive": "30m",
+            "keep_alive": self.keep_alive,
             "options": options,
         }
         if tools:
@@ -768,11 +784,11 @@ def create_llm_adapter(model: str, **kwargs: Any) -> LLMProtocol:
             "default_model": model,
         }
         # Forward only when the caller asked — preserves today's defaults
-        # (num_ctx=16384, max_concurrent=1) when callers don't specify.
-        if "num_ctx" in kwargs:
-            ollama_kwargs["num_ctx"] = kwargs["num_ctx"]
-        if "max_concurrent" in kwargs:
-            ollama_kwargs["max_concurrent"] = kwargs["max_concurrent"]
+        # (num_ctx=16384, max_concurrent=1, keep_alive="30m",
+        # default_max_tokens=4096) when callers don't specify.
+        for opt_key in ("num_ctx", "max_concurrent", "keep_alive", "default_max_tokens"):
+            if opt_key in kwargs:
+                ollama_kwargs[opt_key] = kwargs[opt_key]
         return OllamaAdapter(**ollama_kwargs)
 
     if model.startswith("claude-code/"):

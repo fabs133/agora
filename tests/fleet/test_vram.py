@@ -202,6 +202,36 @@ async def test_warmup_strips_ollama_prefix(monkeypatch) -> None:
     assert captured["payload"]["keep_alive"] == "30m"
 
 
+async def test_warmup_keep_alive_override(monkeypatch) -> None:
+    """Caller-supplied keep_alive must reach the /api/generate payload.
+
+    Without this, the runtime adapter could pin a model with keep_alive=1h
+    while warmup pinned it for 30m, causing the model to evict before the
+    first real turn on a cold start.
+    """
+    captured: dict = {}
+
+    class _CapturingResponse(_FakeResponse):
+        def __init__(self):
+            super().__init__(status=200, payload={"response": "ok"})
+
+    class _CapturingSession(_FakeSession):
+        def __init__(self, response):
+            super().__init__(response)
+
+        def post(self, _url, json=None):
+            captured["payload"] = json
+            return self._response
+
+    monkeypatch.setattr(
+        "aiohttp.ClientSession", lambda **_k: _CapturingSession(_CapturingResponse())
+    )
+    await vram.warmup(
+        "ollama/qwen2.5-coder:7b-instruct", deadline_seconds=5, keep_alive="1h"
+    )
+    assert captured["payload"]["keep_alive"] == "1h"
+
+
 async def test_warmup_raises_on_http_error(monkeypatch) -> None:
     response = _FakeResponse(status=500, payload={})
     # Need text() for the error path.

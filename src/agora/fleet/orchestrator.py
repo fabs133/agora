@@ -119,6 +119,7 @@ class Orchestrator:
         ollama_base_url: str = "http://localhost:11434",
         skip_warmup: bool = False,
         warmup_deadline: float = 600.0,
+        keep_alive: str = "30m",
         review_timeout_seconds: float = 86400.0,
         enable_web_fetch: bool = False,
         fetch_timeout_seconds: float = 30.0,
@@ -141,6 +142,7 @@ class Orchestrator:
         self._ollama_base_url = ollama_base_url
         self._skip_warmup = skip_warmup
         self._warmup_deadline = warmup_deadline
+        self._keep_alive = keep_alive
         self._review_timeout_seconds = review_timeout_seconds
         self._enable_web_fetch = enable_web_fetch
         self._fetch_timeout_seconds = fetch_timeout_seconds
@@ -174,7 +176,10 @@ class Orchestrator:
                 from agora.fleet.vram import warmup
 
                 await warmup(
-                    cfg.model, base_url=self._ollama_base_url, deadline_seconds=self._warmup_deadline
+                    cfg.model,
+                    base_url=self._ollama_base_url,
+                    deadline_seconds=self._warmup_deadline,
+                    keep_alive=self._keep_alive,
                 )
 
     def get_control(self, project_room_id: str) -> Any | None:
