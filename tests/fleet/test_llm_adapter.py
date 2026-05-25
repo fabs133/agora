@@ -204,6 +204,103 @@ def test_create_adapter_forwards_keep_alive_and_default_max_tokens() -> None:
     assert adapter.default_max_tokens == 8192
 
 
+def test_strip_thinking_blocks_drops_think_pair() -> None:
+    """qwen3 / deepseek-r1 style: ``<think>…</think>`` followed by the answer."""
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "<think>let me plan</think>The answer is 42."
+    assert _strip_thinking_blocks(text) == "The answer is 42."
+
+
+def test_strip_thinking_blocks_drops_thinking_pair() -> None:
+    """Gemma / Claude convention: ``<thinking>…</thinking>`` (longer tag)."""
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "<thinking>step 1, step 2</thinking>\nDone."
+    assert _strip_thinking_blocks(text) == "Done."
+
+
+def test_strip_thinking_blocks_handles_multiple_traces() -> None:
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    # One space sits between "first" and "<think>"; no space after "</think>".
+    # After removal the surrounding whitespace is preserved verbatim — the
+    # function only strips outer whitespace, not internal collapsing.
+    text = "<think>plan</think>first <think>more</think>second"
+    assert _strip_thinking_blocks(text) == "first second"
+
+
+def test_strip_thinking_blocks_no_trace_is_noop() -> None:
+    """Models without reasoning traces (qwen2.5) must round-trip unchanged."""
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "plain content with no tags"
+    assert _strip_thinking_blocks(text) == text
+
+
+def test_strip_thinking_blocks_unterminated_drops_remainder() -> None:
+    """Truncated reasoning trace → drop everything from the open tag.
+
+    Emitting half a trace would mislead the tool-call parser into
+    treating reasoning-prose as content.
+    """
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "real answer <think>I was cut off mid-thought"
+    assert _strip_thinking_blocks(text) == "real answer"
+
+
+def test_strip_thinking_blocks_case_insensitive() -> None:
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "<THINK>caps</THINK>answer"
+    assert _strip_thinking_blocks(text) == "answer"
+
+
+def test_ollama_adapter_strips_thinking_in_response(monkeypatch) -> None:
+    """The adapter must drop thinking blocks before returning LLMResponse."""
+    import asyncio
+
+    class _FakeResponse:
+        status = 200
+
+        async def json(self):
+            return {
+                "message": {
+                    "content": "<think>reasoning</think>actual reply",
+                    "tool_calls": [],
+                },
+                "done_reason": "stop",
+            }
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    class _FakeSession:
+        def __init__(self, *_a, **_k): ...
+        def post(self, _url, json=None):  # noqa: ARG002
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    adapter = OllamaAdapter(timeout_seconds=5)
+    resp = asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen3:7b",
+        )
+    )
+    assert resp.content == "actual reply"
+
+
 def test_ollama_adapter_shapes_tool_results_as_role_tool() -> None:
     adapter = OllamaAdapter()
     turn = adapter.format_tool_results(

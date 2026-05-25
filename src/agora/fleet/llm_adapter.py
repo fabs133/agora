@@ -364,6 +364,14 @@ class OllamaAdapter:
 
         msg = data.get("message", {}) or {}
         content = msg.get("content", "") or ""
+        # Reasoning-trace models (qwen3, gemma4, deepseek-r1, etc.) emit
+        # ``<think>…</think>`` blocks that the framework's tool-call
+        # parser and postcondition system don't model. Strip them before
+        # any downstream consumer sees the text. Ollama sometimes also
+        # surfaces the trace under a separate ``thinking`` key on the
+        # message — that one is silently dropped because content is the
+        # authoritative output channel.
+        content = _strip_thinking_blocks(content)
         tool_calls: list[ToolCall] = []
         for i, tc in enumerate(msg.get("tool_calls", []) or []):
             fn = tc.get("function", {}) or {}
@@ -406,6 +414,56 @@ class OllamaAdapter:
                 "parameters": tool.get("input_schema") or tool.get("parameters") or {},
             },
         }
+
+
+#: Tag pairs used by reasoning-trace models to wrap inline reasoning.
+#: ``<think>`` is qwen3 / deepseek-r1 style; ``<thinking>`` is Gemma / Claude
+#: convention. Both forms are stripped from Ollama output before tool-call
+#: parsing because the framework's tool-call grammar (and postcondition
+#: predicates) don't model reasoning traces.
+_THINKING_TAG_PAIRS: tuple[tuple[str, str], ...] = (
+    ("<think>", "</think>"),
+    ("<thinking>", "</thinking>"),
+)
+
+
+def _strip_thinking_blocks(text: str) -> str:
+    """Remove ``<think>…</think>`` / ``<thinking>…</thinking>`` blocks from text.
+
+    Reasoning models (qwen3, gemma3/4, deepseek-r1) inline their chain of
+    thought between tagged blocks before the actual answer. Agora's
+    tool-call parser and runtime postconditions weren't built for
+    reasoning traces, so we drop them here at the boundary. Both the
+    `<think>` and `<thinking>` conventions are recognised; tags are
+    matched case-insensitively. Unterminated opens (the model was
+    truncated mid-trace) drop the rest of the string from the open tag
+    onward — better to emit nothing than emit half a reasoning trace
+    that downstream parsers will mistake for content.
+    """
+    if not text or "<" not in text:
+        return text
+    lower = text.lower()
+    chunks: list[str] = []
+    pos = 0
+    while pos < len(text):
+        # Find the nearest opening tag (if any) starting from pos.
+        nearest_open = -1
+        nearest_close = ""
+        for open_tag, close_tag in _THINKING_TAG_PAIRS:
+            idx = lower.find(open_tag, pos)
+            if idx != -1 and (nearest_open == -1 or idx < nearest_open):
+                nearest_open = idx
+                nearest_close = close_tag
+        if nearest_open == -1:
+            chunks.append(text[pos:])
+            break
+        chunks.append(text[pos:nearest_open])
+        close_idx = lower.find(nearest_close, nearest_open + len(nearest_close))
+        if close_idx == -1:
+            # Unterminated trace — drop from the open tag onward.
+            break
+        pos = close_idx + len(nearest_close)
+    return "".join(chunks).strip()
 
 
 def _parse_tool_calls_from_text(
