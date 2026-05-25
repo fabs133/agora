@@ -1,0 +1,40 @@
+# Agora model + card run profiles.
+#
+# Set AGORA_PROFILE=<name> to select one; per-field env overrides (see
+# agora.fleet.profiles.apply_env_overrides) layer on top if you need to
+# tweak a single field without forking the profile.
+#
+# Schema:  src/agora/fleet/profiles.py :: ModelProfile / ProfileSet
+# Typos are rejected loudly (pydantic extra='forbid') — no silent no-ops.
+
+version: 1
+default: qwen-coder-32b-p40
+
+profiles:
+  qwen-coder-32b-p40:
+    description: |
+      Production-grade coder for a 24 GB P40. 32B Q4_K_M fits with
+      ~3 GB headroom for KV cache at num_ctx=16384.
+    model: ollama/qwen2.5-coder:32b
+    num_ctx: 16384
+    max_tokens: 4096
+    keep_alive: 30m
+    ollama:
+      base_url: http://localhost:11434
+      num_parallel: 1
+    vram:
+      safety_margin_mib: 1024
+
+  qwen-coder-14b-bigctx-p40:
+    description: |
+      14B Q4 with a 32 KB context window — leaves room for large
+      fetched-doc payloads + long tool-call histories on a P40.
+    model: ollama/qwen2.5-coder:14b
+    num_ctx: 32768
+    max_tokens: 4096
+    keep_alive: 30m
+    ollama:
+      base_url: http://localhost:11434
+      num_parallel: 1
+    vram:
+      safety_margin_mib: 1024
