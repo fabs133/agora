@@ -44,3 +44,21 @@ profiles:
       num_parallel: 1
     vram:
       safety_margin_mib: 1024
+
+  gemma4-e4b-p40:
+    description: |
+      Gemma 4 e4b (8B params @ Q4_K_M, ~9.6 GB on disk) on a 24 GiB P40.
+      At num_ctx=4096 the runtime footprint is ~11 GB resident → 100%
+      GPU with ~13 GB headroom. Has tool-calling + reasoning-trace
+      capability; OllamaAdapter strips <think>...</think> blocks so
+      Agora's tool-call parser still works. Start with 4K context and
+      raise only when a run shows the workload needs more.
+    model: ollama/gemma4:e4b
+    num_ctx: 4096
+    max_tokens: 4096
+    keep_alive: 30m
+    ollama:
+      base_url: http://localhost:11434
+      num_parallel: 1
+    vram:
+      safety_margin_mib: 1024
