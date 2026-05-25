@@ -755,18 +755,25 @@ def create_llm_adapter(model: str, **kwargs: Any) -> LLMProtocol:
 
     kwargs:
       ``api_key`` — for the direct Anthropic path.
-      ``base_url`` — for the Ollama path.
+      ``base_url``, ``num_ctx``, ``max_concurrent`` — for the Ollama path.
       ``timeout_seconds`` — per-adapter HTTP / subprocess timeout.
       ``binary``, ``allow`` — for the Claude Code subprocess path.
     """
     timeout = float(kwargs.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS)
 
     if model.startswith("ollama/"):
-        return OllamaAdapter(
-            base_url=kwargs.get("base_url", "http://localhost:11434"),
-            timeout_seconds=timeout,
-            default_model=model,
-        )
+        ollama_kwargs: dict[str, Any] = {
+            "base_url": kwargs.get("base_url", "http://localhost:11434"),
+            "timeout_seconds": timeout,
+            "default_model": model,
+        }
+        # Forward only when the caller asked — preserves today's defaults
+        # (num_ctx=16384, max_concurrent=1) when callers don't specify.
+        if "num_ctx" in kwargs:
+            ollama_kwargs["num_ctx"] = kwargs["num_ctx"]
+        if "max_concurrent" in kwargs:
+            ollama_kwargs["max_concurrent"] = kwargs["max_concurrent"]
+        return OllamaAdapter(**ollama_kwargs)
 
     if model.startswith("claude-code/"):
         # Lazy import to avoid circular (claude_code_adapter imports from here).

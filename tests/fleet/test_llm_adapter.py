@@ -23,6 +23,37 @@ def test_create_adapter_routes_to_ollama() -> None:
     assert adapter.base_url == "http://localhost:11434"
 
 
+def test_create_adapter_forwards_num_ctx_and_max_concurrent() -> None:
+    """create_llm_adapter must pipe num_ctx + max_concurrent to OllamaAdapter.
+
+    Without this, a caller setting num_ctx in the factory silently fell back
+    to the adapter's 16384 default — confirmed latent bug before the profile
+    layer landed.
+    """
+    adapter = create_llm_adapter(
+        "ollama/llama3.1",
+        num_ctx=32_768,
+        max_concurrent=2,
+    )
+    assert isinstance(adapter, OllamaAdapter)
+    assert adapter.num_ctx == 32_768
+    assert adapter.max_concurrent == 2
+
+
+def test_create_adapter_ollama_defaults_preserved_when_kwargs_omitted() -> None:
+    adapter = create_llm_adapter("ollama/llama3.1")
+    assert isinstance(adapter, OllamaAdapter)
+    # Defaults match the pre-fix behaviour exactly.
+    assert adapter.num_ctx == 16384
+    assert adapter.max_concurrent == 1
+
+
+def test_create_adapter_ollama_accepts_num_ctx_none() -> None:
+    adapter = create_llm_adapter("ollama/llama3.1", num_ctx=None)
+    assert isinstance(adapter, OllamaAdapter)
+    assert adapter.num_ctx is None
+
+
 def test_create_adapter_unknown_model_raises() -> None:
     with pytest.raises(AgoraError, match="no adapter"):
         create_llm_adapter("gpt-4")
