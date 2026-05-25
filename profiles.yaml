@@ -13,10 +13,13 @@ default: qwen-coder-32b-p40
 profiles:
   qwen-coder-32b-p40:
     description: |
-      Production-grade coder for a 24 GB P40. 32B Q4_K_M fits with
-      ~3 GB headroom for KV cache at num_ctx=16384.
+      Production-grade coder for a 24 GB P40. 32B Q4_K_M loads with
+      ~22.5 GB of weights; num_ctx=4096 keeps the KV cache small enough
+      to fit on a single P40 without spilling to system RAM. Larger
+      context windows (16K, 32K) overflow VRAM and force CPU offload —
+      validated empirically (see docs/runs/baseline-32b.run19.md).
     model: ollama/qwen2.5-coder:32b
-    num_ctx: 16384
+    num_ctx: 4096
     max_tokens: 4096
     keep_alive: 30m
     ollama:
@@ -27,10 +30,13 @@ profiles:
 
   qwen-coder-14b-bigctx-p40:
     description: |
-      14B Q4 with a 32 KB context window — leaves room for large
-      fetched-doc payloads + long tool-call histories on a P40.
+      14B Q4 with a 16 KB context window — leaves headroom for fetched
+      docs + multi-turn tool histories on a P40 while still fitting
+      comfortably (~14-16 GB resident). Original 32K context required
+      ~24 GiB and was rejected by Ollama on a 24 GB P40; 16K is the
+      tested fit (see docs/runs/baseline-32b.run19.md).
     model: ollama/qwen2.5-coder:14b
-    num_ctx: 32768
+    num_ctx: 16384
     max_tokens: 4096
     keep_alive: 30m
     ollama:
