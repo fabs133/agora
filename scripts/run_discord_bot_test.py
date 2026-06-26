@@ -39,6 +39,7 @@ import asyncio
 import io
 import os
 import sys
+import uuid
 from pathlib import Path
 
 # Windows cp1252 cannot encode many characters LLMs produce; force UTF-8.
@@ -76,6 +77,12 @@ from agora.fleet.runtime_postconditions import (
 from agora.fleet.stage_runner import Stage, StagedTask
 from agora.matrix.client import AgoraMatrixClient
 from agora.matrix.room_manager import RoomManager
+from agora.observe.jsonl import (
+    RunObserver,
+    git_commit_short,
+    profile_snapshot_from,
+    query_ollama_version,
+)
 from agora.plan.harness import preflight_vram
 
 HOMESERVER = os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167")
@@ -862,6 +869,27 @@ async def main() -> None:
     room_manager = RoomManager(client, homeserver_name=SERVER_NAME)
     llm_factory = build_llm_factory(profile)
 
+    # Structured run logging (JSONL schema v1). Emits run.jsonl + tasks.jsonl
+    # into AGORA_RUN_OUTPUT_DIR (default runs_out/_default/<run_id>/). This is
+    # the Checkpoint-1 reproduction case.
+    run_id = uuid.uuid4().hex
+    output_dir = RunObserver.resolve_output_dir(run_id)
+    observer = RunObserver(
+        run_id=run_id,
+        output_dir=output_dir,
+        probe_name="discord-bot",
+        flow_path="scripts/run_discord_bot_test.py",
+        project_name="discord-bot",
+        profile=profile_snapshot_from(
+            profile,
+            temperature=float(os.getenv("AGORA_LLM_TEMPERATURE", "0.0")),
+            seed=int(os.getenv("AGORA_LLM_SEED", "0")),
+        ),
+        ollama_version=query_ollama_version(profile.ollama.base_url),
+        git_commit=git_commit_short(REPO_ROOT),
+    )
+    print(f"[*] Run observer → {output_dir} (run_id={run_id})")
+
     orchestrator = Orchestrator(
         matrix_client=client,
         room_manager=room_manager,
@@ -882,6 +910,7 @@ async def main() -> None:
         fetch_max_bytes=1_048_576,
         fetch_max_text_bytes=65_536,
         auto_hooks_enabled=True,
+        observer=observer,
     )
 
     print("[*] Running project 'discord-bot' (observer enabled)")

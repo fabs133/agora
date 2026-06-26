@@ -149,6 +149,106 @@ def _patch_ollama_capture(monkeypatch) -> dict:
     return captured
 
 
+def test_ollama_text_fallback_fires_callback(monkeypatch) -> None:
+    """When a model emits tool calls as JSON text (no structured tool_calls),
+    the adapter parses them AND fires on_text_fallback with the 0-based turn."""
+    import asyncio
+
+    class _FakeResponse:
+        status = 200
+
+        async def json(self):
+            # Tool call emitted as JSON text in content, structured list empty.
+            return {
+                "message": {
+                    "content": '{"name": "write_file", "arguments": {"path": "x.py"}}',
+                    "tool_calls": [],
+                },
+                "done_reason": "stop",
+            }
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    class _FakeSession:
+        def __init__(self, *_a, **_k): ...
+        def post(self, _url, json=None):
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    fires: list[int] = []
+    adapter = OllamaAdapter(timeout_seconds=5, on_text_fallback=fires.append)
+    tools = [{"name": "write_file", "description": "", "input_schema": {}}]
+    resp = asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "go"}],
+            tools=tools,
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    # The text was parsed into a structured tool call...
+    assert [c.name for c in resp.tool_calls] == ["write_file"]
+    assert resp.content == ""
+    # ...and the fallback hook fired once for turn 0.
+    assert fires == [0]
+
+
+def test_ollama_no_fallback_when_structured(monkeypatch) -> None:
+    """A native structured tool_call must NOT trip the text-fallback hook."""
+    import asyncio
+
+    class _FakeResponse:
+        status = 200
+
+        async def json(self):
+            return {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {"function": {"name": "write_file", "arguments": {"path": "x"}}}
+                    ],
+                },
+                "done_reason": "stop",
+            }
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    class _FakeSession:
+        def __init__(self, *_a, **_k): ...
+        def post(self, _url, json=None):
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    fires: list[int] = []
+    adapter = OllamaAdapter(timeout_seconds=5, on_text_fallback=fires.append)
+    tools = [{"name": "write_file", "description": "", "input_schema": {}}]
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "go"}], tools=tools, model="ollama/x"
+        )
+    )
+    assert fires == []
+
+
 def test_ollama_adapter_uses_configured_keep_alive(monkeypatch) -> None:
     """keep_alive on the adapter governs the /api/chat payload field."""
     import asyncio

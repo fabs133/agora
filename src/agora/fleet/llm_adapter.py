@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -248,6 +249,7 @@ class OllamaAdapter:
         default_model: str = "",
         keep_alive: str = "30m",
         default_max_tokens: int = 4096,
+        on_text_fallback: Callable[[int], None] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.max_concurrent = max(1, int(max_concurrent))
@@ -270,6 +272,18 @@ class OllamaAdapter:
         # passes ``model=`` but no max_tokens, so the profile's value flows
         # through here.
         self.default_max_tokens = int(default_max_tokens)
+        # Optional observability hook. Invoked with the current tool-loop
+        # iteration index each time ``_parse_tool_calls_from_text`` produces a
+        # non-empty result (the model emitted tool calls as JSON text instead
+        # of via the structured ``tool_calls`` field). Default None = no-op, so
+        # non-observer paths are unaffected. The runtime sets this per task and
+        # owns the authoritative iteration index it records.
+        self.on_text_fallback = on_text_fallback
+        # Per-instance tool-bearing-turn counter, surfaced to the callback so a
+        # caller that doesn't track iterations still gets a 0-based index. The
+        # adapter is constructed fresh per task, so this counts that task's
+        # turns.
+        self._tool_turn_index = -1
 
     # --- shaping ---
 
@@ -335,6 +349,9 @@ class OllamaAdapter:
         }
         if tools:
             payload["tools"] = [self._tool_to_ollama_shape(t) for t in tools]
+            # Count tool-bearing turns so the text-fallback hook can report a
+            # 0-based iteration index even for callers that don't track it.
+            self._tool_turn_index += 1
 
         timeout = aiohttp.ClientTimeout(
             total=self.timeout_seconds,
@@ -392,6 +409,11 @@ class OllamaAdapter:
             if parsed:
                 tool_calls = parsed
                 content = ""  # consumed by the tool call path
+                if self.on_text_fallback is not None:
+                    try:
+                        self.on_text_fallback(self._tool_turn_index)
+                    except Exception as exc:  # noqa: BLE001 — telemetry, never fail
+                        logger.debug("on_text_fallback hook raised: %s", exc)
         usage = {
             "input_tokens": int(data.get("prompt_eval_count", 0) or 0),
             "output_tokens": int(data.get("eval_count", 0) or 0),

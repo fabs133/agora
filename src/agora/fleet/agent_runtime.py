@@ -64,6 +64,75 @@ class TaskResult:
     token_usage: dict[str, int] = field(default_factory=dict)
     iterations: int = 0
     stop_reason: str = ""
+    # --- observability (JSONL schema v1) — all optional, default-zero so
+    # callers that don't read them are unaffected. Populated from the
+    # per-attempt tool-call accumulator (see :class:`_ToolCallStats`). ---
+    tool_calls_total: int = 0
+    tool_calls_structured: int = 0
+    tool_calls_text_fallback: int = 0
+    tool_calls_malformed: int = 0
+    tool_call_unknown_name: int = 0
+    tools_used: list[str] = field(default_factory=list)
+    first_text_fallback_iteration: int | None = None
+    duration_s: float = 0.0
+
+
+@dataclass
+class _ToolCallStats:
+    """Per-task-attempt accumulator of model tool-call fidelity signals.
+
+    Lives on one :class:`AgentRuntime` instance (created fresh per task
+    attempt), so it aggregates across the stages of a staged task while
+    staying scoped to a single attempt. Synthetic auto-hook calls are NOT
+    fed here — only the model's own tool calls.
+    """
+
+    total: int = 0
+    turns_with_calls: int = 0
+    text_fallback_fires: int = 0
+    malformed: int = 0
+    unknown_name: int = 0
+    tools_used: set[str] = field(default_factory=set)
+    first_text_fallback_iteration: int | None = None
+
+    @property
+    def structured_turns(self) -> int:
+        """Turns whose calls came via the native structured field."""
+        return max(0, self.turns_with_calls - self.text_fallback_fires)
+
+    def note_tool_calls(self, calls: list[ToolCall], results: list[str]) -> None:
+        """Record one turn's model tool calls + their result strings."""
+        if calls:
+            self.turns_with_calls += 1
+        for call, result in zip(calls, results, strict=True):
+            self.total += 1
+            self.tools_used.add(call.name)
+            res = result or ""
+            if res.startswith("ERROR: unknown tool"):
+                self.unknown_name += 1
+            elif res.startswith("ERROR: tool "):
+                self.malformed += 1
+
+    def note_text_fallback(self, iteration: int) -> None:
+        """Record a ``_parse_tool_calls_from_text`` fire at ``iteration`` (0-based)."""
+        self.text_fallback_fires += 1
+        if self.first_text_fallback_iteration is None:
+            self.first_text_fallback_iteration = iteration
+
+    def apply_to(self, result: "TaskResult") -> "TaskResult":
+        """Return ``result`` with the accumulated tool-call fields populated."""
+        from dataclasses import replace as _replace
+
+        return _replace(
+            result,
+            tool_calls_total=self.total,
+            tool_calls_structured=self.structured_turns,
+            tool_calls_text_fallback=self.text_fallback_fires,
+            tool_calls_malformed=self.malformed,
+            tool_call_unknown_name=self.unknown_name,
+            tools_used=sorted(self.tools_used),
+            first_text_fallback_iteration=self.first_text_fallback_iteration,
+        )
 
 
 class AgentRuntime:
@@ -92,6 +161,27 @@ class AgentRuntime:
         self._llm = llm
         self._matrix = matrix_client
         self._ctx = tool_context
+        # Per-attempt tool-call fidelity accumulator (JSONL schema v1). The
+        # runtime is constructed fresh per task attempt, so this scopes to one
+        # attempt yet aggregates across a staged task's stages.
+        self.tool_stats = _ToolCallStats()
+        # Authoritative 0-based iteration index for the active tool loop turn,
+        # set in ``_run_loop`` and read by the text-fallback hook.
+        self._cur_iter0: int = 0
+        # Wire the adapter's text-fallback hook to our accumulator when the
+        # adapter exposes one (OllamaAdapter). Default-None adapters / fakes
+        # are left untouched.
+        if hasattr(self._llm, "on_text_fallback"):
+            self._llm.on_text_fallback = self._note_text_fallback
+
+    def _note_text_fallback(self, _adapter_iteration: int) -> None:
+        """Hook target for the LLM adapter's text-fallback signal.
+
+        Uses the runtime's authoritative loop iteration rather than the
+        adapter-supplied index (which can drift if the adapter is shared for
+        side calls like distillation).
+        """
+        self.tool_stats.note_text_fallback(self._cur_iter0)
 
     async def execute_task(
         self,
@@ -175,17 +265,19 @@ class AgentRuntime:
 
             reinforced_ids = [l.id for l in filter_active(list(identity.learned_patterns))]
 
-        return TaskResult(
-            task_id=task.id,
-            success=success,
-            output=final_text,
-            artifacts=artifacts,
-            postcondition_results=postcondition_results,
-            learnings=learnings,
-            reinforced_ids=reinforced_ids,
-            token_usage=total_usage,
-            iterations=iterations,
-            stop_reason=last_stop,
+        return self.tool_stats.apply_to(
+            TaskResult(
+                task_id=task.id,
+                success=success,
+                output=final_text,
+                artifacts=artifacts,
+                postcondition_results=postcondition_results,
+                learnings=learnings,
+                reinforced_ids=reinforced_ids,
+                token_usage=total_usage,
+                iterations=iterations,
+                stop_reason=last_stop,
+            )
         )
 
     async def _run_loop(
@@ -229,6 +321,8 @@ class AgentRuntime:
                 if _has(self._ctx)
                 else tools
             )
+            # Authoritative 0-based iteration index for the text-fallback hook.
+            self._cur_iter0 = iterations - 1
             resp: LLMResponse = await self._llm.complete(
                 messages=messages,
                 system=system_prompt,
@@ -249,6 +343,9 @@ class AgentRuntime:
             messages.append(_assistant_turn(self._llm, resp))
             call_list = list(resp.tool_calls)
             results = [await _run_tool(call, executor) for call in call_list]
+            # Record model tool-call fidelity signals (synthetic auto-hook
+            # calls below are intentionally excluded — they aren't model-emitted).
+            self.tool_stats.note_tool_calls(call_list, results)
             # Diagnostic: log each tool call name + short result so live runs
             # are debuggable. Trimmed args mimic the minimum context reviewers
             # need to see what the model actually tried.

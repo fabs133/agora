@@ -435,16 +435,18 @@ class StageRunner:
 
             reinforced_ids = [l.id for l in filter_active(list(identity.learned_patterns))]
 
-        return TaskResult(
-            task_id=task.id,
-            success=success,
-            output=last_final_text,
-            artifacts=artifacts,
-            postcondition_results=postcondition_results,
-            reinforced_ids=reinforced_ids,
-            token_usage=total_usage,
-            iterations=total_iterations,
-            stop_reason=last_stop,
+        return self._runtime.tool_stats.apply_to(
+            TaskResult(
+                task_id=task.id,
+                success=success,
+                output=last_final_text,
+                artifacts=artifacts,
+                postcondition_results=postcondition_results,
+                reinforced_ids=reinforced_ids,
+                token_usage=total_usage,
+                iterations=total_iterations,
+                stop_reason=last_stop,
+            )
         )
 
     async def _execute_decision_stage(
@@ -1129,17 +1131,19 @@ class StageRunner:
         stop_reason: str,
         usage: dict[str, int],
     ) -> TaskResult:
-        return TaskResult(
-            task_id=task.id,
-            success=False,
-            output=final_text,
-            artifacts=_collect_artifacts(self._ctx),
-            postcondition_results=[
-                (f"stage_{stage_label}", False, reason),
-            ],
-            token_usage=usage,
-            iterations=iterations,
-            stop_reason=stop_reason,
+        return self._runtime.tool_stats.apply_to(
+            TaskResult(
+                task_id=task.id,
+                success=False,
+                output=final_text,
+                artifacts=_collect_artifacts(self._ctx),
+                postcondition_results=[
+                    (f"stage_{stage_label}", False, reason),
+                ],
+                token_usage=usage,
+                iterations=iterations,
+                stop_reason=stop_reason,
+            )
         )
 
 

@@ -135,6 +135,7 @@ def build_orchestrator(
     model: str,
     *,
     profile: ModelProfile | None = None,
+    observer: Any = None,
 ) -> Orchestrator:
     """Construct an :class:`Orchestrator` with sensible defaults for plan runners.
 
@@ -198,6 +199,7 @@ def build_orchestrator(
         auto_hooks_enabled=cfg.auto_hooks_enabled,
         plan_authoring_enabled=cfg.plan_authoring_enabled,
         routed_retry_budget=cfg.routed_retry_budget,
+        observer=observer,
     )
 
 
