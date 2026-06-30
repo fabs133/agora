@@ -1,0 +1,98 @@
+version: "2.0"
+name: tool-call-fidelity
+description: >
+  Axis-1 atomic probe for tool-call fidelity. One implementer agent runs three
+  short, fully-specified tool chains (copy, list+read+concat, follow-a-redirect).
+  Every task dictates the exact tool sequence so any failure attributes to the
+  tool-call axis — did the model emit well-formed tool calls in order, read and
+  write bytes verbatim, and call mark_complete — not to code generation or
+  decomposition judgment. Seed files under plan/ are written by the runner
+  before the orchestrator starts.
+
+agents:
+  - name: probe_impl
+    role: implementer
+    # Empty model → profile-driven (build_llm_factory falls back to
+    # profile.model). The campaign sweeps the model via AGORA_PROFILE.
+    model: ""
+    instructions: |
+      You are a tool-call probe. Follow each task's instructions LITERALLY and
+      in the exact order given. Do NOT improvise the workflow, do NOT add steps,
+      do NOT call tools the task did not ask for. When the task says to copy or
+      concatenate bytes, reproduce them VERBATIM — no commentary, no extra
+      whitespace, no reformatting. Always finish by calling mark_complete.
+
+task_graph:
+  # --- Stage 1: a minimal read → write → complete chain. -------------------
+  - id: small_chain
+    assigned_to: probe_impl
+    description: Copy plan/seed.txt to out/seed_copy.txt verbatim.
+    output_path: out/seed_copy.txt
+    postconditions:
+      - name: file_exists
+        args: {rel: out/seed_copy.txt}
+      - name: file_content_equals_seed
+        args: {path: out/seed_copy.txt, seed_path: plan/seed.txt}
+      - name: mark_complete_called
+    stages:
+      - name: copy
+        max_iterations: 5
+        instruction: |
+          Do exactly these three steps, in order, and nothing else:
+          1) read_file(path="plan/seed.txt")
+          2) write_file(path="out/seed_copy.txt", content=<the EXACT bytes you
+             just read, verbatim — no changes, no extra whitespace>)
+          3) mark_complete(summary="copied seed.txt", artifacts=["out/seed_copy.txt"])
+          Use ONLY read_file, write_file, and mark_complete. No other tools.
+
+  # --- Stage 2: a longer chain — list, two reads, ordered concat. ----------
+  - id: loop_depth
+    assigned_to: probe_impl
+    description: Concatenate plan/seed_a.txt and plan/seed_b.txt into out/concat.txt.
+    output_path: out/concat.txt
+    postconditions:
+      - name: file_exists
+        args: {rel: out/concat.txt}
+      - name: file_content_equals_concat
+        args: {path: out/concat.txt, first_path: plan/seed_a.txt, second_path: plan/seed_b.txt}
+      - name: mark_complete_called
+    stages:
+      - name: concat
+        max_iterations: 12
+        instruction: |
+          Do exactly these five steps, in order, and nothing else:
+          1) list_directory(path="plan")
+          2) read_file(path="plan/seed_a.txt")
+          3) read_file(path="plan/seed_b.txt")
+          4) write_file(path="out/concat.txt", content=<the bytes of seed_a.txt
+             followed IMMEDIATELY by the bytes of seed_b.txt, verbatim, with NO
+             separator and no extra newline between them>)
+          5) mark_complete(summary="concatenated a+b", artifacts=["out/concat.txt"])
+          Use ONLY list_directory, read_file, write_file, and mark_complete.
+
+  # --- Stage 3: follow a redirect named inside a file's content. -----------
+  - id: content_robustness
+    assigned_to: probe_impl
+    description: Follow the redirect in plan/redirect.txt and copy the target.
+    output_path: out/final.txt
+    postconditions:
+      - name: file_exists
+        args: {rel: out/final.txt}
+      - name: file_content_equals_seed
+        args: {path: out/final.txt, seed_path: plan/redirect_target.txt}
+      - name: mark_complete_called
+    stages:
+      - name: redirect
+        max_iterations: 4
+        instruction: |
+          Do exactly these steps, in order, and nothing else:
+          1) read_file(path="plan/redirect.txt"). Its content names another file
+             to read next.
+          2) read_file on whichever file step 1's content told you to read next.
+          3) write_file(path="out/final.txt", content=<the EXACT bytes from the
+             file you read in step 2, verbatim>)
+          4) mark_complete(summary="followed redirect", artifacts=["out/final.txt"])
+          If you cannot determine which file the redirect names, skip the
+          write_file and call mark_complete with a summary saying you could not
+          determine the redirect target. Use ONLY read_file, write_file, and
+          mark_complete.

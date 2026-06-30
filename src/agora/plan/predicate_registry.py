@@ -1076,3 +1076,10 @@ __all__ = [
     "postcond_py_compiles",
     "register_predicate",
 ]
+
+# Eagerly register the axis-1 tool-call-fidelity probe predicates so their
+# names resolve everywhere build_predicate is reachable (the probe YAML refs
+# them). Imported at the bottom — after register_predicate is defined — to
+# avoid a circular import (probe_predicates imports register_predicate). Same
+# eager-registration pattern as the built-in factories above.
+from agora.plan import probe_predicates as _probe_predicates  # noqa: E402,F401
