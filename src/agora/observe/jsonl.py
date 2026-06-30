@@ -124,6 +124,29 @@ class ArmSpec(BaseModel):
     strictness: Literal["strict", "permissive"] = "strict"
 
 
+class PlanEntry(BaseModel):
+    """One line of a campaign's ``plan.jsonl`` (written by ``scripts/run_campaign.py``).
+
+    The serialized line carries ``{id, probe, profile, arm, repeat, params}``.
+    ``run_id`` is NOT part of that line — it is a load-time enrichment populated
+    by :func:`agora.observe.analysis.load_run_records`, which matches this
+    entry's per-run subdirectory (named by ``id``) to the ``run.jsonl`` found
+    inside it. That lets downstream joins map a run's uuid ``run_id`` back to its
+    campaign id and repeat. ``extra="ignore"`` keeps the model forward-compatible
+    with future plan keys.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    id: str
+    probe: str
+    profile: str
+    arm: ArmSpec = Field(default_factory=ArmSpec)
+    repeat: int
+    params: dict[str, Any] | None = None
+    run_id: str | None = None
+
+
 class PostconditionOutcome(BaseModel):
     """One ``(name, passed)`` pair from a task's postcondition evaluation."""
 
@@ -598,6 +621,7 @@ def profile_snapshot_from(profile: Any) -> ProfileSnapshot:
 
 __all__ = [
     "ArmSpec",
+    "PlanEntry",
     "PostconditionOutcome",
     "ProfileSnapshot",
     "RunObserver",

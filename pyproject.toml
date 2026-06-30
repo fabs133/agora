@@ -34,6 +34,12 @@ llm = [
 litellm = [
     "litellm>=1.52",
 ]
+# Layer-1 analysis pipeline: load the campaign's JSONL output into tidy
+# pandas DataFrames. Kept out of the core deps so the framework's runtime
+# install stays slim — only the analysis tooling needs pandas.
+analysis = [
+    "pandas>=2.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
