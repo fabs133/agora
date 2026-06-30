@@ -71,3 +71,74 @@ profiles:
       num_parallel: 1
     vram:
       safety_margin_mib: 1024
+
+  # --- axis-1 campaign profiles -------------------------------------------
+  # The six models swept by campaigns/axis-1-tool-call-fidelity.yaml. num_ctx
+  # here is a sane per-model default; the campaign pins num_ctx=8192 (and the
+  # other sampling params) via AGORA_LLM_* overrides per run. qwen-coder-32b is
+  # deliberately NOT in this set (VRAM gate — it needs num_ctx=4096 to fit).
+  qwen-coder-7b:
+    description: Qwen2.5-Coder 7B — axis-1 sweep.
+    model: ollama/qwen2.5-coder:7b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  qwen-coder-14b:
+    description: Qwen2.5-Coder 14B — axis-1 sweep.
+    model: ollama/qwen2.5-coder:14b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  qwen-instruct-7b:
+    description: Qwen2.5 7B Instruct — axis-1 sweep.
+    model: ollama/qwen2.5:7b-instruct
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  gemma-e4b:
+    description: Gemma 4 e4b — axis-1 sweep.
+    model: ollama/gemma4:e4b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  mistral-nemo-12b:
+    description: Mistral-Nemo 12B — axis-1 sweep.
+    model: ollama/mistral-nemo:12b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  qwen3-30b:
+    description: Qwen3 30B (A3B MoE) — axis-1 sweep.
+    model: ollama/qwen3:30b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
