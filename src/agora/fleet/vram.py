@@ -27,6 +27,25 @@ PROBE_TIMEOUT_SECONDS = 5.0
 OLLAMA_SHOW_TIMEOUT_SECONDS = 10.0
 
 
+def _strip_provider_prefix(model: str) -> str:
+    """Return the Ollama-native model name (drop a leading ``ollama/``).
+
+    ``ollama/qwen2.5:7b-instruct`` → ``qwen2.5:7b-instruct``; an already-bare
+    name is returned unchanged. Called only from Ollama-specific code paths
+    (``/api/show`` + ``/api/ps`` queries), so a foreign provider prefix
+    (``openai/…``) is a programming error — assert against it rather than
+    silently posting a name Ollama can't resolve (the June 30 ~10:00 /api/show
+    404 was the prefixed string leaking through).
+    """
+    if model.startswith("ollama/"):
+        return model[len("ollama/"):]
+    assert "/" not in model, (
+        f"_strip_provider_prefix received a non-ollama model {model!r}; "
+        "this helper is only valid on Ollama-specific code paths"
+    )
+    return model
+
+
 @dataclass(frozen=True)
 class VRAMCheck:
     fits: bool
@@ -237,23 +256,24 @@ def estimate_model_size_mib(model: str) -> int:
 
 async def get_model_size_mib(model: str, base_url: str) -> int:
     """Query Ollama for the model's on-disk size; fall back to the heuristic."""
+    effective = _strip_provider_prefix(model)
     url = f"{base_url.rstrip('/')}/api/show"
     timeout = aiohttp.ClientTimeout(total=OLLAMA_SHOW_TIMEOUT_SECONDS, sock_connect=3)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json={"name": model}) as resp:
+            async with session.post(url, json={"name": effective}) as resp:
                 if resp.status != 200:
-                    return estimate_model_size_mib(model)
+                    return estimate_model_size_mib(effective)
                 data = await resp.json()
     except (TimeoutError, aiohttp.ClientError) as exc:
-        logger.debug("ollama /api/show failed for %s: %s", model, exc)
-        return estimate_model_size_mib(model)
+        logger.debug("ollama /api/show failed for %s: %s", effective, exc)
+        return estimate_model_size_mib(effective)
 
     size_bytes = data.get("size") or 0
     if isinstance(size_bytes, int) and size_bytes > 0:
         # Loaded VRAM ≈ weights + ~20% context/kv cache budget.
         return int(size_bytes / (1024 * 1024) * 1.2)
-    return estimate_model_size_mib(model)
+    return estimate_model_size_mib(effective)
 
 
 # ---------------------------------------------------------------- Fit check
@@ -275,7 +295,7 @@ async def check_model_fits(
     without demanding more free VRAM. This avoids a false negative when a
     previous run or warmup left the model resident.
     """
-    effective = model.removeprefix("ollama/") or model
+    effective = _strip_provider_prefix(model)
 
     # If Ollama reports the target model as currently loaded, it fits by definition.
     if await _is_model_resident(effective, base_url):
@@ -334,6 +354,7 @@ async def _describe_device(device_index: int | None) -> str:
 
 async def _is_model_resident(model: str, base_url: str) -> bool:
     """True iff ``model`` appears in Ollama's /api/ps (currently loaded list)."""
+    model = _strip_provider_prefix(model)  # defense in depth; idempotent
     url = f"{base_url.rstrip('/')}/api/ps"
     timeout = aiohttp.ClientTimeout(total=5, sock_connect=3)
     try:
