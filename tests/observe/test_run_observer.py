@@ -222,7 +222,45 @@ def test_record_task_from_result_skipped(tmp_path: Path) -> None:
         task=task, result=None, role="implementer", task_index=2
     )
     assert rec.status == "skipped"
-    assert rec.first_pass is False
+    # Non-applicable run-shape fields are null, not zero/false.
+    assert rec.first_pass is None
+    assert rec.loopback_count is None
+    assert rec.iterations is None
+
+
+def test_skipped_rows_emit_null_and_aggregation_ignores_them(tmp_path: Path) -> None:
+    """A skipped-heavy run: null fields on skip rows; tasks_first_pass ignores them."""
+    obs = _observer(tmp_path)
+    # One passed first-pass task + two skipped tasks.
+    obs.task_started("ran")
+    obs.record_task_from_result(
+        task=_fake_task("ran", output_path="bot.py"),
+        result=_fake_result(success=True),
+        role="implementer",
+        task_index=0,
+    )
+    for i, tid in enumerate(("skip_a", "skip_b"), start=1):
+        obs.record_task_from_result(
+            task=_fake_task(tid, output_path="x.py"),
+            result=None,
+            role="implementer",
+            task_index=i,
+        )
+    obs.close()
+
+    rows = _read_jsonl(tmp_path / "out" / "tasks.jsonl")
+    parsed = [TaskRecord.model_validate(r) for r in rows]
+    skipped = [p for p in parsed if p.status == "skipped"]
+    assert len(skipped) == 2
+    for s in skipped:
+        assert s.first_pass is None and s.loopback_count is None and s.iterations is None
+    # The JSON literally carries null (not 0/false) for those keys.
+    raw_skip = next(r for r in rows if r["status"] == "skipped")
+    assert raw_skip["first_pass"] is None
+    assert raw_skip["iterations"] is None
+    # Aggregation: only the one real task counts as first-pass.
+    first_pass = sum(1 for p in parsed if p.first_pass)
+    assert first_pass == 1
 
 
 # --------------------------------------------------------------- real orchestrator

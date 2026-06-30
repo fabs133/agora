@@ -145,9 +145,13 @@ class TaskRecord(BaseModel):
     role: str
     task_kind: TaskKind
     status: TaskStatusLiteral
-    first_pass: bool
-    loopback_count: int
-    iterations: int
+    # null (not 0/false) when the field doesn't apply — i.e. status == "skipped":
+    # a task that never ran didn't first-pass, didn't loop back zero times, and
+    # didn't iterate zero times. Distinguishing "doesn't apply" from "zero
+    # happened" keeps campaign aggregations honest.
+    first_pass: bool | None
+    loopback_count: int | None
+    iterations: int | None
     postconditions: list[PostconditionOutcome] = Field(default_factory=list)
     # Primary counters share the "tool call" unit:
     #   tool_calls_structured + tool_calls_text_fallback == tool_calls_total
@@ -492,15 +496,17 @@ class RunObserver:
         execs = self.exec_count(task_id)
 
         if result is None:
+            # Skipped: the task never ran. The three run-shape fields don't
+            # apply, so emit null rather than a misleading zero/false.
             return self.record_task(
                 task_id=task_id,
                 task_index=task_index,
                 role=role,
                 task_kind=kind,
                 status="skipped",
-                first_pass=False,
-                loopback_count=max(0, execs - 1),
-                iterations=0,
+                first_pass=None,
+                loopback_count=None,
+                iterations=None,
                 postconditions=[],
                 duration_s=0.0,
             )
