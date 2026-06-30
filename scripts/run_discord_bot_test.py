@@ -880,11 +880,7 @@ async def main() -> None:
         probe_name="discord-bot",
         flow_path="scripts/run_discord_bot_test.py",
         project_name="discord-bot",
-        profile=profile_snapshot_from(
-            profile,
-            temperature=float(os.getenv("AGORA_LLM_TEMPERATURE", "0.0")),
-            seed=int(os.getenv("AGORA_LLM_SEED", "0")),
-        ),
+        profile=profile_snapshot_from(profile),
         ollama_version=query_ollama_version(profile.ollama.base_url),
         git_commit=git_commit_short(REPO_ROOT),
     )

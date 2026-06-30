@@ -17,18 +17,35 @@ with a fake orchestrator. The orchestrator-facing convenience
 (:meth:`RunObserver.record_task_from_result`) does the derivation from a
 :class:`~agora.fleet.agent_runtime.TaskResult`.
 
-Tool-call accounting semantics (documented because the field names mix units):
+Tool-call accounting semantics. The three primary counters share one unit —
+**tool calls** — so they reconcile arithmetically:
 
-- ``tool_calls_total``         — total model-emitted tool calls executed
-  (synthetic auto-hook calls are excluded). A *call* count.
-- ``tool_calls_text_fallback`` — number of times the Ollama adapter's
-  ``_parse_tool_calls_from_text`` fired (i.e. produced ≥1 call from text).
-  A *fire* count (the headline tool-call-fidelity signal).
-- ``tool_calls_structured``    — number of turns whose tool calls arrived via
-  the native structured ``tool_calls`` field (turns-with-calls minus fallback
-  fires). A *turn* count, mutually exclusive per turn with text-fallback.
+    tool_calls_structured + tool_calls_text_fallback == tool_calls_total
+
+- ``tool_calls_total``         — total model-emitted tool calls executed on
+  the task, summed across stages and attempts (synthetic auto-hook calls are
+  excluded). A *call* count.
+- ``tool_calls_structured``    — calls that arrived via the assistant message's
+  native ``tool_calls`` field. A *call* count.
+- ``tool_calls_text_fallback`` — calls extracted by the Ollama adapter's
+  ``_parse_tool_calls_from_text`` from prose ``content``. A *call* count, and
+  the headline tool-call-fidelity signal. (The adapter's fallback only runs
+  when the structured field was empty, so a given turn's calls are wholly one
+  origin — never a mix — which is what makes the invariant exact.)
+
+Overlap counters (a single call can be counted here *and* in one of the two
+origin buckets above — they are NOT part of the reconciliation sum):
+
 - ``tool_calls_malformed``     — tool executions that raised (arg/exec error).
 - ``tool_call_unknown_name``   — calls naming a tool that doesn't exist.
+
+Side-channel turn counter (NOT a call count, named explicitly so it can't be
+confused with the primaries):
+
+- ``turns_with_text_fallback`` — number of LLM turns on which the text-fallback
+  parser fired (≥1 call extracted from prose).
+- ``first_text_fallback_iteration`` — 0-based index of the first iteration on
+  which the parser extracted ≥1 call from prose; null if it never fired.
 """
 
 from __future__ import annotations
@@ -89,7 +106,7 @@ class ProfileSnapshot(BaseModel):
     num_ctx: int | None = None
     max_tokens: int = 0
     temperature: float = 0.0
-    seed: int = 0
+    seed: int | None = None
     keep_alive: str = ""
 
 
@@ -132,12 +149,17 @@ class TaskRecord(BaseModel):
     loopback_count: int
     iterations: int
     postconditions: list[PostconditionOutcome] = Field(default_factory=list)
+    # Primary counters share the "tool call" unit:
+    #   tool_calls_structured + tool_calls_text_fallback == tool_calls_total
     tool_calls_total: int = 0
     tool_calls_structured: int = 0
     tool_calls_text_fallback: int = 0
+    # Overlap counters (subsets that can also be in an origin bucket above).
     tool_calls_malformed: int = 0
     tool_call_unknown_name: int = 0
     tools_used: list[str] = Field(default_factory=list)
+    # Turn-level side channel (NOT a call count).
+    turns_with_text_fallback: int = 0
     first_text_fallback_iteration: int | None = None
     failure_category: FailureCategory | None = None
     failure_detail: str | None = None
@@ -517,6 +539,9 @@ class RunObserver:
             tool_calls_malformed=malformed,
             tool_call_unknown_name=unknown,
             tools_used=sorted(set(getattr(result, "tools_used", []) or [])),
+            turns_with_text_fallback=int(
+                getattr(result, "turns_with_text_fallback", 0) or 0
+            ),
             first_text_fallback_iteration=getattr(
                 result, "first_text_fallback_iteration", None
             ),
@@ -545,25 +570,22 @@ class RunObserver:
         fh.flush()
 
 
-def profile_snapshot_from(
-    profile: Any,
-    *,
-    temperature: float = 0.0,
-    seed: int = 0,
-) -> ProfileSnapshot:
+def profile_snapshot_from(profile: Any) -> ProfileSnapshot:
     """Build a :class:`ProfileSnapshot` from a :class:`ModelProfile`.
 
-    ``temperature`` / ``seed`` are not part of ``ModelProfile`` (it forbids
-    extra fields and v1 inference doesn't apply them); callers pass them from
-    the campaign defaults / env.
+    ``temperature`` and ``seed`` are read from the profile itself — the same
+    values :func:`agora.fleet.profiles.build_llm_factory` threads into the
+    Ollama options dict — so the recorded snapshot is a true record of what
+    the daemon was told, not a caller-supplied annotation.
     """
+    seed = getattr(profile, "seed", None)
     return ProfileSnapshot(
         name=getattr(profile, "name", "") or "",
         model=getattr(profile, "model", ""),
         num_ctx=getattr(profile, "num_ctx", None),
         max_tokens=int(getattr(profile, "max_tokens", 0) or 0),
-        temperature=float(temperature),
-        seed=int(seed),
+        temperature=float(getattr(profile, "temperature", 0.0) or 0.0),
+        seed=None if seed is None else int(seed),
         keep_alive=getattr(profile, "keep_alive", "") or "",
     )
 

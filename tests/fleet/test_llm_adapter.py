@@ -264,6 +264,40 @@ def test_ollama_adapter_uses_configured_keep_alive(monkeypatch) -> None:
     assert captured["payload"]["keep_alive"] == "2h"
 
 
+def test_ollama_payload_includes_temperature_and_seed(monkeypatch) -> None:
+    """Configured temperature + seed must reach the /api/chat options dict."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5, temperature=0.0, seed=42)
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    opts = captured["payload"]["options"]
+    assert opts["temperature"] == 0.0
+    assert opts["seed"] == 42
+
+
+def test_ollama_payload_omits_sampling_when_unset(monkeypatch) -> None:
+    """Legacy back-compat: no temperature/seed configured ⇒ not sent (Ollama default)."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5)  # defaults None
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    opts = captured["payload"]["options"]
+    assert "temperature" not in opts
+    assert "seed" not in opts
+
+
 def test_ollama_adapter_default_max_tokens_governs_num_predict(monkeypatch) -> None:
     """When the caller passes no max_tokens, adapter's default_max_tokens flows."""
     import asyncio

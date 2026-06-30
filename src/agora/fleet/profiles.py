@@ -73,6 +73,12 @@ class ModelProfile(BaseModel):
     model: str
     num_ctx: int | None = 16384
     max_tokens: int = 4096
+    # Sampling controls. These are part of the reproducibility contract:
+    # ``run.jsonl`` records the values that were actually applied at the
+    # Ollama options layer (see :func:`build_llm_factory`). ``seed`` is
+    # nullable like ``num_ctx`` — None means "use Ollama's default seed".
+    temperature: float = 0.0
+    seed: int | None = 42
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     keep_alive: str = "30m"
     ollama: OllamaProfile = Field(default_factory=OllamaProfile)
@@ -204,6 +210,10 @@ def apply_env_overrides(
       (``""``/``"none"``/``"null"``/``"0"`` collapse to ``None`` so callers
       can defer to Ollama's own default)
     - ``AGORA_LLM_MAX_TOKENS`` → ``max_tokens``
+    - ``AGORA_LLM_TEMPERATURE`` → ``temperature``
+    - ``AGORA_LLM_SEED`` → ``seed``
+      (``""``/``"none"``/``"null"``/``"0"`` collapse to ``None`` so callers
+      can defer to Ollama's own default seed — mirrors ``num_ctx``)
     - ``AGORA_LLM_TIMEOUT_SECONDS`` → ``timeout_seconds``
     - ``AGORA_OLLAMA_BASE_URL`` → ``ollama.base_url``
     - ``AGORA_OLLAMA_NUM_PARALLEL`` → ``ollama.num_parallel``
@@ -219,6 +229,10 @@ def apply_env_overrides(
         updates["num_ctx"] = _coerce_optional_int(src["AGORA_LLM_NUM_CTX"])
     if val := src.get("AGORA_LLM_MAX_TOKENS"):
         updates["max_tokens"] = int(val)
+    if val := src.get("AGORA_LLM_TEMPERATURE"):
+        updates["temperature"] = float(val)
+    if "AGORA_LLM_SEED" in src:
+        updates["seed"] = _coerce_optional_int(src["AGORA_LLM_SEED"])
     if val := src.get("AGORA_LLM_TIMEOUT_SECONDS"):
         updates["timeout_seconds"] = float(val)
     if val := src.get("AGORA_OLLAMA_KEEP_ALIVE"):
@@ -277,6 +291,10 @@ def build_llm_factory(profile: ModelProfile) -> Callable[[str], LLMProtocol]:
             kwargs["max_concurrent"] = profile.ollama.num_parallel
             kwargs["keep_alive"] = profile.keep_alive
             kwargs["default_max_tokens"] = profile.max_tokens
+            # Sampling controls flow to the Ollama options dict so the values
+            # recorded in run.jsonl are the ones the daemon actually applied.
+            kwargs["temperature"] = profile.temperature
+            kwargs["seed"] = profile.seed
         elif chosen.startswith("claude-") and not chosen.startswith("claude-code/"):
             api_key = os.getenv("ANTHROPIC_API_KEY", "")
             if api_key:

@@ -23,6 +23,9 @@ def test_model_profile_defaults_match_pre_profile_behaviour() -> None:
     prof = ModelProfile(model="ollama/qwen2.5:7b-instruct")
     assert prof.num_ctx == 16384
     assert prof.max_tokens == 4096
+    # Campaign sampling baseline: greedy + fixed seed.
+    assert prof.temperature == 0.0
+    assert prof.seed == 42
     assert prof.keep_alive == "30m"
     assert prof.ollama.base_url == "http://localhost:11434"
     assert prof.ollama.num_parallel == 1
@@ -237,6 +240,22 @@ def test_apply_env_overrides_handles_num_ctx_none_sentinel() -> None:
         assert out.num_ctx is None, f"{sentinel!r} should collapse to None"
 
 
+def test_apply_env_overrides_temperature_and_seed() -> None:
+    p = _base_profile()
+    out = apply_env_overrides(
+        p, env={"AGORA_LLM_TEMPERATURE": "0.7", "AGORA_LLM_SEED": "123"}
+    )
+    assert out.temperature == 0.7
+    assert out.seed == 123
+
+
+def test_apply_env_overrides_seed_none_sentinel() -> None:
+    p = _base_profile()
+    for sentinel in ("", "none", "null", "0", "NONE", "  "):
+        out = apply_env_overrides(p, env={"AGORA_LLM_SEED": sentinel})
+        assert out.seed is None, f"{sentinel!r} should collapse to None"
+
+
 def test_apply_env_overrides_routes_subsection_fields() -> None:
     p = _base_profile()
     out = apply_env_overrides(
@@ -317,6 +336,23 @@ def test_build_llm_factory_explicit_ollama_model_routes_through_same_params() ->
     assert adapter.max_concurrent == 3
     assert adapter.keep_alive == "15m"
     assert adapter.default_max_tokens == 2048
+
+
+def test_build_llm_factory_threads_temperature_and_seed() -> None:
+    p = ModelProfile(
+        model="ollama/qwen2.5-coder:7b", temperature=0.0, seed=42
+    )
+    adapter = build_llm_factory(p)("")
+    assert isinstance(adapter, OllamaAdapter)
+    assert adapter.temperature == 0.0
+    assert adapter.seed == 42
+
+
+def test_build_llm_factory_threads_seed_none() -> None:
+    p = ModelProfile(model="ollama/qwen2.5-coder:7b", seed=None)
+    adapter = build_llm_factory(p)("")
+    assert isinstance(adapter, OllamaAdapter)
+    assert adapter.seed is None
 
 
 def test_build_llm_factory_passes_num_ctx_none_through() -> None:

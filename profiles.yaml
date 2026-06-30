@@ -21,6 +21,9 @@ profiles:
     model: ollama/qwen2.5-coder:32b
     num_ctx: 4096
     max_tokens: 4096
+    # Campaign baseline: greedy + fixed seed for reproducible repeats.
+    temperature: 0.0
+    seed: 42
     keep_alive: 30m
     ollama:
       base_url: http://localhost:11434
@@ -38,6 +41,9 @@ profiles:
     model: ollama/qwen2.5-coder:14b
     num_ctx: 16384
     max_tokens: 4096
+    # Campaign baseline: greedy + fixed seed for reproducible repeats.
+    temperature: 0.0
+    seed: 42
     keep_alive: 30m
     ollama:
       base_url: http://localhost:11434
@@ -56,6 +62,9 @@ profiles:
     model: ollama/gemma4:e4b
     num_ctx: 4096
     max_tokens: 4096
+    # Campaign baseline: greedy + fixed seed for reproducible repeats.
+    temperature: 0.0
+    seed: 42
     keep_alive: 30m
     ollama:
       base_url: http://localhost:11434

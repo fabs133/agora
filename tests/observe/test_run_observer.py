@@ -164,6 +164,7 @@ def _fake_result(**over):
         tool_calls_total=4,
         tool_calls_structured=3,
         tool_calls_text_fallback=1,
+        turns_with_text_fallback=1,
         tool_calls_malformed=0,
         tool_call_unknown_name=0,
         tools_used=["mark_complete", "write_file"],
@@ -186,6 +187,8 @@ def test_record_task_from_result_first_pass_and_tool_stats(tmp_path: Path) -> No
     assert rec.first_pass is True
     assert rec.loopback_count == 0
     assert rec.tool_calls_text_fallback == 1
+    assert rec.turns_with_text_fallback == 1
+    assert rec.tool_calls_structured + rec.tool_calls_text_fallback == rec.tool_calls_total
     assert rec.first_text_fallback_iteration == 1
     assert rec.tools_used == ["mark_complete", "write_file"]
 

@@ -249,6 +249,8 @@ class OllamaAdapter:
         default_model: str = "",
         keep_alive: str = "30m",
         default_max_tokens: int = 4096,
+        temperature: float | None = None,
+        seed: int | None = None,
         on_text_fallback: Callable[[int], None] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -272,6 +274,12 @@ class OllamaAdapter:
         # passes ``model=`` but no max_tokens, so the profile's value flows
         # through here.
         self.default_max_tokens = int(default_max_tokens)
+        # Sampling controls. None ⇒ omit from the options dict so Ollama uses
+        # its own default (preserves behaviour for legacy callers that don't
+        # pass these). Profile-driven runs pass concrete values so the value
+        # recorded in run.jsonl is the one the daemon actually applied.
+        self.temperature = temperature
+        self.seed = seed
         # Optional observability hook. Invoked with the current tool-loop
         # iteration index each time ``_parse_tool_calls_from_text`` produces a
         # non-empty result (the model emitted tool calls as JSON text instead
@@ -338,6 +346,13 @@ class OllamaAdapter:
         options: dict[str, Any] = {"num_predict": effective_max_tokens}
         if self.num_ctx is not None:
             options["num_ctx"] = self.num_ctx
+        # Ollama /api/chat accepts ``temperature`` and ``seed`` as standard
+        # sampling options. Only send them when configured so unconfigured
+        # callers keep the daemon's defaults.
+        if self.temperature is not None:
+            options["temperature"] = float(self.temperature)
+        if self.seed is not None:
+            options["seed"] = int(self.seed)
         payload: dict[str, Any] = {
             "model": effective_model,
             "messages": (
@@ -851,7 +866,8 @@ def create_llm_adapter(model: str, **kwargs: Any) -> LLMProtocol:
 
     kwargs:
       ``api_key`` — for the direct Anthropic path.
-      ``base_url``, ``num_ctx``, ``max_concurrent`` — for the Ollama path.
+      ``base_url``, ``num_ctx``, ``max_concurrent``, ``keep_alive``,
+      ``default_max_tokens``, ``temperature``, ``seed`` — for the Ollama path.
       ``timeout_seconds`` — per-adapter HTTP / subprocess timeout.
       ``binary``, ``allow`` — for the Claude Code subprocess path.
     """
@@ -866,7 +882,14 @@ def create_llm_adapter(model: str, **kwargs: Any) -> LLMProtocol:
         # Forward only when the caller asked — preserves today's defaults
         # (num_ctx=16384, max_concurrent=1, keep_alive="30m",
         # default_max_tokens=4096) when callers don't specify.
-        for opt_key in ("num_ctx", "max_concurrent", "keep_alive", "default_max_tokens"):
+        for opt_key in (
+            "num_ctx",
+            "max_concurrent",
+            "keep_alive",
+            "default_max_tokens",
+            "temperature",
+            "seed",
+        ):
             if opt_key in kwargs:
                 ollama_kwargs[opt_key] = kwargs[opt_key]
         return OllamaAdapter(**ollama_kwargs)

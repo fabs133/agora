@@ -70,6 +70,7 @@ class TaskResult:
     tool_calls_total: int = 0
     tool_calls_structured: int = 0
     tool_calls_text_fallback: int = 0
+    turns_with_text_fallback: int = 0
     tool_calls_malformed: int = 0
     tool_call_unknown_name: int = 0
     tools_used: list[str] = field(default_factory=list)
@@ -85,39 +86,56 @@ class _ToolCallStats:
     attempt), so it aggregates across the stages of a staged task while
     staying scoped to a single attempt. Synthetic auto-hook calls are NOT
     fed here — only the model's own tool calls.
+
+    The three primary counters share the **tool call** unit so they
+    reconcile: ``structured + text_fallback == total``. The adapter's text
+    fallback only runs when the native ``tool_calls`` field was empty, so a
+    given turn's calls are wholly one origin — never a mix — which is what
+    makes the invariant exact. ``malformed`` / ``unknown_name`` are overlap
+    counters (a call counted there is also in one origin bucket).
+    ``turns_with_text_fallback`` is a turn-level side channel, NOT a call count.
     """
 
     total: int = 0
-    turns_with_calls: int = 0
-    text_fallback_fires: int = 0
+    structured: int = 0
+    text_fallback: int = 0
+    turns_with_text_fallback: int = 0
     malformed: int = 0
     unknown_name: int = 0
     tools_used: set[str] = field(default_factory=set)
     first_text_fallback_iteration: int | None = None
 
-    @property
-    def structured_turns(self) -> int:
-        """Turns whose calls came via the native structured field."""
-        return max(0, self.turns_with_calls - self.text_fallback_fires)
+    def note_turn(
+        self,
+        calls: list[ToolCall],
+        results: list[str],
+        *,
+        from_text_fallback: bool,
+        iteration: int,
+    ) -> None:
+        """Record one turn's model tool calls + their result strings.
 
-    def note_tool_calls(self, calls: list[ToolCall], results: list[str]) -> None:
-        """Record one turn's model tool calls + their result strings."""
-        if calls:
-            self.turns_with_calls += 1
+        ``from_text_fallback`` flags that the adapter parsed this turn's calls
+        out of prose ``content`` (the whole turn, since fallback only runs when
+        the structured field was empty). ``iteration`` is the 0-based loop turn,
+        used for ``first_text_fallback_iteration``.
+        """
+        n = len(calls)
+        self.total += n
+        if from_text_fallback and n:
+            self.text_fallback += n
+            self.turns_with_text_fallback += 1
+            if self.first_text_fallback_iteration is None:
+                self.first_text_fallback_iteration = iteration
+        else:
+            self.structured += n
         for call, result in zip(calls, results, strict=True):
-            self.total += 1
             self.tools_used.add(call.name)
             res = result or ""
             if res.startswith("ERROR: unknown tool"):
                 self.unknown_name += 1
             elif res.startswith("ERROR: tool "):
                 self.malformed += 1
-
-    def note_text_fallback(self, iteration: int) -> None:
-        """Record a ``_parse_tool_calls_from_text`` fire at ``iteration`` (0-based)."""
-        self.text_fallback_fires += 1
-        if self.first_text_fallback_iteration is None:
-            self.first_text_fallback_iteration = iteration
 
     def apply_to(self, result: "TaskResult") -> "TaskResult":
         """Return ``result`` with the accumulated tool-call fields populated."""
@@ -126,8 +144,9 @@ class _ToolCallStats:
         return _replace(
             result,
             tool_calls_total=self.total,
-            tool_calls_structured=self.structured_turns,
-            tool_calls_text_fallback=self.text_fallback_fires,
+            tool_calls_structured=self.structured,
+            tool_calls_text_fallback=self.text_fallback,
+            turns_with_text_fallback=self.turns_with_text_fallback,
             tool_calls_malformed=self.malformed,
             tool_call_unknown_name=self.unknown_name,
             tools_used=sorted(self.tools_used),
@@ -166,22 +185,25 @@ class AgentRuntime:
         # attempt yet aggregates across a staged task's stages.
         self.tool_stats = _ToolCallStats()
         # Authoritative 0-based iteration index for the active tool loop turn,
-        # set in ``_run_loop`` and read by the text-fallback hook.
+        # set in ``_run_loop``. ``_fallback_this_turn`` is flipped by the
+        # adapter hook when the current turn's calls came from text fallback;
+        # ``_run_loop`` reads it to attribute the turn's call count correctly.
         self._cur_iter0: int = 0
-        # Wire the adapter's text-fallback hook to our accumulator when the
-        # adapter exposes one (OllamaAdapter). Default-None adapters / fakes
-        # are left untouched.
+        self._fallback_this_turn: bool = False
+        # Wire the adapter's text-fallback hook when the adapter exposes one
+        # (OllamaAdapter). Default-None adapters / fakes are left untouched.
         if hasattr(self._llm, "on_text_fallback"):
             self._llm.on_text_fallback = self._note_text_fallback
 
     def _note_text_fallback(self, _adapter_iteration: int) -> None:
         """Hook target for the LLM adapter's text-fallback signal.
 
-        Uses the runtime's authoritative loop iteration rather than the
-        adapter-supplied index (which can drift if the adapter is shared for
-        side calls like distillation).
+        Pure flag-setter: the per-turn call-count attribution + first-iteration
+        recording happen in :meth:`_ToolCallStats.note_turn` using the runtime's
+        authoritative loop iteration (the adapter-supplied index can drift if
+        the adapter is shared for side calls like distillation).
         """
-        self.tool_stats.note_text_fallback(self._cur_iter0)
+        self._fallback_this_turn = True
 
     async def execute_task(
         self,
@@ -321,8 +343,11 @@ class AgentRuntime:
                 if _has(self._ctx)
                 else tools
             )
-            # Authoritative 0-based iteration index for the text-fallback hook.
+            # Authoritative 0-based iteration index for the text-fallback hook;
+            # reset the per-turn fallback flag before the call (the hook fires
+            # inside complete() and flips it).
             self._cur_iter0 = iterations - 1
+            self._fallback_this_turn = False
             resp: LLMResponse = await self._llm.complete(
                 messages=messages,
                 system=system_prompt,
@@ -345,7 +370,12 @@ class AgentRuntime:
             results = [await _run_tool(call, executor) for call in call_list]
             # Record model tool-call fidelity signals (synthetic auto-hook
             # calls below are intentionally excluded — they aren't model-emitted).
-            self.tool_stats.note_tool_calls(call_list, results)
+            self.tool_stats.note_turn(
+                call_list,
+                results,
+                from_text_fallback=self._fallback_this_turn,
+                iteration=self._cur_iter0,
+            )
             # Diagnostic: log each tool call name + short result so live runs
             # are debuggable. Trimmed args mimic the minimum context reviewers
             # need to see what the model actually tried.
