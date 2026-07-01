@@ -111,6 +111,22 @@ def test_build_env_maps_profile_and_params() -> None:
     assert env["AGORA_LLM_MAX_TOKENS"] == "2048"
 
 
+def test_build_env_propagates_arm() -> None:
+    """The per-run arm must reach the probe runner (else run.jsonl defaults to
+    rich/strict for every run and the lean/rich dimension is lost)."""
+    run = {
+        "id": "r001", "profile": "qwen-coder-7b", "params": {},
+        "arm": {"scaffolding": "lean", "strictness": "strict"},
+    }
+    env = build_env(run, "runs_out/x/r001")
+    assert env["AGORA_ARM_SCAFFOLDING"] == "lean"
+    assert env["AGORA_ARM_STRICTNESS"] == "strict"
+    # No arm key → no arm env (standalone / degraded run).
+    assert "AGORA_ARM_SCAFFOLDING" not in build_env(
+        {"id": "r1", "profile": "p", "params": {}}, "d"
+    )
+
+
 def test_build_probe_command_targets_registered_runner() -> None:
     run = {
         "id": "r001",

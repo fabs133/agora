@@ -169,6 +169,14 @@ def build_env(run: dict[str, Any], run_dir: str | Path) -> dict[str, str]:
     for key, env_name in mapping.items():
         if key in params and params[key] is not None:
             env[env_name] = str(params[key])
+    # Propagate the per-run arm so the probe runner records it in run.jsonl.
+    # Without this the observer defaults to ArmSpec() (rich/strict) for every
+    # run and the campaign's lean/rich dimension never reaches the data.
+    arm = run.get("arm") or {}
+    if arm.get("scaffolding"):
+        env["AGORA_ARM_SCAFFOLDING"] = str(arm["scaffolding"])
+    if arm.get("strictness"):
+        env["AGORA_ARM_STRICTNESS"] = str(arm["strictness"])
     return env
 
 

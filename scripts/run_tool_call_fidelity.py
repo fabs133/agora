@@ -31,6 +31,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from agora.fleet.profiles import apply_env_overrides, load_profiles
 from agora.observe.jsonl import (
+    ArmSpec,
     RunObserver,
     git_commit_short,
     profile_snapshot_from,
@@ -121,6 +122,12 @@ async def main() -> None:
 
     run_id = uuid.uuid4().hex
     output_dir = RunObserver.resolve_output_dir(run_id)
+    # Arm is set by the campaign harness via env; a standalone run defaults to
+    # rich/strict (the ArmSpec default) so direct invocation is unchanged.
+    arm = ArmSpec(
+        scaffolding=os.getenv("AGORA_ARM_SCAFFOLDING", "rich"),
+        strictness=os.getenv("AGORA_ARM_STRICTNESS", "strict"),
+    )
     observer = RunObserver(
         run_id=run_id,
         output_dir=output_dir,
@@ -128,6 +135,7 @@ async def main() -> None:
         flow_path=FLOW_PATH,
         project_name=PROJECT_NAME,
         profile=profile_snapshot_from(profile),
+        arm=arm,
         ollama_version=query_ollama_version(profile.ollama.base_url),
         git_commit=git_commit_short(REPO_ROOT),
         log_path=output_dir / "run.log",
