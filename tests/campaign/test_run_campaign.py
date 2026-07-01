@@ -9,6 +9,7 @@ import pytest
 from scripts.expand_campaign import axis1_campaign
 from scripts.run_campaign import (
     EvictionTimeout,
+    OllamaControl,
     build_env,
     build_probe_command,
     expand_plan,
@@ -182,8 +183,8 @@ class FakeControl:
         if self.evict_works:
             self.running.discard(model)
 
-    def prewarm(self, model, keep_alive):
-        self.calls.append(("prewarm", model, keep_alive))
+    def prewarm(self, model, keep_alive, *, num_ctx=None):
+        self.calls.append(("prewarm", model, keep_alive, num_ctx))
         self.running.add(model)
 
     def list_running(self):
@@ -203,6 +204,28 @@ def test_eviction_on_model_change_runs_three_steps() -> None:
     assert prewarm_call[1] == "m_b" and prewarm_call[2] == "30m"
     # evict precedes prewarm.
     assert kinds.index("evict") < kinds.index("prewarm")
+
+
+def test_eviction_prewarms_with_num_ctx() -> None:
+    """The pinned num_ctx must reach prewarm so the model loads at the right
+    context (else the block-first run runs at the model default)."""
+    ctl = FakeControl(running={"m_a"})
+    maybe_evict("m_a", "m_b", ctl, "30m", num_ctx=8192, sleep_fn=lambda *_: None)
+    prewarm_call = next(c for c in ctl.calls if c[0] == "prewarm")
+    assert prewarm_call[1] == "m_b"
+    assert prewarm_call[3] == 8192  # num_ctx threaded through
+
+
+def test_prewarm_payload_carries_num_ctx(monkeypatch) -> None:
+    seen: dict = {}
+    ctl = OllamaControl()
+    monkeypatch.setattr(ctl, "_post", lambda path, payload, **k: seen.update(payload=payload))
+    ctl.prewarm("m", "30m", num_ctx=8192)
+    assert seen["payload"]["options"] == {"num_ctx": 8192}
+    # no num_ctx → no options key (Ollama uses the model default)
+    seen.clear()
+    ctl.prewarm("m", "30m")
+    assert "options" not in seen["payload"]
 
 
 def test_eviction_skipped_for_same_model() -> None:

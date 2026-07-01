@@ -274,9 +274,19 @@ class OllamaControl:
         """Request immediate unload (POST /api/generate keep_alive=0)."""
         self._post("/api/generate", {"model": model, "keep_alive": 0})
 
-    def prewarm(self, model: str, keep_alive: str) -> None:
-        """Fire-and-forget load (POST /api/generate, empty prompt)."""
-        self._post("/api/generate", {"model": model, "keep_alive": keep_alive})
+    def prewarm(self, model: str, keep_alive: str, *, num_ctx: int | None = None) -> None:
+        """Fire-and-forget load (POST /api/generate, empty prompt).
+
+        ``num_ctx`` pins the context window at load time so the resident model
+        matches what the probe will request. Without it Ollama loads at the
+        model's *default* context and the first run against that instance runs at
+        the wrong num_ctx (or eats a mid-run reload) — the block-first
+        contamination observed in the axis-1 sweep.
+        """
+        payload: dict[str, Any] = {"model": model, "keep_alive": keep_alive}
+        if num_ctx is not None:
+            payload["options"] = {"num_ctx": num_ctx}
+        self._post("/api/generate", payload)
 
 
 def _model_resident(running: set[str], model: str) -> bool:
@@ -293,6 +303,7 @@ def maybe_evict(
     control: OllamaControl,
     keep_alive: str,
     *,
+    num_ctx: int | None = None,
     poll_cap: float = EVICTION_POLL_CAP_SECONDS,
     sleep_fn=time.sleep,
     now_fn=time.monotonic,
@@ -301,7 +312,8 @@ def maybe_evict(
 
     On model change: (1) evict the outgoing model, (2) poll /api/ps until it's
     gone (``poll_cap`` cap → :class:`EvictionTimeout`), (3) pre-warm the incoming
-    model and verify residency. Returns True if eviction ran, False if skipped.
+    model at ``num_ctx`` and verify residency. Returns True if eviction ran,
+    False if skipped.
     """
     if prev_model is not None and prev_model == next_model:
         return False  # same model stays resident — no eviction
@@ -316,7 +328,7 @@ def maybe_evict(
                 )
             sleep_fn(1.0)
 
-    control.prewarm(next_model, keep_alive)
+    control.prewarm(next_model, keep_alive, num_ctx=num_ctx)
     # Verify residency (best-effort — pre-warm is async, give it the same window).
     deadline = now_fn() + poll_cap
     while not _model_resident(control.list_running(), next_model):
@@ -483,9 +495,14 @@ def run_campaign(path: str | Path, *, dry_run: bool = False) -> int:
         if interrupted["flag"]:
             break
         next_model = model_for_profile(run["profile"], profiles)
-        keep_alive = profiles.select(run["profile"]).keep_alive
+        prof = profiles.select(run["profile"])
+        keep_alive = prof.keep_alive
+        # Pin the pre-warm context to the run's num_ctx (params override profile)
+        # so the resident model matches what the probe requests — otherwise the
+        # block-first run loads at the model default context.
+        num_ctx = run.get("params", {}).get("num_ctx", prof.num_ctx)
         try:
-            evicted = maybe_evict(prev_model, next_model, control, keep_alive)
+            evicted = maybe_evict(prev_model, next_model, control, keep_alive, num_ctx=num_ctx)
             if evicted:
                 print(f"[*] evicted → pre-warmed {next_model}")
         except EvictionTimeout as exc:
