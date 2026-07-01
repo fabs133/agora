@@ -243,13 +243,17 @@ async def warmup(
     model: str,
     base_url: str = "http://localhost:11434",
     deadline_seconds: float = 600.0,
+    keep_alive: str = "30m",
 ) -> None:
     """Load the model into VRAM before the real timeout clock starts.
 
-    Sends a tiny ``/api/generate`` request with ``keep_alive=30m`` so the model
-    stays resident for the duration of the run. The timeout here is
-    **independent** from ``llm_timeout_seconds`` — model loading can legitimately
-    take minutes on cold disks, but we don't want that budget to eat the actual
+    Sends a tiny ``/api/generate`` request with the supplied ``keep_alive``
+    (default ``30m``) so the model stays resident for the duration of the
+    run. The keep_alive value should match whatever the runtime adapter
+    uses — otherwise the model can evict between warm-up and the first
+    real turn. The timeout here is **independent** from
+    ``llm_timeout_seconds`` — model loading can legitimately take minutes
+    on cold disks, but we don't want that budget to eat the actual
     generation time on the first real turn.
 
     Raises :class:`AgoraError` on timeout or HTTP error so the orchestrator fails
@@ -261,7 +265,7 @@ async def warmup(
         "model": effective,
         "prompt": "hi",
         "stream": False,
-        "keep_alive": "30m",
+        "keep_alive": keep_alive,
         "options": {"num_predict": 1},
     }
     timeout = aiohttp.ClientTimeout(

@@ -7,12 +7,27 @@ to watch phase banners, task cards, and the REVIEW-phase poll.
 Run with:
 
     .venv/Scripts/python.exe scripts/run_discord_bot_test.py
+    AGORA_PROFILE=qwen-coder-32b-p40 .venv/Scripts/python.exe scripts/run_discord_bot_test.py
 
-Environment knobs (all optional, sensible defaults):
+The primary configuration source is ``profiles.yaml`` at the repo root.
+Set ``AGORA_PROFILE=<name>`` to pick one; with no profile selected, the
+default from ``profiles.yaml`` is used (and if no profiles.yaml exists,
+the packaged default falls back to the historical
+``ollama/qwen2.5:7b-instruct`` setup).
+
+Per-field env overrides remain as a secondary escape hatch — see
+:func:`agora.fleet.profiles.apply_env_overrides`. The most useful ones:
+
+    AGORA_LLM_MODEL=ollama/qwen2.5-coder:7b   # override profile.model
+    AGORA_LLM_NUM_CTX=32768                   # override profile.num_ctx
+    AGORA_LLM_MAX_TOKENS=8192                 # override profile.max_tokens
+    AGORA_OLLAMA_BASE_URL=http://localhost:11434
+    AGORA_OLLAMA_KEEP_ALIVE=1h
+    AGORA_VRAM_SAFETY_MARGIN_MIB=1024
+
+Other knobs (unchanged):
 
     AGORA_MATRIX_HOMESERVER=http://localhost:6167
-    AGORA_OLLAMA_BASE_URL=http://localhost:11434
-    AGORA_LLM_MODEL=ollama/qwen2.5-coder:7b
     AGORA_REVIEW_TIMEOUT_SECONDS=300     # auto-approve after 5min if no poll click
     AGORA_MAX_PARALLEL_AGENTS=2
     AGORA_MAX_TASK_RETRIES=2              # in-phase auto-retries per failed task
@@ -24,6 +39,7 @@ import asyncio
 import io
 import os
 import sys
+import uuid
 from pathlib import Path
 
 # Windows cp1252 cannot encode many characters LLMs produce; force UTF-8.
@@ -48,8 +64,8 @@ from agora.core.agent import AgentConfig
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task
 from agora.core.types import AgentRole, TaskStatus
-from agora.fleet.llm_adapter import create_llm_adapter
 from agora.fleet.orchestrator import Orchestrator
+from agora.fleet.profiles import apply_env_overrides, build_llm_factory, load_profiles
 from agora.fleet.runtime_postconditions import (
     postcond_bot_calls_tree_sync,
     postcond_no_code_after_main_block,
@@ -59,17 +75,21 @@ from agora.fleet.runtime_postconditions import (
     postcond_requirements_parse,
 )
 from agora.fleet.stage_runner import Stage, StagedTask
-from agora.fleet.vram import check_model_fits, raise_if_wont_fit
 from agora.matrix.client import AgoraMatrixClient
 from agora.matrix.room_manager import RoomManager
+from agora.observe.jsonl import (
+    RunObserver,
+    git_commit_short,
+    profile_snapshot_from,
+    query_ollama_version,
+)
+from agora.plan.harness import preflight_vram
 
 HOMESERVER = os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167")
 SERVER_NAME = "agora.local"
 SYSTEM_USER = "@agora:agora.local"
 SYSTEM_PASSWORD = os.getenv("AGORA_MATRIX_PASSWORD", "agora-dev-pass")
 OBSERVER_USER = os.getenv("AGORA_OBSERVER_USER", "@fabs:agora.local")
-OLLAMA_BASE_URL = os.getenv("AGORA_OLLAMA_BASE_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("AGORA_LLM_MODEL", "ollama/qwen2.5:7b-instruct")
 REVIEW_TIMEOUT = float(os.getenv("AGORA_REVIEW_TIMEOUT_SECONDS", "300"))
 MAX_PARALLEL = int(os.getenv("AGORA_MAX_PARALLEL_AGENTS", "2"))
 MAX_TASK_RETRIES = int(os.getenv("AGORA_MAX_TASK_RETRIES", "2"))
@@ -203,28 +223,28 @@ def _step(
         f"OUTPUT: {output}\n"
         f"REQUIREMENT: {requirement}\n"
         f"TOOLS: {tools}\n"
-        f"Always call mark_complete with artifacts=[\"{output}\"] when done."
+        f'Always call mark_complete with artifacts=["{output}"] when done.'
     )
 
 
-def build_agents() -> list[AgentConfig]:
+def build_agents(model: str) -> list[AgentConfig]:
     return [
         AgentConfig(
             name="architect",
             role=AgentRole.ARCHITECT,
-            model=LLM_MODEL,
+            model=model,
             instructions=ARCHITECT_INSTRUCTIONS,
         ),
         AgentConfig(
             name="impl",
             role=AgentRole.IMPLEMENTER,
-            model=LLM_MODEL,
+            model=model,
             instructions=IMPLEMENTER_INSTRUCTIONS,
         ),
         AgentConfig(
             name="tester",
             role=AgentRole.TESTER,
-            model=LLM_MODEL,
+            model=model,
             instructions=TESTER_INSTRUCTIONS,
         ),
     ]
@@ -256,322 +276,346 @@ def build_tasks() -> list[Task]:
     tasks: list[Task] = []
 
     # --- 1. fetch_intro ---
-    tasks.append(_task(
-        "fetch_intro",
-        "architect",
-        _step(
-            step="Fetch the discord.py intro docs page and save it locally.",
-            inputs="URL https://discordpy.readthedocs.io/en/stable/intro.html",
-            output="kb/intro.md",
-            requirement="kb/intro.md must exist and contain real documentation text.",
-            tools="1) fetch_url url=https://discordpy.readthedocs.io/en/stable/intro.html "
-                  "save_as=kb/intro.md  (this writes the fetched text to kb/intro.md "
-                  "in one call — do NOT call write_file separately). "
-                  "2) mark_complete summary='fetched intro' artifacts=['kb/intro.md'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("kb/intro.md"),
-            _postcond_mark_complete(),
-        ),
-        output_path="kb/intro.md",
-    ))
+    tasks.append(
+        _task(
+            "fetch_intro",
+            "architect",
+            _step(
+                step="Fetch the discord.py intro docs page and save it locally.",
+                inputs="URL https://discordpy.readthedocs.io/en/stable/intro.html",
+                output="kb/intro.md",
+                requirement="kb/intro.md must exist and contain real documentation text.",
+                tools="1) fetch_url url=https://discordpy.readthedocs.io/en/stable/intro.html "
+                "save_as=kb/intro.md  (this writes the fetched text to kb/intro.md "
+                "in one call — do NOT call write_file separately). "
+                "2) mark_complete summary='fetched intro' artifacts=['kb/intro.md'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("kb/intro.md"),
+                _postcond_mark_complete(),
+            ),
+            output_path="kb/intro.md",
+        )
+    )
 
     # --- 2. fetch_commands ---
-    tasks.append(_task(
-        "fetch_commands",
-        "architect",
-        _step(
-            step="Fetch the discord.py slash-commands (interactions) reference and save it locally.",
-            inputs="URL https://discordpy.readthedocs.io/en/stable/interactions/api.html",
-            output="kb/commands.md",
-            requirement="kb/commands.md must exist and mention `app_commands` or `tree.command`.",
-            tools="1) fetch_url url=https://discordpy.readthedocs.io/en/stable/interactions/api.html "
-                  "save_as=kb/commands.md  (this writes the fetched text to kb/commands.md "
-                  "in one call — do NOT call write_file separately). "
-                  "2) mark_complete summary='fetched commands api' artifacts=['kb/commands.md'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("kb/commands.md"),
-            _postcond_mark_complete(),
-        ),
-        output_path="kb/commands.md",
-    ))
+    tasks.append(
+        _task(
+            "fetch_commands",
+            "architect",
+            _step(
+                step="Fetch the discord.py slash-commands (interactions) reference and save it locally.",
+                inputs="URL https://discordpy.readthedocs.io/en/stable/interactions/api.html",
+                output="kb/commands.md",
+                requirement="kb/commands.md must exist and mention `app_commands` or `tree.command`.",
+                tools="1) fetch_url url=https://discordpy.readthedocs.io/en/stable/interactions/api.html "
+                "save_as=kb/commands.md  (this writes the fetched text to kb/commands.md "
+                "in one call — do NOT call write_file separately). "
+                "2) mark_complete summary='fetched commands api' artifacts=['kb/commands.md'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("kb/commands.md"),
+                _postcond_mark_complete(),
+            ),
+            output_path="kb/commands.md",
+        )
+    )
 
     # --- 3. design_modules ---
-    tasks.append(_task(
-        "design_modules",
-        "architect",
-        _step(
-            step="Write a short module layout for the Discord bot project.",
-            inputs="Read kb/intro.md and kb/commands.md.",
-            output="design/modules.md",
-            requirement="Must list files: bot.py (entry point), requirements.txt, README.md, "
-                        "test_bot.py. One line per file, with a 1-sentence purpose.",
-            tools="1) read_file path=kb/intro.md. 2) read_file path=kb/commands.md. "
-                  "3) write_file path=design/modules.md content=<markdown with a bulleted file list>. "
-                  "4) mark_complete summary='modules' artifacts=['design/modules.md'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("design/modules.md"),
-            _postcond_file_contains("design/modules.md", "bot.py"),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("fetch_intro", "fetch_commands"),
-        output_path="design/modules.md",
-    ))
+    tasks.append(
+        _task(
+            "design_modules",
+            "architect",
+            _step(
+                step="Write a short module layout for the Discord bot project.",
+                inputs="Read kb/intro.md and kb/commands.md.",
+                output="design/modules.md",
+                requirement="Must list files: bot.py (entry point), requirements.txt, README.md, "
+                "test_bot.py. One line per file, with a 1-sentence purpose.",
+                tools="1) read_file path=kb/intro.md. 2) read_file path=kb/commands.md. "
+                "3) write_file path=design/modules.md content=<markdown with a bulleted file list>. "
+                "4) mark_complete summary='modules' artifacts=['design/modules.md'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("design/modules.md"),
+                _postcond_file_contains("design/modules.md", "bot.py"),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("fetch_intro", "fetch_commands"),
+            output_path="design/modules.md",
+        )
+    )
 
     # --- 4. design_commands ---
-    tasks.append(_task(
-        "design_commands",
-        "architect",
-        _step(
-            step="Write signatures for the three slash commands.",
-            inputs="Read kb/commands.md.",
-            output="design/commands.md",
-            requirement="Must include three command signatures: /ping (no args), "
-                        "/roll sides:int=6, /echo text:str. Use discord.py 2.x app_commands idioms.",
-            tools="1) read_file path=kb/commands.md. "
-                  "2) write_file path=design/commands.md content=<markdown listing the three commands>. "
-                  "3) mark_complete summary='commands' artifacts=['design/commands.md'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("design/commands.md"),
-            _postcond_file_contains("design/commands.md", "ping"),
-            _postcond_file_contains("design/commands.md", "roll"),
-            _postcond_file_contains("design/commands.md", "echo"),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("fetch_intro", "fetch_commands"),
-        output_path="design/commands.md",
-    ))
+    tasks.append(
+        _task(
+            "design_commands",
+            "architect",
+            _step(
+                step="Write signatures for the three slash commands.",
+                inputs="Read kb/commands.md.",
+                output="design/commands.md",
+                requirement="Must include three command signatures: /ping (no args), "
+                "/roll sides:int=6, /echo text:str. Use discord.py 2.x app_commands idioms.",
+                tools="1) read_file path=kb/commands.md. "
+                "2) write_file path=design/commands.md content=<markdown listing the three commands>. "
+                "3) mark_complete summary='commands' artifacts=['design/commands.md'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("design/commands.md"),
+                _postcond_file_contains("design/commands.md", "ping"),
+                _postcond_file_contains("design/commands.md", "roll"),
+                _postcond_file_contains("design/commands.md", "echo"),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("fetch_intro", "fetch_commands"),
+            output_path="design/commands.md",
+        )
+    )
 
     # --- (assemble_design removed — build_skeleton reads the two design files directly) ---
 
     # --- 6. build_skeleton ---
-    tasks.append(_task(
-        "build_skeleton",
-        "impl",
-        _step(
-            step="Write the bot.py skeleton (imports, Intents, Bot/Client, on_ready, __main__).",
-            inputs="Read design/modules.md and design/commands.md.",
-            output="bot.py",
-            requirement="bot.py must import discord, create a commands.Bot or discord.Client with "
-                        "appropriate Intents, read DISCORD_TOKEN from os.environ, and call "
-                        "bot.run(TOKEN) under __main__. NO slash commands yet.",
-            tools="1) read_file path=design/modules.md. "
-                  "2) read_file path=design/commands.md. "
-                  "3) write_file path=bot.py content=<python skeleton>. "
-                  "4) check_python path=bot.py  (must return 'OK'; if SyntaxError, fix and re-write). "
-                  "5) git_commit message='feat: bot skeleton'. "
-                  "6) mark_complete summary='skeleton' artifacts=['bot.py'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("bot.py"),
-            _postcond_py_compiles("bot.py"),
-            postcond_python_imports("bot.py"),
-            postcond_no_code_after_main_block("bot.py"),
-            _postcond_file_contains("bot.py", "discord"),
-            _postcond_file_contains("bot.py", "DISCORD_TOKEN"),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("design_modules", "design_commands"),
-        output_path="bot.py",
-    ))
+    tasks.append(
+        _task(
+            "build_skeleton",
+            "impl",
+            _step(
+                step="Write the bot.py skeleton (imports, Intents, Bot/Client, on_ready, __main__).",
+                inputs="Read design/modules.md and design/commands.md.",
+                output="bot.py",
+                requirement="bot.py must import discord, create a commands.Bot or discord.Client with "
+                "appropriate Intents, read DISCORD_TOKEN from os.environ, and call "
+                "bot.run(TOKEN) under __main__. NO slash commands yet.",
+                tools="1) read_file path=design/modules.md. "
+                "2) read_file path=design/commands.md. "
+                "3) write_file path=bot.py content=<python skeleton>. "
+                "4) check_python path=bot.py  (must return 'OK'; if SyntaxError, fix and re-write). "
+                "5) git_commit message='feat: bot skeleton'. "
+                "6) mark_complete summary='skeleton' artifacts=['bot.py'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("bot.py"),
+                _postcond_py_compiles("bot.py"),
+                postcond_python_imports("bot.py"),
+                postcond_no_code_after_main_block("bot.py"),
+                _postcond_file_contains("bot.py", "discord"),
+                _postcond_file_contains("bot.py", "DISCORD_TOKEN"),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("design_modules", "design_commands"),
+            output_path="bot.py",
+        )
+    )
 
     # --- 7. build_ping ---
-    tasks.append(_task(
-        "build_ping",
-        "impl",
-        _step(
-            step="Add a /ping slash command to bot.py.",
-            inputs="Read bot.py and design/commands.md.",
-            output="bot.py",
-            requirement="bot.py must still have the skeleton AND a new /ping handler using "
-                        "@bot.tree.command or app_commands. /ping replies 'pong'.",
-            tools="1) read_file path=bot.py. 2) read_file path=design/commands.md. "
-                  "3) write_file path=bot.py content=<full updated content>. "
-                  "4) check_python path=bot.py  (must return 'OK'; re-write on SyntaxError). "
-                  "5) git_commit message='feat: /ping'. "
-                  "6) mark_complete summary='/ping added' artifacts=['bot.py'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("bot.py"),
-            _postcond_py_compiles("bot.py"),
-            postcond_python_imports("bot.py"),
-            postcond_no_code_after_main_block("bot.py"),
-            _postcond_file_contains("bot.py", "ping"),
-            _postcond_file_contains("bot.py", "DISCORD_TOKEN"),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("build_skeleton",),
-        output_path="bot.py",
-    ))
+    tasks.append(
+        _task(
+            "build_ping",
+            "impl",
+            _step(
+                step="Add a /ping slash command to bot.py.",
+                inputs="Read bot.py and design/commands.md.",
+                output="bot.py",
+                requirement="bot.py must still have the skeleton AND a new /ping handler using "
+                "@bot.tree.command or app_commands. /ping replies 'pong'.",
+                tools="1) read_file path=bot.py. 2) read_file path=design/commands.md. "
+                "3) write_file path=bot.py content=<full updated content>. "
+                "4) check_python path=bot.py  (must return 'OK'; re-write on SyntaxError). "
+                "5) git_commit message='feat: /ping'. "
+                "6) mark_complete summary='/ping added' artifacts=['bot.py'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("bot.py"),
+                _postcond_py_compiles("bot.py"),
+                postcond_python_imports("bot.py"),
+                postcond_no_code_after_main_block("bot.py"),
+                _postcond_file_contains("bot.py", "ping"),
+                _postcond_file_contains("bot.py", "DISCORD_TOKEN"),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("build_skeleton",),
+            output_path="bot.py",
+        )
+    )
 
     # --- 8. build_roll ---
-    tasks.append(_task(
-        "build_roll",
-        "impl",
-        _step(
-            step="Add a /roll slash command to bot.py.",
-            inputs="Read bot.py.",
-            output="bot.py",
-            requirement="bot.py must keep /ping AND add /roll with an int parameter `sides` "
-                        "defaulting to 6. It replies with a random int between 1 and sides.",
-            tools="1) read_file path=bot.py. "
-                  "2) write_file path=bot.py content=<full updated content>. "
-                  "3) check_python path=bot.py  (must return 'OK'; re-write on SyntaxError). "
-                  "4) git_commit message='feat: /roll'. "
-                  "5) mark_complete summary='/roll added' artifacts=['bot.py'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("bot.py"),
-            _postcond_py_compiles("bot.py"),
-            postcond_python_imports("bot.py"),
-            postcond_no_code_after_main_block("bot.py"),
-            _postcond_file_contains("bot.py", "ping"),
-            _postcond_file_contains("bot.py", "roll"),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("build_ping",),
-        output_path="bot.py",
-    ))
+    tasks.append(
+        _task(
+            "build_roll",
+            "impl",
+            _step(
+                step="Add a /roll slash command to bot.py.",
+                inputs="Read bot.py.",
+                output="bot.py",
+                requirement="bot.py must keep /ping AND add /roll with an int parameter `sides` "
+                "defaulting to 6. It replies with a random int between 1 and sides.",
+                tools="1) read_file path=bot.py. "
+                "2) write_file path=bot.py content=<full updated content>. "
+                "3) check_python path=bot.py  (must return 'OK'; re-write on SyntaxError). "
+                "4) git_commit message='feat: /roll'. "
+                "5) mark_complete summary='/roll added' artifacts=['bot.py'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("bot.py"),
+                _postcond_py_compiles("bot.py"),
+                postcond_python_imports("bot.py"),
+                postcond_no_code_after_main_block("bot.py"),
+                _postcond_file_contains("bot.py", "ping"),
+                _postcond_file_contains("bot.py", "roll"),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("build_ping",),
+            output_path="bot.py",
+        )
+    )
 
     # --- 9. build_echo ---
-    tasks.append(_task(
-        "build_echo",
-        "impl",
-        _step(
-            step="Add a /echo slash command to bot.py.",
-            inputs="Read bot.py.",
-            output="bot.py",
-            requirement="bot.py must keep /ping + /roll AND add /echo with a str parameter `text` "
-                        "that echoes the user's text.",
-            tools="1) read_file path=bot.py. "
-                  "2) write_file path=bot.py content=<full updated content>. "
-                  "3) check_python path=bot.py  (must return 'OK'; re-write on SyntaxError). "
-                  "4) git_commit message='feat: /echo'. "
-                  "5) mark_complete summary='/echo added' artifacts=['bot.py'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("bot.py"),
-            _postcond_py_compiles("bot.py"),
-            postcond_python_imports("bot.py"),
-            postcond_no_code_after_main_block("bot.py"),
-            postcond_bot_calls_tree_sync("bot.py"),
-            _postcond_file_contains("bot.py", "ping"),
-            _postcond_file_contains("bot.py", "roll"),
-            _postcond_file_contains("bot.py", "echo"),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("build_roll",),
-        output_path="bot.py",
-    ))
+    tasks.append(
+        _task(
+            "build_echo",
+            "impl",
+            _step(
+                step="Add a /echo slash command to bot.py.",
+                inputs="Read bot.py.",
+                output="bot.py",
+                requirement="bot.py must keep /ping + /roll AND add /echo with a str parameter `text` "
+                "that echoes the user's text.",
+                tools="1) read_file path=bot.py. "
+                "2) write_file path=bot.py content=<full updated content>. "
+                "3) check_python path=bot.py  (must return 'OK'; re-write on SyntaxError). "
+                "4) git_commit message='feat: /echo'. "
+                "5) mark_complete summary='/echo added' artifacts=['bot.py'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("bot.py"),
+                _postcond_py_compiles("bot.py"),
+                postcond_python_imports("bot.py"),
+                postcond_no_code_after_main_block("bot.py"),
+                postcond_bot_calls_tree_sync("bot.py"),
+                _postcond_file_contains("bot.py", "ping"),
+                _postcond_file_contains("bot.py", "roll"),
+                _postcond_file_contains("bot.py", "echo"),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("build_roll",),
+            output_path="bot.py",
+        )
+    )
 
     # --- 10. write_requirements (parallel with 7-9 after skeleton exists) ---
-    tasks.append(_task(
-        "write_requirements",
-        "impl",
-        _step(
-            step="Write requirements.txt with discord.py 2.x pinned.",
-            inputs="None.",
-            output="requirements.txt",
-            requirement="requirements.txt must contain a single line pinning discord.py>=2.3.",
-            tools="1) write_file path=requirements.txt content='discord.py>=2.3\\n'. "
-                  "2) git_commit message='chore: requirements'. "
-                  "3) mark_complete summary='requirements' artifacts=['requirements.txt'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("requirements.txt"),
-            _postcond_file_contains("requirements.txt", "discord.py"),
-            postcond_requirements_parse("requirements.txt"),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("build_skeleton",),
-        output_path="requirements.txt",
-    ))
+    tasks.append(
+        _task(
+            "write_requirements",
+            "impl",
+            _step(
+                step="Write requirements.txt with discord.py 2.x pinned.",
+                inputs="None.",
+                output="requirements.txt",
+                requirement="requirements.txt must contain a single line pinning discord.py>=2.3.",
+                tools="1) write_file path=requirements.txt content='discord.py>=2.3\\n'. "
+                "2) git_commit message='chore: requirements'. "
+                "3) mark_complete summary='requirements' artifacts=['requirements.txt'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("requirements.txt"),
+                _postcond_file_contains("requirements.txt", "discord.py"),
+                postcond_requirements_parse("requirements.txt"),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("build_skeleton",),
+            output_path="requirements.txt",
+        )
+    )
 
     # --- 11. write_readme (depends only on skeleton; not on any /command tasks) ---
-    tasks.append(_task(
-        "write_readme",
-        "impl",
-        _step(
-            step="Write a short README.md explaining how to run the bot.",
-            inputs="Read bot.py (only the skeleton is guaranteed to exist; "
-                   "individual /commands may or may not be implemented yet).",
-            output="README.md",
-            requirement="README.md must mention DISCORD_TOKEN env var and `python bot.py`. "
-                        "Describe usage of whatever commands exist — do NOT reference "
-                        "specific commands that aren't visible in bot.py.",
-            tools="1) read_file path=bot.py. "
-                  "2) write_file path=README.md content=<short markdown>. "
-                  "3) git_commit message='docs: README'. "
-                  "4) mark_complete summary='readme' artifacts=['README.md'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("README.md"),
-            _postcond_file_contains("README.md", "DISCORD_TOKEN"),
-            postcond_readme_only_references_existing_commands(),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("build_skeleton",),
-        output_path="README.md",
-    ))
+    tasks.append(
+        _task(
+            "write_readme",
+            "impl",
+            _step(
+                step="Write a short README.md explaining how to run the bot.",
+                inputs="Read bot.py (only the skeleton is guaranteed to exist; "
+                "individual /commands may or may not be implemented yet).",
+                output="README.md",
+                requirement="README.md must mention DISCORD_TOKEN env var and `python bot.py`. "
+                "Describe usage of whatever commands exist — do NOT reference "
+                "specific commands that aren't visible in bot.py.",
+                tools="1) read_file path=bot.py. "
+                "2) write_file path=README.md content=<short markdown>. "
+                "3) git_commit message='docs: README'. "
+                "4) mark_complete summary='readme' artifacts=['README.md'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("README.md"),
+                _postcond_file_contains("README.md", "DISCORD_TOKEN"),
+                postcond_readme_only_references_existing_commands(),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("build_skeleton",),
+            output_path="README.md",
+        )
+    )
 
     # --- 12. write_tests (depends only on skeleton + requirements) ---
-    tasks.append(_task(
-        "write_tests",
-        "tester",
-        _step(
-            step="Write test_bot.py that exercises whatever commands bot.py registers.",
-            inputs="Read bot.py and requirements.txt. Only the skeleton is guaranteed; "
-                   "individual /commands may or may not be implemented.",
-            output="test_bot.py",
-            requirement="test_bot.py must contain at least one `def test_` function and use "
-                        "unittest.mock. Tests must NOT require a real Discord token. "
-                        "Introspect the bot's command tree (e.g. via "
-                        "`bot.bot.tree.get_commands()`) rather than hard-coding /ping/roll/echo.",
-            tools="1) read_file path=bot.py. 2) read_file path=requirements.txt. "
-                  "3) write_file path=test_bot.py content=<pytest code with mocks>. "
-                  "4) check_python path=test_bot.py  (must return 'OK'; re-write on SyntaxError). "
-                  "5) git_commit message='test: bot command handlers'. "
-                  "6) mark_complete summary='tests' artifacts=['test_bot.py'].",
-        ),
-        postconditions=(
-            _postcond_file_exists("test_bot.py"),
-            _postcond_py_compiles("test_bot.py"),
-            _postcond_file_contains("test_bot.py", "def test_"),
-            postcond_pytest_passes("test_bot.py"),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("build_skeleton", "write_requirements"),
-        output_path="test_bot.py",
-    ))
+    tasks.append(
+        _task(
+            "write_tests",
+            "tester",
+            _step(
+                step="Write test_bot.py that exercises whatever commands bot.py registers.",
+                inputs="Read bot.py and requirements.txt. Only the skeleton is guaranteed; "
+                "individual /commands may or may not be implemented.",
+                output="test_bot.py",
+                requirement="test_bot.py must contain at least one `def test_` function and use "
+                "unittest.mock. Tests must NOT require a real Discord token. "
+                "Introspect the bot's command tree (e.g. via "
+                "`bot.bot.tree.get_commands()`) rather than hard-coding /ping/roll/echo.",
+                tools="1) read_file path=bot.py. 2) read_file path=requirements.txt. "
+                "3) write_file path=test_bot.py content=<pytest code with mocks>. "
+                "4) check_python path=test_bot.py  (must return 'OK'; re-write on SyntaxError). "
+                "5) git_commit message='test: bot command handlers'. "
+                "6) mark_complete summary='tests' artifacts=['test_bot.py'].",
+            ),
+            postconditions=(
+                _postcond_file_exists("test_bot.py"),
+                _postcond_py_compiles("test_bot.py"),
+                _postcond_file_contains("test_bot.py", "def test_"),
+                postcond_pytest_passes("test_bot.py"),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("build_skeleton", "write_requirements"),
+            output_path="test_bot.py",
+        )
+    )
 
     # --- 13. integration_check (terminal gate — postconditions do the real work) ---
-    tasks.append(_task(
-        "integration_check",
-        "tester",
-        _step(
-            step="Confirm the repo is complete. DO NOT modify any files.",
-            inputs="The entire workspace.",
-            output="(no new file — this task only verifies)",
-            requirement="Just call mark_complete. Gate postconditions run automatically "
-                        "and verify bot.py imports, requirements.txt parses, test_bot.py "
-                        "passes pytest, bot.py calls tree.sync, and README.md only "
-                        "references commands that exist in bot.py.",
-            tools="1) mark_complete summary='integration OK' artifacts=[].",
-        ),
-        postconditions=(
-            postcond_python_imports("bot.py"),
-            postcond_no_code_after_main_block("bot.py"),
-            postcond_requirements_parse("requirements.txt"),
-            postcond_pytest_passes("test_bot.py"),
-            postcond_bot_calls_tree_sync("bot.py"),
-            postcond_readme_only_references_existing_commands(),
-            _postcond_mark_complete(),
-        ),
-        depends_on=("build_echo", "write_requirements", "write_readme", "write_tests"),
-    ))
+    tasks.append(
+        _task(
+            "integration_check",
+            "tester",
+            _step(
+                step="Confirm the repo is complete. DO NOT modify any files.",
+                inputs="The entire workspace.",
+                output="(no new file — this task only verifies)",
+                requirement="Just call mark_complete. Gate postconditions run automatically "
+                "and verify bot.py imports, requirements.txt parses, test_bot.py "
+                "passes pytest, bot.py calls tree.sync, and README.md only "
+                "references commands that exist in bot.py.",
+                tools="1) mark_complete summary='integration OK' artifacts=[].",
+            ),
+            postconditions=(
+                postcond_python_imports("bot.py"),
+                postcond_no_code_after_main_block("bot.py"),
+                postcond_requirements_parse("requirements.txt"),
+                postcond_pytest_passes("test_bot.py"),
+                postcond_bot_calls_tree_sync("bot.py"),
+                postcond_readme_only_references_existing_commands(),
+                _postcond_mark_complete(),
+            ),
+            depends_on=("build_echo", "write_requirements", "write_readme", "write_tests"),
+        )
+    )
 
     return tasks
 
@@ -655,13 +699,13 @@ def build_staged_tasks(tasks: list[Task]) -> dict[str, StagedTask]:
                         "Add a /ping slash command to bot.py. Call ONE tool:\n\n"
                         "edit_file_insert_before(\n"
                         "    path='bot.py',\n"
-                        "    anchor=\"if __name__\",\n"
-                        "    snippet=\"\"\"\n"
+                        '    anchor="if __name__",\n'
+                        '    snippet="""\n'
                         "@bot.tree.command(name='ping', description='pong')\n"
                         "async def ping(interaction: discord.Interaction):\n"
                         "    await interaction.response.send_message('pong')\n"
                         "\n"
-                        "\"\"\",\n"
+                        '""",\n'
                         ")\n\n"
                         "Do NOT call write_file. Do NOT re-emit existing bot.py content. "
                         "The anchor string 'if __name__' already appears in bot.py; "
@@ -689,13 +733,13 @@ def build_staged_tasks(tasks: list[Task]) -> dict[str, StagedTask]:
                         "   )\n\n"
                         "2) edit_file_insert_before(\n"
                         "     path='bot.py',\n"
-                        "     anchor=\"if __name__\",\n"
-                        "     snippet=\"\"\"\n"
+                        '     anchor="if __name__",\n'
+                        '     snippet="""\n'
                         "@bot.tree.command(name='roll', description='roll a dN')\n"
                         "async def roll(interaction: discord.Interaction, sides: int = 6):\n"
                         "    await interaction.response.send_message(str(random.randint(1, sides)))\n"
                         "\n"
-                        "\"\"\",\n"
+                        '""",\n'
                         "   )\n\n"
                         "Use the standard-library `random` module (NOT discord.utils.random). "
                         "Do NOT call write_file. Do NOT call edit_file_append — "
@@ -720,13 +764,13 @@ def build_staged_tasks(tasks: list[Task]) -> dict[str, StagedTask]:
                         "Add a /echo slash command to bot.py. Call ONE tool:\n\n"
                         "edit_file_insert_before(\n"
                         "    path='bot.py',\n"
-                        "    anchor=\"if __name__\",\n"
-                        "    snippet=\"\"\"\n"
+                        '    anchor="if __name__",\n'
+                        '    snippet="""\n'
                         "@bot.tree.command(name='echo', description='echo text')\n"
                         "async def echo(interaction: discord.Interaction, text: str):\n"
                         "    await interaction.response.send_message(text)\n"
                         "\n"
-                        "\"\"\",\n"
+                        '""",\n'
                         ")\n\n"
                         "Do NOT call write_file. Do NOT call edit_file_append — "
                         "handlers MUST appear BEFORE `if __name__` or they won't "
@@ -779,19 +823,28 @@ def build_staged_tasks(tasks: list[Task]) -> dict[str, StagedTask]:
     return staged
 
 
-async def _preflight() -> None:
-    print(f"[*] VRAM check for {LLM_MODEL}...")
-    check = await check_model_fits(LLM_MODEL, base_url=OLLAMA_BASE_URL)
-    print(f"  {check.reason}")
-    raise_if_wont_fit(check, LLM_MODEL)
-
-
 async def main() -> None:
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     REPO_ROOT_DIR.mkdir(parents=True, exist_ok=True)
     KB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    await _preflight()
+    # Profile is the single source of truth for model + inference config.
+    # AGORA_PROFILE picks a named profile; per-field env overrides
+    # (AGORA_LLM_MODEL, AGORA_LLM_NUM_CTX, …) layer on top — see
+    # agora.fleet.profiles.apply_env_overrides.
+    profile_set = load_profiles()
+    profile = apply_env_overrides(profile_set.select(os.getenv("AGORA_PROFILE", "")))
+    print(
+        f"[*] Profile: {profile.name or '<unnamed>'} → model={profile.model}, "
+        f"num_ctx={profile.num_ctx}, max_tokens={profile.max_tokens}, "
+        f"keep_alive={profile.keep_alive}"
+    )
+
+    await preflight_vram(
+        profile.model,
+        profile.ollama.base_url,
+        safety_margin_mib=profile.vram.safety_margin_mib,
+    )
 
     print(f"[*] Logging into Conduit as {SYSTEM_USER}")
     client = AgoraMatrixClient(homeserver=HOMESERVER, user_id=SYSTEM_USER)
@@ -802,9 +855,7 @@ async def main() -> None:
     if OBSERVER_USER:
         _orig_create_room = client.create_room
 
-        async def _create_with_observer(
-            name, topic="", invite=None, initial_state=None
-        ):
+        async def _create_with_observer(name, topic="", invite=None, initial_state=None):
             merged = list(invite or [])
             if OBSERVER_USER not in merged:
                 merged.append(OBSERVER_USER)
@@ -816,13 +867,24 @@ async def main() -> None:
         print(f"[*] Auto-inviting {OBSERVER_USER} to every created room")
 
     room_manager = RoomManager(client, homeserver_name=SERVER_NAME)
+    llm_factory = build_llm_factory(profile)
 
-    def llm_factory(model: str):
-        if model.startswith("ollama/"):
-            return create_llm_adapter(
-                model, base_url=OLLAMA_BASE_URL, timeout_seconds=600.0
-            )
-        raise RuntimeError(f"unexpected model {model!r}")
+    # Structured run logging (JSONL schema v1). Emits run.jsonl + tasks.jsonl
+    # into AGORA_RUN_OUTPUT_DIR (default runs_out/_default/<run_id>/). This is
+    # the Checkpoint-1 reproduction case.
+    run_id = uuid.uuid4().hex
+    output_dir = RunObserver.resolve_output_dir(run_id)
+    observer = RunObserver(
+        run_id=run_id,
+        output_dir=output_dir,
+        probe_name="discord-bot",
+        flow_path="scripts/run_discord_bot_test.py",
+        project_name="discord-bot",
+        profile=profile_snapshot_from(profile),
+        ollama_version=query_ollama_version(profile.ollama.base_url),
+        git_commit=git_commit_short(REPO_ROOT),
+    )
+    print(f"[*] Run observer → {output_dir} (run_id={run_id})")
 
     orchestrator = Orchestrator(
         matrix_client=client,
@@ -834,15 +896,17 @@ async def main() -> None:
         enable_observer=True,
         repo_root=str(REPO_ROOT_DIR),
         knowledge_cache_dir=str(KB_CACHE_DIR),
-        ollama_base_url=OLLAMA_BASE_URL,
+        ollama_base_url=profile.ollama.base_url,
         skip_warmup=False,
         warmup_deadline=600.0,
+        keep_alive=profile.keep_alive,
         review_timeout_seconds=REVIEW_TIMEOUT,
         enable_web_fetch=True,
         fetch_timeout_seconds=30.0,
         fetch_max_bytes=1_048_576,
         fetch_max_text_bytes=65_536,
         auto_hooks_enabled=True,
+        observer=observer,
     )
 
     print("[*] Running project 'discord-bot' (observer enabled)")
@@ -854,7 +918,7 @@ async def main() -> None:
         staged = build_staged_tasks(tasks)
         result = await orchestrator.run_project(
             "discord-bot",
-            build_agents(),
+            build_agents(profile.model),
             tasks,
             max_loopbacks=2,
             staged_tasks=staged,
@@ -868,8 +932,10 @@ async def main() -> None:
     print(f"Success: {result.success}")
     print(f"Project room: {result.project_room_id}")
     print(f"Duration: {result.duration_seconds:.1f}s")
-    print(f"Tokens: in={result.total_tokens.get('input_tokens', 0)}, "
-          f"out={result.total_tokens.get('output_tokens', 0)}")
+    print(
+        f"Tokens: in={result.total_tokens.get('input_tokens', 0)}, "
+        f"out={result.total_tokens.get('output_tokens', 0)}"
+    )
     for r in result.task_results:
         mark = "OK" if r.success else "FAIL"
         print(f"  [{mark}] {r.task_id}: {r.iterations} iter  -> {r.output[:80]}")

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -246,6 +247,11 @@ class OllamaAdapter:
         num_ctx: int | None = 16384,
         max_concurrent: int = 1,
         default_model: str = "",
+        keep_alive: str = "30m",
+        default_max_tokens: int = 4096,
+        temperature: float | None = None,
+        seed: int | None = None,
+        on_text_fallback: Callable[[int], None] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.max_concurrent = max(1, int(max_concurrent))
@@ -260,6 +266,32 @@ class OllamaAdapter:
         # model can't reliably pick a valid id; the harness owns the runtime
         # model choice and wires it through the factory).
         self.default_model = default_model.removeprefix(self.OLLAMA_PREFIX) or default_model
+        # How long Ollama keeps the model resident after the response.
+        # Per /api/generate spec: accepts "30m", "1h", "0" (evict immediately).
+        self.keep_alive = keep_alive
+        # Fallback for ``complete()`` when callers don't pass max_tokens —
+        # mirrors the ``default_model`` pattern. agent_runtime's main loop
+        # passes ``model=`` but no max_tokens, so the profile's value flows
+        # through here.
+        self.default_max_tokens = int(default_max_tokens)
+        # Sampling controls. None ⇒ omit from the options dict so Ollama uses
+        # its own default (preserves behaviour for legacy callers that don't
+        # pass these). Profile-driven runs pass concrete values so the value
+        # recorded in run.jsonl is the one the daemon actually applied.
+        self.temperature = temperature
+        self.seed = seed
+        # Optional observability hook. Invoked with the current tool-loop
+        # iteration index each time ``_parse_tool_calls_from_text`` produces a
+        # non-empty result (the model emitted tool calls as JSON text instead
+        # of via the structured ``tool_calls`` field). Default None = no-op, so
+        # non-observer paths are unaffected. The runtime sets this per task and
+        # owns the authoritative iteration index it records.
+        self.on_text_fallback = on_text_fallback
+        # Per-instance tool-bearing-turn counter, surfaced to the callback so a
+        # caller that doesn't track iterations still gets a 0-based index. The
+        # adapter is constructed fresh per task, so this counts that task's
+        # turns.
+        self._tool_turn_index = -1
 
     # --- shaping ---
 
@@ -300,25 +332,41 @@ class OllamaAdapter:
         system: str = "",
         tools: list[dict[str, Any]] | None = None,
         model: str = "qwen2.5-coder:7b-instruct",
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         effective_model = (
             model.removeprefix(self.OLLAMA_PREFIX) or model or self.default_model
         )
-        options: dict[str, Any] = {"num_predict": max_tokens}
+        # None signals "use the adapter-level default" — call sites that pass
+        # a smaller budget explicitly (extract_learnings → 1024, distiller →
+        # 1024, derive_test_intent → 512) keep their override.
+        effective_max_tokens = (
+            self.default_max_tokens if max_tokens is None else int(max_tokens)
+        )
+        options: dict[str, Any] = {"num_predict": effective_max_tokens}
         if self.num_ctx is not None:
             options["num_ctx"] = self.num_ctx
+        # Ollama /api/chat accepts ``temperature`` and ``seed`` as standard
+        # sampling options. Only send them when configured so unconfigured
+        # callers keep the daemon's defaults.
+        if self.temperature is not None:
+            options["temperature"] = float(self.temperature)
+        if self.seed is not None:
+            options["seed"] = int(self.seed)
         payload: dict[str, Any] = {
             "model": effective_model,
             "messages": (
                 [{"role": "system", "content": system}] if system else []
             ) + messages,
             "stream": False,
-            "keep_alive": "30m",
+            "keep_alive": self.keep_alive,
             "options": options,
         }
         if tools:
             payload["tools"] = [self._tool_to_ollama_shape(t) for t in tools]
+            # Count tool-bearing turns so the text-fallback hook can report a
+            # 0-based iteration index even for callers that don't track it.
+            self._tool_turn_index += 1
 
         timeout = aiohttp.ClientTimeout(
             total=self.timeout_seconds,
@@ -348,6 +396,14 @@ class OllamaAdapter:
 
         msg = data.get("message", {}) or {}
         content = msg.get("content", "") or ""
+        # Reasoning-trace models (qwen3, gemma4, deepseek-r1, etc.) emit
+        # ``<think>…</think>`` blocks that the framework's tool-call
+        # parser and postcondition system don't model. Strip them before
+        # any downstream consumer sees the text. Ollama sometimes also
+        # surfaces the trace under a separate ``thinking`` key on the
+        # message — that one is silently dropped because content is the
+        # authoritative output channel.
+        content = _strip_thinking_blocks(content)
         tool_calls: list[ToolCall] = []
         for i, tc in enumerate(msg.get("tool_calls", []) or []):
             fn = tc.get("function", {}) or {}
@@ -368,6 +424,11 @@ class OllamaAdapter:
             if parsed:
                 tool_calls = parsed
                 content = ""  # consumed by the tool call path
+                if self.on_text_fallback is not None:
+                    try:
+                        self.on_text_fallback(self._tool_turn_index)
+                    except Exception as exc:  # noqa: BLE001 — telemetry, never fail
+                        logger.debug("on_text_fallback hook raised: %s", exc)
         usage = {
             "input_tokens": int(data.get("prompt_eval_count", 0) or 0),
             "output_tokens": int(data.get("eval_count", 0) or 0),
@@ -390,6 +451,56 @@ class OllamaAdapter:
                 "parameters": tool.get("input_schema") or tool.get("parameters") or {},
             },
         }
+
+
+#: Tag pairs used by reasoning-trace models to wrap inline reasoning.
+#: ``<think>`` is qwen3 / deepseek-r1 style; ``<thinking>`` is Gemma / Claude
+#: convention. Both forms are stripped from Ollama output before tool-call
+#: parsing because the framework's tool-call grammar (and postcondition
+#: predicates) don't model reasoning traces.
+_THINKING_TAG_PAIRS: tuple[tuple[str, str], ...] = (
+    ("<think>", "</think>"),
+    ("<thinking>", "</thinking>"),
+)
+
+
+def _strip_thinking_blocks(text: str) -> str:
+    """Remove ``<think>…</think>`` / ``<thinking>…</thinking>`` blocks from text.
+
+    Reasoning models (qwen3, gemma3/4, deepseek-r1) inline their chain of
+    thought between tagged blocks before the actual answer. Agora's
+    tool-call parser and runtime postconditions weren't built for
+    reasoning traces, so we drop them here at the boundary. Both the
+    `<think>` and `<thinking>` conventions are recognised; tags are
+    matched case-insensitively. Unterminated opens (the model was
+    truncated mid-trace) drop the rest of the string from the open tag
+    onward — better to emit nothing than emit half a reasoning trace
+    that downstream parsers will mistake for content.
+    """
+    if not text or "<" not in text:
+        return text
+    lower = text.lower()
+    chunks: list[str] = []
+    pos = 0
+    while pos < len(text):
+        # Find the nearest opening tag (if any) starting from pos.
+        nearest_open = -1
+        nearest_close = ""
+        for open_tag, close_tag in _THINKING_TAG_PAIRS:
+            idx = lower.find(open_tag, pos)
+            if idx != -1 and (nearest_open == -1 or idx < nearest_open):
+                nearest_open = idx
+                nearest_close = close_tag
+        if nearest_open == -1:
+            chunks.append(text[pos:])
+            break
+        chunks.append(text[pos:nearest_open])
+        close_idx = lower.find(nearest_close, nearest_open + len(nearest_close))
+        if close_idx == -1:
+            # Unterminated trace — drop from the open tag onward.
+            break
+        pos = close_idx + len(nearest_close)
+    return "".join(chunks).strip()
 
 
 def _parse_tool_calls_from_text(
@@ -755,18 +866,33 @@ def create_llm_adapter(model: str, **kwargs: Any) -> LLMProtocol:
 
     kwargs:
       ``api_key`` — for the direct Anthropic path.
-      ``base_url`` — for the Ollama path.
+      ``base_url``, ``num_ctx``, ``max_concurrent``, ``keep_alive``,
+      ``default_max_tokens``, ``temperature``, ``seed`` — for the Ollama path.
       ``timeout_seconds`` — per-adapter HTTP / subprocess timeout.
       ``binary``, ``allow`` — for the Claude Code subprocess path.
     """
     timeout = float(kwargs.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS)
 
     if model.startswith("ollama/"):
-        return OllamaAdapter(
-            base_url=kwargs.get("base_url", "http://localhost:11434"),
-            timeout_seconds=timeout,
-            default_model=model,
-        )
+        ollama_kwargs: dict[str, Any] = {
+            "base_url": kwargs.get("base_url", "http://localhost:11434"),
+            "timeout_seconds": timeout,
+            "default_model": model,
+        }
+        # Forward only when the caller asked — preserves today's defaults
+        # (num_ctx=16384, max_concurrent=1, keep_alive="30m",
+        # default_max_tokens=4096) when callers don't specify.
+        for opt_key in (
+            "num_ctx",
+            "max_concurrent",
+            "keep_alive",
+            "default_max_tokens",
+            "temperature",
+            "seed",
+        ):
+            if opt_key in kwargs:
+                ollama_kwargs[opt_key] = kwargs[opt_key]
+        return OllamaAdapter(**ollama_kwargs)
 
     if model.startswith("claude-code/"):
         # Lazy import to avoid circular (claude_code_adapter imports from here).

@@ -4,11 +4,78 @@ from agora.core.agent import AgentConfig, AgentIdentity
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task
 from agora.core.types import AgentRole, TaskStatus
-from agora.fleet.agent_runtime import AgentRuntime, _parse_learnings
+from agora.fleet.agent_runtime import AgentRuntime, _parse_learnings, _ToolCallStats
 from agora.fleet.inner_tools import ToolContext
 from agora.fleet.llm_adapter import LLMResponse
 from agora.matrix.events import LEARNING_EVENT
 from tests.conftest import FakeLLM, tool_call
+
+
+def test_tool_call_stats_reconcile_to_call_counts() -> None:
+    """structured + text_fallback == total, in the same (call) unit."""
+    stats = _ToolCallStats()
+    # Turn 0: two structured calls.
+    stats.note_turn(
+        [tool_call("write_file", {}), tool_call("mark_complete", {})],
+        ["ok", "ok"],
+        from_text_fallback=False,
+        iteration=0,
+    )
+    # Turn 1: one more structured call.
+    stats.note_turn(
+        [tool_call("read_file", {})], ["ok"], from_text_fallback=False, iteration=1
+    )
+    # Turn 2: three calls parsed out of prose (one fallback fire).
+    stats.note_turn(
+        [tool_call("a", {}), tool_call("b", {}), tool_call("c", {})],
+        ["ok", "ok", "ok"],
+        from_text_fallback=True,
+        iteration=2,
+    )
+    assert stats.total == 6
+    assert stats.structured == 3
+    assert stats.text_fallback == 3
+    assert stats.structured + stats.text_fallback == stats.total
+    # Side channel: one fallback turn, first at iteration 2.
+    assert stats.turns_with_text_fallback == 1
+    assert stats.first_text_fallback_iteration == 2
+
+
+def test_tool_call_stats_overlap_counters() -> None:
+    """malformed / unknown_name are subsets, not part of the reconciliation sum."""
+    stats = _ToolCallStats()
+    stats.note_turn(
+        [tool_call("write_file", {}), tool_call("bogus", {})],
+        ["ok", "ERROR: unknown tool 'bogus'"],
+        from_text_fallback=False,
+        iteration=0,
+    )
+    stats.note_turn(
+        [tool_call("write_file", {})],
+        ["ERROR: tool write_file raised: bad args"],
+        from_text_fallback=False,
+        iteration=1,
+    )
+    assert stats.total == 3
+    assert stats.structured == 3  # both turns native
+    assert stats.text_fallback == 0
+    assert stats.unknown_name == 1
+    assert stats.malformed == 1
+
+
+def test_tool_call_stats_apply_to_taskresult() -> None:
+    from agora.fleet.agent_runtime import TaskResult
+
+    stats = _ToolCallStats()
+    stats.note_turn(
+        [tool_call("x", {})], ["ok"], from_text_fallback=True, iteration=0
+    )
+    tr = stats.apply_to(TaskResult(task_id="t", success=True, output=""))
+    assert tr.tool_calls_total == 1
+    assert tr.tool_calls_text_fallback == 1
+    assert tr.tool_calls_structured == 0
+    assert tr.turns_with_text_fallback == 1
+    assert tr.first_text_fallback_iteration == 0
 
 
 def _identity(name: str = "impl") -> AgentIdentity:

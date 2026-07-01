@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -119,6 +120,7 @@ class Orchestrator:
         ollama_base_url: str = "http://localhost:11434",
         skip_warmup: bool = False,
         warmup_deadline: float = 600.0,
+        keep_alive: str = "30m",
         review_timeout_seconds: float = 86400.0,
         enable_web_fetch: bool = False,
         fetch_timeout_seconds: float = 30.0,
@@ -127,6 +129,7 @@ class Orchestrator:
         auto_hooks_enabled: bool = False,
         plan_authoring_enabled: bool = False,
         routed_retry_budget: int = 2,
+        observer: Any = None,
     ) -> None:
         self._matrix = matrix_client
         self._rooms = room_manager
@@ -141,6 +144,7 @@ class Orchestrator:
         self._ollama_base_url = ollama_base_url
         self._skip_warmup = skip_warmup
         self._warmup_deadline = warmup_deadline
+        self._keep_alive = keep_alive
         self._review_timeout_seconds = review_timeout_seconds
         self._enable_web_fetch = enable_web_fetch
         self._fetch_timeout_seconds = fetch_timeout_seconds
@@ -157,6 +161,10 @@ class Orchestrator:
         # Distinct from ``max_task_retries`` so routed retries don't eat the
         # owning task's normal in-phase retry pool.
         self._routed_retry_budget = max(0, int(routed_retry_budget))
+        # Optional JSONL run observer (agora.observe.jsonl.RunObserver). When
+        # None, no run.jsonl / tasks.jsonl is emitted — fully back-compatible.
+        # Distinct from the Matrix sync observer gated by ``enable_observer``.
+        self._observer = observer
         # Per-project cache shared across agents within a single run. Key = project_room.
         self._fetch_caches: dict[str, Any] = {}
         # Last control is exposed for MCP handlers that want to report pause/abort state.
@@ -174,7 +182,10 @@ class Orchestrator:
                 from agora.fleet.vram import warmup
 
                 await warmup(
-                    cfg.model, base_url=self._ollama_base_url, deadline_seconds=self._warmup_deadline
+                    cfg.model,
+                    base_url=self._ollama_base_url,
+                    deadline_seconds=self._warmup_deadline,
+                    keep_alive=self._keep_alive,
                 )
 
     def get_control(self, project_room_id: str) -> Any | None:
@@ -593,7 +604,7 @@ class Orchestrator:
             self._active_controls.pop(project_room, None)
 
         ended = datetime.now(UTC)
-        return ProjectResult(
+        result = ProjectResult(
             project=project,
             success=project.phase == ProjectPhase.DONE,
             task_results=all_results,
@@ -601,6 +612,62 @@ class Orchestrator:
             duration_seconds=(ended - started).total_seconds(),
             project_room_id=project_room,
         )
+        if self._observer is not None:
+            self._emit_run_observations(result, agents, ended)
+        return result
+
+    def _emit_run_observations(
+        self,
+        result: ProjectResult,
+        agents: list[AgentConfig],
+        ended: datetime,
+    ) -> None:
+        """Flush one TaskRecord per task then the RunRecord (after tasks).
+
+        Best-effort: a malformed/failing emit must never break a run that
+        otherwise completed. The observer owns file handles and schema
+        validation.
+        """
+        observer = self._observer
+        try:
+            role_of = {a.name: a.role.value for a in agents}
+            # Last result wins for tasks that ran more than once (loop-backs).
+            results_by_id: dict[str, TaskResult] = {}
+            for r in result.task_results:
+                results_by_id[r.task_id] = r
+            tasks_passed = tasks_failed = tasks_first_pass = 0
+            for idx, task in enumerate(result.project.tasks):
+                tr = results_by_id.get(task.id)
+                role = role_of.get(task.agent_id or "", "")
+                record = observer.record_task_from_result(
+                    task=task, result=tr, role=role, task_index=idx
+                )
+                if record.status == "passed":
+                    tasks_passed += 1
+                elif record.status in ("failed", "error"):
+                    tasks_failed += 1
+                if record.first_pass:
+                    tasks_first_pass += 1
+            observer.record_run(
+                duration_s=result.duration_seconds,
+                success=result.success,
+                exit_code=0 if result.success else 1,
+                tasks_total=len(result.project.tasks),
+                tasks_passed=tasks_passed,
+                tasks_failed=tasks_failed,
+                tasks_first_pass=tasks_first_pass,
+                model_offloaded=None,
+                tokens_in=int(result.total_tokens.get("input_tokens", 0)),
+                tokens_out=int(result.total_tokens.get("output_tokens", 0)),
+                ended_at=ended.isoformat(),
+            )
+        except Exception as exc:  # noqa: BLE001 — observability must not fail a run
+            logger.warning("run observation emit failed: %s", exc)
+        finally:
+            try:
+                observer.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("observer.close raised: %s", exc)
 
     async def run_flow(self, flow: Flow, project_name: str) -> ProjectResult:
         """Materialise a declarative :class:`~agora.core.flow.Flow` then run it.
@@ -665,6 +732,11 @@ class Orchestrator:
                 except AgoraError as exc:
                     return task, None, exc
                 logger.info("dispatch: task %s -> agent %s", task.id, agent.config.name)
+                if self._observer is not None:
+                    try:
+                        self._observer.task_started(task.id)
+                    except Exception as exc:  # noqa: BLE001 — observability only
+                        logger.debug("observer.task_started raised: %s", exc)
                 runtime = self._make_runtime(
                     agent,
                     project_room,
@@ -673,6 +745,7 @@ class Orchestrator:
                     project_work_dir=project_work_dir,
                 )
                 staged = (staged_tasks or {}).get(task.id)
+                started_at = time.monotonic()
                 try:
                     if staged is not None:
                         from agora.fleet.stage_runner import StageRunner
@@ -681,6 +754,11 @@ class Orchestrator:
                         outcome = await runner.execute_staged_task(staged, agent)
                     else:
                         outcome = await runtime.execute_task(task, agent)
+                    from dataclasses import replace as _dc_replace
+
+                    outcome = _dc_replace(
+                        outcome, duration_s=time.monotonic() - started_at
+                    )
                     logger.info(
                         "task %s done: success=%s iterations=%d",
                         task.id, outcome.success, outcome.iterations,

@@ -23,6 +23,7 @@ from agora.core.agent import AgentConfig
 from agora.core.task import Task
 from agora.fleet.llm_adapter import create_llm_adapter
 from agora.fleet.orchestrator import Orchestrator, ProjectResult
+from agora.fleet.profiles import ModelProfile, build_llm_factory
 from agora.fleet.vram import check_model_fits, raise_if_wont_fit
 from agora.matrix.client import AgoraMatrixClient
 from agora.matrix.room_manager import RoomManager
@@ -72,9 +73,7 @@ class HarnessConfig:
             system_password=os.getenv("AGORA_MATRIX_PASSWORD", "agora-dev-pass"),
             observer_user=os.getenv("AGORA_OBSERVER_USER", "@fabs:agora.local"),
             ollama_base_url=os.getenv("AGORA_OLLAMA_BASE_URL", "http://localhost:11434"),
-            review_timeout_seconds=float(
-                os.getenv("AGORA_REVIEW_TIMEOUT_SECONDS", "300")
-            ),
+            review_timeout_seconds=float(os.getenv("AGORA_REVIEW_TIMEOUT_SECONDS", "300")),
             max_parallel_agents=int(os.getenv("AGORA_MAX_PARALLEL_AGENTS", "2")),
             max_task_retries=int(os.getenv("AGORA_MAX_TASK_RETRIES", "2")),
             routed_retry_budget=int(os.getenv("AGORA_ROUTED_RETRY_BUDGET", "2")),
@@ -83,18 +82,26 @@ class HarnessConfig:
         )
 
 
-async def preflight_vram(model: str, base_url: str) -> None:
+async def preflight_vram(
+    model: str,
+    base_url: str,
+    safety_margin_mib: int = 512,
+) -> None:
     """Best-effort VRAM check + warm-up gate. Prints the reason line, raises on hard fail.
 
     Skipped for non-Ollama models (API-backed providers like openai/*,
     anthropic/*, gemini/*, claude-*, claude-code/*) — there's no local GPU
     memory to budget against.
+
+    ``safety_margin_mib`` is sourced from ``profile.vram.safety_margin_mib``
+    in the standard call path. The estimation formula itself is unchanged
+    (see :func:`agora.fleet.vram.check_model_fits`).
     """
     if not model.startswith("ollama/"):
         print(f"[*] VRAM check skipped for {model} (remote provider)")
         return
     print(f"[*] VRAM check for {model}...")
-    check = await check_model_fits(model, base_url=base_url)
+    check = await check_model_fits(model, base_url=base_url, safety_margin_mib=safety_margin_mib)
     print(f"  {check.reason}")
     raise_if_wont_fit(check, model)
 
@@ -108,9 +115,7 @@ async def build_matrix_client(cfg: HarnessConfig) -> AgoraMatrixClient:
     if cfg.observer_user:
         _orig_create_room = client.create_room
 
-        async def _create_with_observer(
-            name, topic="", invite=None, initial_state=None
-        ):
+        async def _create_with_observer(name, topic="", invite=None, initial_state=None):
             merged = list(invite or [])
             if cfg.observer_user not in merged:
                 merged.append(cfg.observer_user)
@@ -128,28 +133,45 @@ def build_orchestrator(
     cfg: HarnessConfig,
     client: AgoraMatrixClient,
     model: str,
+    *,
+    profile: ModelProfile | None = None,
+    observer: Any = None,
 ) -> Orchestrator:
-    """Construct an :class:`Orchestrator` with sensible defaults for plan runners."""
+    """Construct an :class:`Orchestrator` with sensible defaults for plan runners.
+
+    When ``profile`` is supplied, the LLM factory is built via
+    :func:`build_llm_factory` so all inference params (num_ctx, max_tokens,
+    keep_alive, base_url, num_parallel) flow from the profile. When it's
+    None, the legacy env-driven closure is kept verbatim for back-compat.
+    """
     room_manager = RoomManager(client, homeserver_name=cfg.server_name)
 
-    def llm_factory(model_ref: str):
-        # Empty model → fall back to the harness default. v2.3 plan-builder
-        # emits agents with ``model=""`` (the model can't reliably guess a
-        # valid model id); the harness owns the runtime model choice anyway.
-        if not model_ref:
-            model_ref = model
-        # Build adapter-specific kwargs. Only Ollama needs our base_url;
-        # LiteLLM providers pick up auth from env vars; Anthropic direct
-        # reads ANTHROPIC_API_KEY when present (kept for back-compat with
-        # scripts that set it explicitly).
-        kwargs: dict[str, Any] = {"timeout_seconds": 600.0}
-        if model_ref.startswith("ollama/"):
-            kwargs["base_url"] = cfg.ollama_base_url
-        if model_ref.startswith("claude-") and not model_ref.startswith("claude-code/"):
-            api_key = os.getenv("ANTHROPIC_API_KEY", "")
-            if api_key:
-                kwargs["api_key"] = api_key
-        return create_llm_adapter(model_ref, **kwargs)
+    if profile is not None:
+        llm_factory = build_llm_factory(profile)
+        ollama_base_url = profile.ollama.base_url
+        keep_alive = profile.keep_alive
+    else:
+        ollama_base_url = cfg.ollama_base_url
+        keep_alive = "30m"
+
+        def llm_factory(model_ref: str):
+            # Empty model → fall back to the harness default. v2.3 plan-builder
+            # emits agents with ``model=""`` (the model can't reliably guess a
+            # valid model id); the harness owns the runtime model choice anyway.
+            if not model_ref:
+                model_ref = model
+            # Build adapter-specific kwargs. Only Ollama needs our base_url;
+            # LiteLLM providers pick up auth from env vars; Anthropic direct
+            # reads ANTHROPIC_API_KEY when present (kept for back-compat with
+            # scripts that set it explicitly).
+            kwargs: dict[str, Any] = {"timeout_seconds": 600.0}
+            if model_ref.startswith("ollama/"):
+                kwargs["base_url"] = cfg.ollama_base_url
+            if model_ref.startswith("claude-") and not model_ref.startswith("claude-code/"):
+                api_key = os.getenv("ANTHROPIC_API_KEY", "")
+                if api_key:
+                    kwargs["api_key"] = api_key
+            return create_llm_adapter(model_ref, **kwargs)
 
     cfg.work_dir.mkdir(parents=True, exist_ok=True)
     if cfg.knowledge_cache_dir is not None:
@@ -164,12 +186,11 @@ def build_orchestrator(
         max_parallel_agents=cfg.max_parallel_agents,
         enable_observer=cfg.enable_observer,
         repo_root=str(cfg.work_dir),
-        knowledge_cache_dir=(
-            str(cfg.knowledge_cache_dir) if cfg.knowledge_cache_dir else None
-        ),
-        ollama_base_url=cfg.ollama_base_url,
+        knowledge_cache_dir=(str(cfg.knowledge_cache_dir) if cfg.knowledge_cache_dir else None),
+        ollama_base_url=ollama_base_url,
         skip_warmup=False,
         warmup_deadline=600.0,
+        keep_alive=keep_alive,
         review_timeout_seconds=cfg.review_timeout_seconds,
         enable_web_fetch=cfg.enable_web_fetch,
         fetch_timeout_seconds=30.0,
@@ -178,6 +199,7 @@ def build_orchestrator(
         auto_hooks_enabled=cfg.auto_hooks_enabled,
         plan_authoring_enabled=cfg.plan_authoring_enabled,
         routed_retry_budget=cfg.routed_retry_budget,
+        observer=observer,
     )
 
 
@@ -320,12 +342,8 @@ def force_utf8_stdio() -> None:
     import io
 
     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
-        sys.stdout = io.TextIOWrapper(
-            sys.stdout.buffer, encoding="utf-8", errors="replace"
-        )
-        sys.stderr = io.TextIOWrapper(
-            sys.stderr.buffer, encoding="utf-8", errors="replace"
-        )
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 
 __all__ = [

@@ -56,6 +56,9 @@ where = ["src"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra"
+markers = [
+    "slow: end-to-end tests that drive a live model/daemon (gated by AGORA_E2E=1)",
+]
 
 [tool.coverage.run]
 source = ["src/agora"]

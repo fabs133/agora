@@ -118,7 +118,45 @@ End-to-end live tests are gated behind `AGORA_E2E=1`.
 
 ## LLM backends
 
-Agora is model-agnostic. Pick a backend by setting `AGORA_LLM_MODEL`.
+Agora is model-agnostic. Pick a backend through `profiles.yaml` (preferred)
+or by setting `AGORA_LLM_MODEL` for a one-off override.
+
+### Profiles (preferred)
+
+`profiles.yaml` at the repo root bundles `model`, `num_ctx`, `max_tokens`,
+`keep_alive`, `timeout_seconds`, plus Ollama/VRAM sub-sections into named,
+self-contained run profiles. One run = one profile; nothing else needs to
+be set.
+
+```bash
+# Use the default profile from profiles.yaml.
+python scripts/run_discord_bot_test.py
+
+# Pick a specific profile.
+AGORA_PROFILE=qwen-coder-14b-bigctx-p40 python scripts/run_discord_bot_test.py
+
+# Point at a non-default file (e.g. per-environment).
+AGORA_PROFILES_FILE=./profiles.staging.yaml python scripts/run_discord_bot_test.py
+```
+
+Per-field env overrides layer on top of the selected profile (env >
+profile > schema default). The full list:
+
+| Env var | Overrides profile field |
+|---------|--------------------------|
+| `AGORA_LLM_MODEL` | `model` |
+| `AGORA_LLM_NUM_CTX` | `num_ctx` (use `""`/`none`/`null`/`0` to defer to Ollama's default) |
+| `AGORA_LLM_MAX_TOKENS` | `max_tokens` |
+| `AGORA_LLM_TIMEOUT_SECONDS` | `timeout_seconds` |
+| `AGORA_OLLAMA_BASE_URL` | `ollama.base_url` |
+| `AGORA_OLLAMA_NUM_PARALLEL` | `ollama.num_parallel` |
+| `AGORA_OLLAMA_KEEP_ALIVE` | `keep_alive` |
+| `AGORA_VRAM_SAFETY_MARGIN_MIB` | `vram.safety_margin_mib` |
+
+A typo'd key in `profiles.yaml` raises a loud validation error rather
+than silently no-opping. With no `profiles.yaml` on disk, a packaged
+default reproduces the historical `ollama/qwen2.5:7b-instruct` setup,
+so fresh clones + legacy `AGORA_LLM_MODEL=…` runs still work unchanged.
 
 ### Ollama (default, no API key)
 
@@ -220,17 +258,18 @@ for the schema.
 
 ## Tuning knobs
 
-All settings override-able via `AGORA_*` env vars or a `.env` file (see
-[src/agora/config.py](src/agora/config.py)).
+Model and inference parameters live in [profiles.yaml](profiles.yaml) — see
+the LLM backends section above for the full override table. The env vars
+below cover the rest of the runtime (Matrix, parallelism, observer
+timeouts); see [src/agora/config.py](src/agora/config.py) for the full
+list.
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `AGORA_LLM_MODEL` | `ollama/qwen2.5:7b-instruct` | Default model |
-| `AGORA_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama daemon |
-| `AGORA_LLM_TIMEOUT_SECONDS` | `600` | Per-turn HTTP timeout |
+| `AGORA_PROFILE` | (`default:` from profiles.yaml) | Pick a named profile |
+| `AGORA_PROFILES_FILE` | `./profiles.yaml` | Point at an alternate profile file |
 | `AGORA_MAX_PARALLEL_AGENTS` | `3` | Concurrent task executions per phase |
 | `AGORA_SKIP_VRAM_CHECK` | `false` | Disable VRAM pre-flight |
-| `AGORA_VRAM_SAFETY_MARGIN_MIB` | `512` | Reserve MiB on top of model size |
 | `AGORA_ALLOW_CLAUDE_SUBPROCESS` | `false` | Enable `claude-code/*` adapter |
 | `AGORA_CLAUDE_CODE_TIMEOUT_SECONDS` | `300` | Subprocess call timeout |
 | `AGORA_REVIEW_TIMEOUT_SECONDS` | `86400` | Auto-approve after N seconds |

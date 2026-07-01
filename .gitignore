@@ -21,6 +21,10 @@ conduit/data/
 workspace/.knowledge/
 workspace/.logs/*.tmp
 
+# Structured run-logging output (run.jsonl / tasks.jsonl per run). These are
+# empirical run artefacts the user stages deliberately, not tracked source.
+runs_out/
+
 # Sphinx build artefacts and autosummary stubs.
 docs/_build/
 docs/api/_autosummary/

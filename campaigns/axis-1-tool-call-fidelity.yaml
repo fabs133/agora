@@ -1,0 +1,266 @@
+schema_version: 1
+name: axis-1-tool-call-fidelity
+description: "Axis-1 tool-call fidelity sweep: 1 probe x 6 models x 2 arms x 3 repeats. Ordered to minimize\
+  \ model swaps. qwen-coder-32b is omitted (VRAM gate). v1: arm.scaffolding/strictness are recorded but\
+  \ not yet behavioural, so lean and rich produce identical runs \u2014 the sweep is repeatability data."
+defaults:
+  params:
+    temperature: 0.0
+    seed: 42
+    num_ctx: 8192
+    max_tokens: 2048
+  output_dir: runs_out/axis-1-tool-call-fidelity
+  resume: true
+runs:
+- id: r001
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-7b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 1
+- id: r002
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-7b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 2
+- id: r003
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-7b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 3
+- id: r004
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-7b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 1
+- id: r005
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-7b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 2
+- id: r006
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-7b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 3
+- id: r007
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-14b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 1
+- id: r008
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-14b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 2
+- id: r009
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-14b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 3
+- id: r010
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-14b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 1
+- id: r011
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-14b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 2
+- id: r012
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-coder-14b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 3
+- id: r013
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-instruct-7b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 1
+- id: r014
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-instruct-7b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 2
+- id: r015
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-instruct-7b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 3
+- id: r016
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-instruct-7b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 1
+- id: r017
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-instruct-7b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 2
+- id: r018
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen-instruct-7b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 3
+- id: r019
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: gemma-e4b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 1
+- id: r020
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: gemma-e4b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 2
+- id: r021
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: gemma-e4b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 3
+- id: r022
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: gemma-e4b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 1
+- id: r023
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: gemma-e4b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 2
+- id: r024
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: gemma-e4b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 3
+- id: r025
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: mistral-nemo-12b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 1
+- id: r026
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: mistral-nemo-12b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 2
+- id: r027
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: mistral-nemo-12b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 3
+- id: r028
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: mistral-nemo-12b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 1
+- id: r029
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: mistral-nemo-12b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 2
+- id: r030
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: mistral-nemo-12b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 3
+- id: r031
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen3-30b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 1
+- id: r032
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen3-30b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 2
+- id: r033
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen3-30b
+  arm:
+    scaffolding: lean
+    strictness: strict
+  repeat: 3
+- id: r034
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen3-30b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 1
+- id: r035
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen3-30b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 2
+- id: r036
+  probe: flows/tool-call-fidelity.plan.yaml
+  profile: qwen3-30b
+  arm:
+    scaffolding: rich
+    strictness: strict
+  repeat: 3

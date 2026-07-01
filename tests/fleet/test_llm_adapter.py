@@ -23,6 +23,37 @@ def test_create_adapter_routes_to_ollama() -> None:
     assert adapter.base_url == "http://localhost:11434"
 
 
+def test_create_adapter_forwards_num_ctx_and_max_concurrent() -> None:
+    """create_llm_adapter must pipe num_ctx + max_concurrent to OllamaAdapter.
+
+    Without this, a caller setting num_ctx in the factory silently fell back
+    to the adapter's 16384 default — confirmed latent bug before the profile
+    layer landed.
+    """
+    adapter = create_llm_adapter(
+        "ollama/llama3.1",
+        num_ctx=32_768,
+        max_concurrent=2,
+    )
+    assert isinstance(adapter, OllamaAdapter)
+    assert adapter.num_ctx == 32_768
+    assert adapter.max_concurrent == 2
+
+
+def test_create_adapter_ollama_defaults_preserved_when_kwargs_omitted() -> None:
+    adapter = create_llm_adapter("ollama/llama3.1")
+    assert isinstance(adapter, OllamaAdapter)
+    # Defaults match the pre-fix behaviour exactly.
+    assert adapter.num_ctx == 16384
+    assert adapter.max_concurrent == 1
+
+
+def test_create_adapter_ollama_accepts_num_ctx_none() -> None:
+    adapter = create_llm_adapter("ollama/llama3.1", num_ctx=None)
+    assert isinstance(adapter, OllamaAdapter)
+    assert adapter.num_ctx is None
+
+
 def test_create_adapter_unknown_model_raises() -> None:
     with pytest.raises(AgoraError, match="no adapter"):
         create_llm_adapter("gpt-4")
@@ -84,6 +115,324 @@ def test_ollama_adapter_strips_prefix_in_payload(monkeypatch) -> None:
         )
     )
     assert captured["payload"]["model"] == "qwen2.5-coder:7b-instruct"
+
+
+def _patch_ollama_capture(monkeypatch) -> dict:
+    """Install a fake aiohttp.ClientSession that records the posted payload."""
+    captured: dict = {}
+
+    class _FakeResponse:
+        status = 200
+
+        async def json(self):
+            return {"message": {"content": "ok", "tool_calls": []}, "done_reason": "stop"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    class _FakeSession:
+        def __init__(self, *_a, **_k): ...
+        def post(self, _url, json=None):
+            captured["payload"] = json
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    return captured
+
+
+def test_ollama_text_fallback_fires_callback(monkeypatch) -> None:
+    """When a model emits tool calls as JSON text (no structured tool_calls),
+    the adapter parses them AND fires on_text_fallback with the 0-based turn."""
+    import asyncio
+
+    class _FakeResponse:
+        status = 200
+
+        async def json(self):
+            # Tool call emitted as JSON text in content, structured list empty.
+            return {
+                "message": {
+                    "content": '{"name": "write_file", "arguments": {"path": "x.py"}}',
+                    "tool_calls": [],
+                },
+                "done_reason": "stop",
+            }
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    class _FakeSession:
+        def __init__(self, *_a, **_k): ...
+        def post(self, _url, json=None):
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    fires: list[int] = []
+    adapter = OllamaAdapter(timeout_seconds=5, on_text_fallback=fires.append)
+    tools = [{"name": "write_file", "description": "", "input_schema": {}}]
+    resp = asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "go"}],
+            tools=tools,
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    # The text was parsed into a structured tool call...
+    assert [c.name for c in resp.tool_calls] == ["write_file"]
+    assert resp.content == ""
+    # ...and the fallback hook fired once for turn 0.
+    assert fires == [0]
+
+
+def test_ollama_no_fallback_when_structured(monkeypatch) -> None:
+    """A native structured tool_call must NOT trip the text-fallback hook."""
+    import asyncio
+
+    class _FakeResponse:
+        status = 200
+
+        async def json(self):
+            return {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {"function": {"name": "write_file", "arguments": {"path": "x"}}}
+                    ],
+                },
+                "done_reason": "stop",
+            }
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    class _FakeSession:
+        def __init__(self, *_a, **_k): ...
+        def post(self, _url, json=None):
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    fires: list[int] = []
+    adapter = OllamaAdapter(timeout_seconds=5, on_text_fallback=fires.append)
+    tools = [{"name": "write_file", "description": "", "input_schema": {}}]
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "go"}], tools=tools, model="ollama/x"
+        )
+    )
+    assert fires == []
+
+
+def test_ollama_adapter_uses_configured_keep_alive(monkeypatch) -> None:
+    """keep_alive on the adapter governs the /api/chat payload field."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5, keep_alive="2h")
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    assert captured["payload"]["keep_alive"] == "2h"
+
+
+def test_ollama_payload_includes_temperature_and_seed(monkeypatch) -> None:
+    """Configured temperature + seed must reach the /api/chat options dict."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5, temperature=0.0, seed=42)
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    opts = captured["payload"]["options"]
+    assert opts["temperature"] == 0.0
+    assert opts["seed"] == 42
+
+
+def test_ollama_payload_omits_sampling_when_unset(monkeypatch) -> None:
+    """Legacy back-compat: no temperature/seed configured ⇒ not sent (Ollama default)."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5)  # defaults None
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    opts = captured["payload"]["options"]
+    assert "temperature" not in opts
+    assert "seed" not in opts
+
+
+def test_ollama_adapter_default_max_tokens_governs_num_predict(monkeypatch) -> None:
+    """When the caller passes no max_tokens, adapter's default_max_tokens flows."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5, default_max_tokens=2048)
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+        )
+    )
+    assert captured["payload"]["options"]["num_predict"] == 2048
+
+
+def test_ollama_adapter_explicit_max_tokens_overrides_default(monkeypatch) -> None:
+    """Callers (extract_learnings, distiller) keep their explicit budget."""
+    import asyncio
+
+    captured = _patch_ollama_capture(monkeypatch)
+    adapter = OllamaAdapter(timeout_seconds=5, default_max_tokens=2048)
+    asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen2.5-coder:7b-instruct",
+            max_tokens=512,
+        )
+    )
+    assert captured["payload"]["options"]["num_predict"] == 512
+
+
+def test_create_adapter_forwards_keep_alive_and_default_max_tokens() -> None:
+    adapter = create_llm_adapter(
+        "ollama/llama3.1", keep_alive="1h", default_max_tokens=8192
+    )
+    assert isinstance(adapter, OllamaAdapter)
+    assert adapter.keep_alive == "1h"
+    assert adapter.default_max_tokens == 8192
+
+
+def test_strip_thinking_blocks_drops_think_pair() -> None:
+    """qwen3 / deepseek-r1 style: ``<think>…</think>`` followed by the answer."""
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "<think>let me plan</think>The answer is 42."
+    assert _strip_thinking_blocks(text) == "The answer is 42."
+
+
+def test_strip_thinking_blocks_drops_thinking_pair() -> None:
+    """Gemma / Claude convention: ``<thinking>…</thinking>`` (longer tag)."""
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "<thinking>step 1, step 2</thinking>\nDone."
+    assert _strip_thinking_blocks(text) == "Done."
+
+
+def test_strip_thinking_blocks_handles_multiple_traces() -> None:
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    # One space sits between "first" and "<think>"; no space after "</think>".
+    # After removal the surrounding whitespace is preserved verbatim — the
+    # function only strips outer whitespace, not internal collapsing.
+    text = "<think>plan</think>first <think>more</think>second"
+    assert _strip_thinking_blocks(text) == "first second"
+
+
+def test_strip_thinking_blocks_no_trace_is_noop() -> None:
+    """Models without reasoning traces (qwen2.5) must round-trip unchanged."""
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "plain content with no tags"
+    assert _strip_thinking_blocks(text) == text
+
+
+def test_strip_thinking_blocks_unterminated_drops_remainder() -> None:
+    """Truncated reasoning trace → drop everything from the open tag.
+
+    Emitting half a trace would mislead the tool-call parser into
+    treating reasoning-prose as content.
+    """
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "real answer <think>I was cut off mid-thought"
+    assert _strip_thinking_blocks(text) == "real answer"
+
+
+def test_strip_thinking_blocks_case_insensitive() -> None:
+    from agora.fleet.llm_adapter import _strip_thinking_blocks
+
+    text = "<THINK>caps</THINK>answer"
+    assert _strip_thinking_blocks(text) == "answer"
+
+
+def test_ollama_adapter_strips_thinking_in_response(monkeypatch) -> None:
+    """The adapter must drop thinking blocks before returning LLMResponse."""
+    import asyncio
+
+    class _FakeResponse:
+        status = 200
+
+        async def json(self):
+            return {
+                "message": {
+                    "content": "<think>reasoning</think>actual reply",
+                    "tool_calls": [],
+                },
+                "done_reason": "stop",
+            }
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    class _FakeSession:
+        def __init__(self, *_a, **_k): ...
+        def post(self, _url, json=None):  # noqa: ARG002
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    adapter = OllamaAdapter(timeout_seconds=5)
+    resp = asyncio.run(
+        adapter.complete(
+            [{"role": "user", "content": "hi"}],
+            model="ollama/qwen3:7b",
+        )
+    )
+    assert resp.content == "actual reply"
 
 
 def test_ollama_adapter_shapes_tool_results_as_role_tool() -> None:

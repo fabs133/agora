@@ -1,0 +1,144 @@
+# Agora model + card run profiles.
+#
+# Set AGORA_PROFILE=<name> to select one; per-field env overrides (see
+# agora.fleet.profiles.apply_env_overrides) layer on top if you need to
+# tweak a single field without forking the profile.
+#
+# Schema:  src/agora/fleet/profiles.py :: ModelProfile / ProfileSet
+# Typos are rejected loudly (pydantic extra='forbid') — no silent no-ops.
+
+version: 1
+default: qwen-coder-32b-p40
+
+profiles:
+  qwen-coder-32b-p40:
+    description: |
+      Production-grade coder for a 24 GB P40. 32B Q4_K_M loads with
+      ~22.5 GB of weights; num_ctx=4096 keeps the KV cache small enough
+      to fit on a single P40 without spilling to system RAM. Larger
+      context windows (16K, 32K) overflow VRAM and force CPU offload —
+      validated empirically (see docs/runs/baseline-32b.run19.md).
+    model: ollama/qwen2.5-coder:32b
+    num_ctx: 4096
+    max_tokens: 4096
+    # Campaign baseline: greedy + fixed seed for reproducible repeats.
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    ollama:
+      base_url: http://localhost:11434
+      num_parallel: 1
+    vram:
+      safety_margin_mib: 1024
+
+  qwen-coder-14b-bigctx-p40:
+    description: |
+      14B Q4 with a 16 KB context window — leaves headroom for fetched
+      docs + multi-turn tool histories on a P40 while still fitting
+      comfortably (~14-16 GB resident). Original 32K context required
+      ~24 GiB and was rejected by Ollama on a 24 GB P40; 16K is the
+      tested fit (see docs/runs/baseline-32b.run19.md).
+    model: ollama/qwen2.5-coder:14b
+    num_ctx: 16384
+    max_tokens: 4096
+    # Campaign baseline: greedy + fixed seed for reproducible repeats.
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    ollama:
+      base_url: http://localhost:11434
+      num_parallel: 1
+    vram:
+      safety_margin_mib: 1024
+
+  gemma4-e4b-p40:
+    description: |
+      Gemma 4 e4b (8B params @ Q4_K_M, ~9.6 GB on disk) on a 24 GiB P40.
+      At num_ctx=4096 the runtime footprint is ~11 GB resident → 100%
+      GPU with ~13 GB headroom. Has tool-calling + reasoning-trace
+      capability; OllamaAdapter strips <think>...</think> blocks so
+      Agora's tool-call parser still works. Start with 4K context and
+      raise only when a run shows the workload needs more.
+    model: ollama/gemma4:e4b
+    num_ctx: 4096
+    max_tokens: 4096
+    # Campaign baseline: greedy + fixed seed for reproducible repeats.
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    ollama:
+      base_url: http://localhost:11434
+      num_parallel: 1
+    vram:
+      safety_margin_mib: 1024
+
+  # --- axis-1 campaign profiles -------------------------------------------
+  # The six models swept by campaigns/axis-1-tool-call-fidelity.yaml. num_ctx
+  # here is a sane per-model default; the campaign pins num_ctx=8192 (and the
+  # other sampling params) via AGORA_LLM_* overrides per run. qwen-coder-32b is
+  # deliberately NOT in this set (VRAM gate — it needs num_ctx=4096 to fit).
+  qwen-coder-7b:
+    description: Qwen2.5-Coder 7B — axis-1 sweep.
+    model: ollama/qwen2.5-coder:7b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  qwen-coder-14b:
+    description: Qwen2.5-Coder 14B — axis-1 sweep.
+    model: ollama/qwen2.5-coder:14b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  qwen-instruct-7b:
+    description: Qwen2.5 7B Instruct — axis-1 sweep.
+    model: ollama/qwen2.5:7b-instruct
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  gemma-e4b:
+    description: Gemma 4 e4b — axis-1 sweep.
+    model: ollama/gemma4:e4b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  mistral-nemo-12b:
+    description: Mistral-Nemo 12B — axis-1 sweep.
+    model: ollama/mistral-nemo:12b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  qwen3-30b:
+    description: Qwen3 30B (A3B MoE) — axis-1 sweep.
+    model: ollama/qwen3:30b
+    num_ctx: 8192
+    max_tokens: 2048
+    temperature: 0.0
+    seed: 42
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
