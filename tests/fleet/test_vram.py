@@ -54,13 +54,15 @@ async def test_probe_nvidia_smi_parses_free_vram() -> None:
     assert free == 8192
 
 
-async def test_probe_nvidia_smi_picks_minimum_across_gpus() -> None:
+async def test_probe_nvidia_smi_sums_across_gpus() -> None:
+    # Device unknown → sum across all visible devices (was min(); the min picked
+    # the wrong, fuller card on a two-GPU box — June 30 false rejection).
     fake_proc = MagicMock()
     fake_proc.communicate = AsyncMock(return_value=(b"8192\n4096\n", b""))
     fake_proc.returncode = 0
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fake_proc)):
         free = await vram._probe_nvidia_smi()
-    assert free == 4096
+    assert free == 8192 + 4096
 
 
 async def test_probe_free_vram_falls_back_to_none_when_all_fail() -> None:
@@ -117,6 +119,9 @@ def patch_ollama_size(monkeypatch):
         )
         # Force the "not resident" branch so check_model_fits does its real work.
         monkeypatch.setattr(vram, "_is_model_resident", AsyncMock(return_value=False))
+        # Device unknown → summed-fallback path; tests stub probe_free_vram_mib
+        # directly, so we only need to keep _resolve_target_device off the wire.
+        monkeypatch.setattr(vram, "_resolve_target_device", AsyncMock(return_value=None))
 
     return _install
 

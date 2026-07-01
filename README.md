@@ -264,12 +264,17 @@ below cover the rest of the runtime (Matrix, parallelism, observer
 timeouts); see [src/agora/config.py](src/agora/config.py) for the full
 list.
 
+On multi-GPU systems, the VRAM pre-flight queries the device Ollama is
+using (resolved via `/api/ps`, falling back to `CUDA_VISIBLE_DEVICES`)
+rather than the card with the least free memory. To force-skip the check
+during debugging, set `AGORA_SKIP_VRAM_CHECK=1`.
+
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `AGORA_PROFILE` | (`default:` from profiles.yaml) | Pick a named profile |
 | `AGORA_PROFILES_FILE` | `./profiles.yaml` | Point at an alternate profile file |
 | `AGORA_MAX_PARALLEL_AGENTS` | `3` | Concurrent task executions per phase |
-| `AGORA_SKIP_VRAM_CHECK` | `false` | Disable VRAM pre-flight |
+| `AGORA_SKIP_VRAM_CHECK` | `false` | Force-skip the VRAM pre-flight (honored: `1`/`true`/`yes`/`on`) |
 | `AGORA_ALLOW_CLAUDE_SUBPROCESS` | `false` | Enable `claude-code/*` adapter |
 | `AGORA_CLAUDE_CODE_TIMEOUT_SECONDS` | `300` | Subprocess call timeout |
 | `AGORA_REVIEW_TIMEOUT_SECONDS` | `86400` | Auto-approve after N seconds |

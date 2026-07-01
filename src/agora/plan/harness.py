@@ -82,12 +82,27 @@ class HarnessConfig:
         )
 
 
+#: Truthy env-var literals (case-insensitive). Matches the common boolean
+#: spellings; anything else (incl. "0"/"false"/unset) is treated as off.
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _env_truthy(name: str) -> bool:
+    """True iff env var ``name`` is set to a recognised truthy value."""
+    return os.getenv(name, "").strip().lower() in _TRUTHY
+
+
 async def preflight_vram(
     model: str,
     base_url: str,
     safety_margin_mib: int = 512,
 ) -> None:
     """Best-effort VRAM check + warm-up gate. Prints the reason line, raises on hard fail.
+
+    ``AGORA_SKIP_VRAM_CHECK`` (``1``/``true``/``yes``/``on``) bypasses the check
+    entirely — the escape hatch for when the pre-flight is wrong and you know it
+    (the June 30 incident-debugging case). This is the policy layer; the math in
+    :mod:`agora.fleet.vram` is unaware of the env var.
 
     Skipped for non-Ollama models (API-backed providers like openai/*,
     anthropic/*, gemini/*, claude-*, claude-code/*) — there's no local GPU
@@ -97,6 +112,9 @@ async def preflight_vram(
     in the standard call path. The estimation formula itself is unchanged
     (see :func:`agora.fleet.vram.check_model_fits`).
     """
+    if _env_truthy("AGORA_SKIP_VRAM_CHECK"):
+        print(f"[*] VRAM check skipped for {model} (AGORA_SKIP_VRAM_CHECK set)")
+        return
     if not model.startswith("ollama/"):
         print(f"[*] VRAM check skipped for {model} (remote provider)")
         return
