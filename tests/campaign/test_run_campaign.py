@@ -127,6 +127,24 @@ def test_build_env_propagates_arm() -> None:
     )
 
 
+def test_build_env_forwards_review_timeout() -> None:
+    run = {"id": "r001", "profile": "p", "params": {}, "review_timeout_seconds": 5}
+    env = build_env(run, "d")
+    assert env["AGORA_REVIEW_TIMEOUT_SECONDS"] == "5"
+    # None / absent → not forwarded (runner keeps its own default).
+    assert "AGORA_REVIEW_TIMEOUT_SECONDS" not in build_env(
+        {"id": "r", "profile": "p", "params": {}, "review_timeout_seconds": None}, "d"
+    )
+    assert "AGORA_REVIEW_TIMEOUT_SECONDS" not in build_env(
+        {"id": "r", "profile": "p", "params": {}}, "d"
+    )
+
+
+def test_expand_plan_carries_review_timeout_from_defaults() -> None:
+    plan = expand_plan(load_campaign(COMMITTED))
+    assert all(r["review_timeout_seconds"] == 5 for r in plan)
+
+
 def test_build_probe_command_targets_registered_runner() -> None:
     run = {
         "id": "r001",

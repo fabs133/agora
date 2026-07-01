@@ -11,6 +11,7 @@ defaults:
     max_tokens: 2048
   output_dir: runs_out/axis-1-tool-call-fidelity
   resume: true
+  review_timeout_seconds: 5
 runs:
 - id: r001
   probe: flows/tool-call-fidelity.plan.yaml

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -163,6 +164,18 @@ def build_orchestrator(
     None, the legacy env-driven closure is kept verbatim for back-compat.
     """
     room_manager = RoomManager(client, homeserver_name=cfg.server_name)
+
+    # A very short review timeout with the interactive observer enabled will
+    # auto-reject a project before a human can respond — fine for headless
+    # sweeps (which set it deliberately), confusing anywhere a person is
+    # watching. Warn so an interactive user notices the misconfiguration.
+    if cfg.enable_observer and cfg.review_timeout_seconds < 10:
+        warnings.warn(
+            f"review_timeout_seconds={cfg.review_timeout_seconds}s with the "
+            "observer enabled will auto-reject before a human can review; "
+            "intended only for headless runs.",
+            stacklevel=2,
+        )
 
     if profile is not None:
         llm_factory = build_llm_factory(profile)

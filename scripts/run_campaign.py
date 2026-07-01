@@ -65,6 +65,11 @@ class CampaignDefaults(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     output_dir: str
     resume: bool = True
+    # Forwarded to each run as AGORA_REVIEW_TIMEOUT_SECONDS. The probe completes
+    # without a human review, so a short value stops the orchestrator's REVIEW
+    # phase from idling the full default (300s) between task completion and
+    # phase advance. None → leave the runner's own default in place.
+    review_timeout_seconds: float | None = None
 
 
 class CampaignRun(BaseModel):
@@ -116,6 +121,7 @@ def expand_plan(campaign: Campaign) -> list[dict[str, Any]]:
                 "arm": run.arm.model_dump(),
                 "repeat": run.repeat,
                 "params": params,
+                "review_timeout_seconds": campaign.defaults.review_timeout_seconds,
             }
         )
     return plan
@@ -177,6 +183,11 @@ def build_env(run: dict[str, Any], run_dir: str | Path) -> dict[str, str]:
         env["AGORA_ARM_SCAFFOLDING"] = str(arm["scaffolding"])
     if arm.get("strictness"):
         env["AGORA_ARM_STRICTNESS"] = str(arm["strictness"])
+    # Short review timeout so the REVIEW phase doesn't idle the runner for the
+    # full default (300s) waiting on a human poll that never comes in a sweep.
+    rts = run.get("review_timeout_seconds")
+    if rts is not None:
+        env["AGORA_REVIEW_TIMEOUT_SECONDS"] = str(rts)
     return env
 
 

@@ -40,6 +40,8 @@ def test_axis1_campaign_has_36_runs_in_committed_order() -> None:
     }
     assert camp["defaults"]["output_dir"] == "runs_out/axis-1-tool-call-fidelity"
     assert camp["defaults"]["resume"] is True
+    # Short review timeout so the REVIEW phase doesn't idle 300s/run headless.
+    assert camp["defaults"]["review_timeout_seconds"] == 5
 
 
 def test_model_loads_at_most_twice_per_model() -> None:

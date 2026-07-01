@@ -52,6 +52,10 @@ AXIS1_DEFAULTS = {
     "params": {"temperature": 0.0, "seed": 42, "num_ctx": 8192, "max_tokens": 2048},
     "output_dir": "runs_out/axis-1-tool-call-fidelity",
     "resume": True,
+    # The probe completes without a human review; a short timeout stops the
+    # REVIEW phase idling the default 300s per run (observed: ~316s wall-clock,
+    # GPU at 0% after ~15s of real work).
+    "review_timeout_seconds": 5,
 }
 
 
