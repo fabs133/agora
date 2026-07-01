@@ -123,7 +123,9 @@ profiles:
 
   mistral-nemo-12b:
     description: Mistral-Nemo 12B — axis-1 sweep.
-    model: ollama/mistral-nemo:12b
+    # Exact local tag — plain ollama/mistral-nemo:12b 404s (not a real tag);
+    # only the full instruct/quant tag is pulled locally.
+    model: ollama/mistral-nemo:12b-instruct-2407-q4_K_M
     num_ctx: 8192
     max_tokens: 2048
     temperature: 0.0
