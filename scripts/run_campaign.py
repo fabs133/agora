@@ -38,6 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from agora.fleet.profiles import ProfileSet, load_profiles  # noqa: E402
+from agora.plan.harness import force_utf8_stdio  # noqa: E402
 
 #: Maps a probe flow path to the runner script that executes it. Keeps the
 #: harness probe-agnostic without auto-discovering runners.
@@ -509,6 +510,10 @@ def run_campaign(path: str | Path, *, dry_run: bool = False) -> int:
 
 
 def main() -> int:
+    # Status lines contain non-ASCII (→); Windows stdout is cp1252 by default,
+    # and this script also runs as a subprocess of run_sweep_staged.py where the
+    # child gets a fresh cp1252 stdout. Force UTF-8 before any print.
+    force_utf8_stdio()
     parser = argparse.ArgumentParser(description="Run a sequential model-characterization campaign.")
     parser.add_argument("campaign", help="Path to the campaign YAML.")
     parser.add_argument(
