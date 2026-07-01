@@ -35,6 +35,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -102,6 +103,10 @@ def _traced(label: str, expr: str, value: Any) -> str:
 
 
 def _numeric_fields() -> list[str]:
+    # Behavioral fields only — deterministic at temp 0 / seed 42, so any
+    # divergence across repeats or between arms is a real signal. duration_s is
+    # deliberately excluded: wall-clock timing is inherently non-deterministic
+    # and would flood the agreement/divergence checks with false positives.
     return [
         "iterations",
         "loopback_count",
@@ -112,7 +117,6 @@ def _numeric_fields() -> list[str]:
         "tool_call_unknown_name",
         "turns_with_text_fallback",
         "first_text_fallback_iteration",
-        "duration_s",
     ]
 
 
@@ -286,7 +290,12 @@ def _section_lean_vs_rich(frames: dict) -> list[str]:
     if len(common) == 0:
         return lines + ["- (no overlapping (model, task) between arms yet)"]
     diff = (lean.loc[common] - rich.loc[common]).abs()
-    max_abs = float(diff.to_numpy().max()) if diff.size else 0.0
+    # NA-safe max: nullable columns (e.g. first_text_fallback_iteration) carry
+    # <NA> where a field doesn't apply, and NA - NA = NA. pandas' skipna max
+    # handles that; numpy's .to_numpy().max() raised "boolean value of NA is
+    # ambiguous". All-NA (both arms absent) → treat as no difference.
+    overall = diff.max(skipna=True).max(skipna=True)
+    max_abs = 0.0 if pd.isna(overall) else float(overall)
     identical = max_abs == 0.0
     lines.append(
         _traced(
@@ -406,22 +415,33 @@ def generate_report(
             f"## Layer 1 raised\n\n```\n{tb}\n```\n"
         )
 
-    lines: list[str] = []
-    lines += _section_header(campaign, stage, frames, target_ids)
-    lines += _section_schema(out)
-    lines += _section_invariant(frames)
-    lines += _section_field_population(frames)
-    lines += _section_runtime(frames)
-    lines += _section_passfail(frames)
+    # Assemble sections. A bug in any one section surfaces its traceback in the
+    # report (never hides it, never loses the whole report) — same principle as
+    # the Layer-1 guard above.
+    sections = [
+        lambda: _section_header(campaign, stage, frames, target_ids),
+        lambda: _section_schema(out),
+        lambda: _section_invariant(frames),
+        lambda: _section_field_population(frames),
+        lambda: _section_runtime(frames),
+        lambda: _section_passfail(frames),
+    ]
     if rank >= 2:
-        lines += _section_repeat_agreement(frames)
-        lines += _section_lean_vs_rich(frames)
+        sections += [lambda: _section_repeat_agreement(frames),
+                     lambda: _section_lean_vs_rich(frames)]
     if rank >= 3:
-        lines += _section_cross_model(frames)
+        sections.append(lambda: _section_cross_model(frames))
     if rank >= 4:
-        lines += _section_cross_model_table(frames)
+        sections.append(lambda: _section_cross_model_table(frames))
     if rank >= 5:
-        lines += _section_qwen3_think(frames)
+        sections.append(lambda: _section_qwen3_think(frames))
+
+    lines: list[str] = []
+    for section in sections:
+        try:
+            lines += section()
+        except Exception:  # noqa: BLE001 — surface the section failure in-report
+            lines += ["", "## Report section raised", "", "```", traceback.format_exc(), "```"]
     lines += _section_prompt(campaign, stage, campaign_path)
     return "\n".join(lines) + "\n"
 
