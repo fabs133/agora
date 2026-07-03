@@ -99,3 +99,17 @@ accepted by project owner sign-off on the program plan; adjust here
 BEFORE v3.2 executes if they should move. The ≤12 GB clause exists
 because the eligible pool must be runnable alongside a second resident
 model on the 24 GB P40 during integration testing.
+
+---
+
+## v3.0 / v3.0.1 resolution notes (2026-07-03)
+
+v3.0: instruct small_chain did NOT flip (correction delivered, model
+silent-terminated) -> per the pre-committed rule, v3.1 is SKIPPED; v3.2 is
+next. qwen3 malformed 7->0 as expected. Controls unchanged. gemma anchor:
+superseded by the stale-output forensics — see the v2 findings Integrity
+addendum (§8). The gemma loop_depth reading (b) occurred in v3.0.1 with a
+twist: artifact_capture worked, but the captured content contradicts
+v3.0's byte-correct attempt at identical prompt+daemon, and repeats were
+non-identical. The determinism investigation gates any v4 capability
+claims and precedes v3.2 execution.
