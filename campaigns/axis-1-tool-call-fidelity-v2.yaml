@@ -1,0 +1,131 @@
+# axis-1 v2 — per-model prompting strategies, A/B against same-daemon controls.
+#
+# STATUS: DRAFT. This file intentionally fails load_campaign() until Phase 3
+# lands (CampaignRun gains `strategy: str | None = None`; pydantic
+# extra='forbid' rejects it before then — loud failure is the contract).
+#
+# Design (see docs/plans/axis-1-v2.md):
+#   * A/B dimension is the per-run `strategy` field, NOT the arm. arm stays
+#     lean/strict uniformly and remains reserved for its original purpose.
+#   * Control runs (strategy: null) precede treatment runs within each model
+#     block — preserves v1-like sequencing given qwen3's suspected
+#     loaded-state carryover across consecutive runs.
+#   * gemma4:e4b and qwen2.5:7b-instruct run null/null: drift sentinels.
+#     gemma was byte-deterministic on daemon 0.24; any v1<->v2 divergence in
+#     its cells IS the daemon delta (0.24 -> 0.31.1), quantified.
+#   * qwen3:30b runs 5+5 (both null pending Phase 2): bistability
+#     characterization with the prewarm num_ctx fix in place.
+#   * Treatment strategy names are Phase-2 placeholders; Phase 2 may revise
+#     them but every change must update docs/research/prompting-strategies.md
+#     first (pre-registration before execution).
+#
+# Comparisons this design supports:
+#   within-v2  control vs treatment  -> strategy effect, same daemon (primary)
+#   v1 vs v2   control cells only    -> daemon drift 0.24 -> 0.31.1
+#   v1 vs v2   steady-state only     -> block-first prewarm contamination is
+#                                       fixed in v2; never compare block-first.
+schema_version: 1
+name: axis-1-tool-call-fidelity-v2
+description: "Axis-1 v2: per-model prompting strategies vs same-daemon controls.\
+  \ 1 probe x 6 models, 40 runs. Coder 7b/14b + mistral-nemo carry Phase-2\
+  \ strategies; gemma + qwen-instruct are drift sentinels; qwen3 runs 5+5 for\
+  \ bistability. Params identical to v1 (temp=0, seed=42, num_ctx=8192).\
+  \ Daemon: track-latest policy; version captured per run in run.jsonl."
+defaults:
+  params:
+    temperature: 0.0
+    seed: 42
+    num_ctx: 8192
+    max_tokens: 2048
+  output_dir: runs_out/axis-1-tool-call-fidelity-v2
+  resume: true
+  review_timeout_seconds: 5
+runs:
+# --- qwen2.5-coder:7b --------------------------------------------- 6 runs
+- {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: null}
+- {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: null}
+- {id: r003, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: null}
+- {id: r004, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: qwen2_5_coder}
+- {id: r005, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: qwen2_5_coder}
+- {id: r006, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: qwen2_5_coder}
+# --- qwen2.5-coder:14b -------------------------------------------- 6 runs
+- {id: r007, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: null}
+- {id: r008, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: null}
+- {id: r009, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: null}
+- {id: r010, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: qwen2_5_coder}
+- {id: r011, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: qwen2_5_coder}
+- {id: r012, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: qwen2_5_coder}
+# --- mistral-nemo:12b --------------------------------------------- 6 runs
+- {id: r013, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: null}
+- {id: r014, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: null}
+- {id: r015, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: null}
+- {id: r016, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: mistral_nemo}
+- {id: r017, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: mistral_nemo}
+- {id: r018, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: mistral_nemo}
+# --- qwen2.5:7b-instruct (drift sentinel) ------------------------- 6 runs
+- {id: r019, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: null}
+- {id: r020, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: null}
+- {id: r021, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: null}
+# Phase 2 may assign a fragility-targeting strategy here; null until then.
+- {id: r022, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 4, strategy: null}
+- {id: r023, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 5, strategy: null}
+- {id: r024, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 6, strategy: null}
+# --- gemma4:e4b (drift sentinel, byte-deterministic on 0.24) ------ 6 runs
+- {id: r025, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: null}
+- {id: r026, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: null}
+- {id: r027, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: null}
+- {id: r028, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 4, strategy: null}
+- {id: r029, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 5, strategy: null}
+- {id: r030, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 6, strategy: null}
+# --- qwen3:30b (bistability characterization, post-prewarm-fix) --- 10 runs
+- {id: r031, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: null}
+- {id: r032, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: null}
+- {id: r033, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: null}
+- {id: r034, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 4, strategy: null}
+- {id: r035, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 5, strategy: null}
+# Phase 2 may assign a strategy for the treatment half; null until then.
+- {id: r036, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 6, strategy: null}
+- {id: r037, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 7, strategy: null}
+- {id: r038, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 8, strategy: null}
+- {id: r039, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 9, strategy: null}
+- {id: r040, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 10, strategy: null}
