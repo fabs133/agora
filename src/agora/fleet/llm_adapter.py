@@ -318,8 +318,17 @@ class OllamaAdapter:
         # Ollama accepts one tool message per call; agent_runtime will call us
         # once per turn with all results, so we fold them into a single message
         # by joining — callers that need one-per-tool invoke us per result.
+        #
+        # Copy-safe rendering (determinism-probe P1/P2): the [name#id] marker
+        # lives on its OWN line; the tool's content follows verbatim from the
+        # next line and never shares a line with a marker. A model copying the
+        # result verbatim thus copies only the content, and a byte fact at the
+        # end of the content (e.g. a trailing newline) is no longer buried after
+        # a decorated prefix. No added delimiters/metadata — anything decorative
+        # can leak into copies. The multi-result join separates blocks by the
+        # next marker's own line.
         payload = "\n".join(
-            f"[{call.name}#{call.id}] {res}" for call, res in zip(calls, results, strict=True)
+            f"[{call.name}#{call.id}]\n{res}" for call, res in zip(calls, results, strict=True)
         )
         tool_name = calls[0].name if calls else ""
         return {"role": "tool", "content": payload, "tool_name": tool_name}

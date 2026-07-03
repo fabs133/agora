@@ -1018,7 +1018,11 @@ def _make_read(ctx: ToolContext):
         path = _safe_path(ctx.work_dir, args["path"])
         if not path.is_file():
             return f"ERROR: file not found: {args['path']}"
-        body = path.read_text(encoding="utf-8")
+        # Byte-IO discipline (determinism-probe §5): read with newline='' so no
+        # universal-newline translation — the on-disk bytes reach the model (and
+        # the equality predicates) unchanged, keeping byte facts salient.
+        with path.open(encoding="utf-8", newline="") as _fh:
+            body = _fh.read()
         if (
             ctx.distill_fn is not None
             and len(body) > ctx.read_distill_threshold
@@ -2018,7 +2022,9 @@ def _make_write(ctx: ToolContext, role: AgentRole = AgentRole.ARCHITECT):
                     f"tests are scaffolded separately by the test pipeline)"
                 )
 
-        path.write_text(content, encoding="utf-8")
+        # Byte-IO discipline: write the exact bytes of content (binary utf-8),
+        # never text-mode \n→CRLF translation — a round-tripped \n stays \n.
+        path.write_bytes(content.encode("utf-8"))
         if rel not in ctx.written_files:
             ctx.written_files.append(rel)
         if ctx.expected_output_path and rel != ctx.expected_output_path:

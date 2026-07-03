@@ -7,7 +7,11 @@ name: tool-call-fidelity
 #      capture now fires on the staged path — the measurement conditions changed
 #      materially, so v4 cells are not comparable to v3.0 (see
 #      docs/runs/axis-1-v3/forensics-stale-out.md).
-probe_version: 4
+#   5: copy-safe result rendering (marker on its own line) + byte-IO discipline
+#      (binary write / newline='' read) — removes the [read_file#N] copy leak,
+#      the Windows CRLF artifact, and the low-salience join that created the
+#      near-tie non-determinism (docs/runs/determinism-probe/findings.md, P1/P2).
+probe_version: 5
 description: >
   Axis-1 atomic probe for tool-call fidelity. One implementer agent runs three
   short, fully-specified tool chains (copy, list+read+concat, follow-a-redirect).

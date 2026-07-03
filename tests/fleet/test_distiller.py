@@ -204,7 +204,9 @@ async def test_read_file_skips_distillation_when_under_threshold(
     tmp_path: Path, fake_matrix_client
 ) -> None:
     small = "quick note\n"
-    (tmp_path / "tiny.md").write_text(small, encoding="utf-8")
+    # Write exact bytes (byte-IO discipline): read_file now reads newline='' so a
+    # text-mode CRLF from write_text on Windows would surface as \r\n.
+    (tmp_path / "tiny.md").write_bytes(small.encode("utf-8"))
 
     agent_room = await fake_matrix_client.create_room(name="agent", topic="")
     project_room = await fake_matrix_client.create_room(name="project", topic="")
