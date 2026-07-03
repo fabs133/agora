@@ -195,6 +195,80 @@ async def test_max_iterations_breaker(tmp_path, fake_matrix_client) -> None:
     assert result.iterations == 3
 
 
+def _task_out(tid: str = "t", spec: Specification | None = None) -> Task:
+    return Task(
+        id=tid, spec=spec or Specification(), description="write out/x.txt",
+        status=TaskStatus.PENDING, output_path="out/x.txt",
+    )
+
+
+async def test_nudge_budget_zero_is_v2_behavior(tmp_path, fake_matrix_client) -> None:
+    """budget=0 ⇒ a 0-tool-call turn breaks immediately, no nudge injected."""
+    llm = FakeLLM([LLMResponse(content="I will write it now", tool_calls=()),
+                   LLMResponse(content="[]")])
+    runtime, identity, ctx = await _prepare(tmp_path, fake_matrix_client, llm)
+    ctx.nudge_budget = 0
+    result = await runtime.execute_task(_task_out(), identity)
+    assert result.iterations == 1  # broke on turn 1, no extra turn
+    assert not any(
+        "Not complete: expected output" in str(m.get("content"))
+        for call in llm.calls for m in call["messages"]
+    )
+
+
+async def test_nudge_budget_one_injects_exactly_once(tmp_path, fake_matrix_client) -> None:
+    """budget=1 ⇒ nudge once (output unwritten), run one more turn, then terminate."""
+    llm = FakeLLM([LLMResponse(content="narrating 1", tool_calls=()),
+                   LLMResponse(content="narrating 2", tool_calls=()),
+                   LLMResponse(content="[]")])
+    runtime, identity, ctx = await _prepare(tmp_path, fake_matrix_client, llm)
+    ctx.nudge_budget = 1
+    result = await runtime.execute_task(_task_out(), identity)
+    assert result.iterations == 2  # nudged once → a 2nd turn → then break
+    # the corrective turn reached the model on the 2nd call, naming the output
+    injected = [
+        m for m in llm.calls[1]["messages"]
+        if "Not complete: expected output out/x.txt has not been written" in str(m.get("content"))
+    ]
+    assert len(injected) == 1
+
+
+async def test_nudge_skipped_when_output_present(tmp_path, fake_matrix_client) -> None:
+    """No nudge when the expected output already exists (postconditions-met proxy),
+    even with budget available."""
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "x.txt").write_text("done")
+    llm = FakeLLM([LLMResponse(content="done", tool_calls=()), LLMResponse(content="[]")])
+    runtime, identity, ctx = await _prepare(tmp_path, fake_matrix_client, llm)
+    ctx.nudge_budget = 3
+    result = await runtime.execute_task(_task_out(), identity)
+    assert result.iterations == 1  # output present → no nudge
+
+
+async def test_artifact_capture_on_postcondition_failure(tmp_path, fake_matrix_client) -> None:
+    """A task that writes its output but fails a postcondition captures the bytes."""
+    def _always_fail(_ctx):
+        return (False, "forced")
+
+    spec = Specification(
+        postconditions=(make_predicate("nope", "always fails", _always_fail),),
+        description="x",
+    )
+    llm = FakeLLM([
+        LLMResponse(content="", tool_calls=(tool_call("write_file", {"path": "out/x.txt", "content": "WRONG"}),)),
+        LLMResponse(content="", tool_calls=(tool_call("mark_complete", {"summary": "done"}),)),
+        LLMResponse(content="stop"),
+        LLMResponse(content="[]"),
+    ])
+    runtime, identity, _ = await _prepare(tmp_path, fake_matrix_client, llm)
+    result = await runtime.execute_task(_task_out(spec=spec), identity)
+    assert result.success is False
+    assert result.artifact_capture is not None
+    assert result.artifact_capture["path"] == "out/x.txt"
+    assert result.artifact_capture["text"] == "WRONG"
+    assert result.artifact_capture["truncated"] is False
+
+
 async def test_unknown_tool_returns_error(tmp_path, fake_matrix_client) -> None:
     llm = FakeLLM(
         [

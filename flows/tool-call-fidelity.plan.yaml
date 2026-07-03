@@ -1,5 +1,9 @@
 version: "2.0"
 name: tool-call-fidelity
+# Probe design version (findings S4). Carried into run.jsonl provenance so v3
+# cells (byte-exactness prompt, artifact capture) are never silently compared
+# against v1/v2 cells.
+probe_version: 3
 description: >
   Axis-1 atomic probe for tool-call fidelity. One implementer agent runs three
   short, fully-specified tool chains (copy, list+read+concat, follow-a-redirect).
@@ -68,6 +72,8 @@ task_graph:
              followed IMMEDIATELY by the bytes of seed_b.txt, verbatim, with NO
              separator and no extra newline between them>)
           5) mark_complete(summary="concatenated a+b", artifacts=["out/concat.txt"])
+          Concatenate the file contents exactly — no separators, no added
+          trailing newline.
           Use ONLY list_directory, read_file, write_file, and mark_complete.
 
   # --- Stage 3: follow a redirect named inside a file's content. -----------

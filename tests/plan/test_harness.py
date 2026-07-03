@@ -157,3 +157,25 @@ async def test_orchestrator_warmup_uses_profile_keep_alive(tmp_path, monkeypatch
         ]
     )
     assert captured["keep_alive"] == "2h"
+
+
+def test_from_env_reads_harness_knobs(monkeypatch) -> None:
+    """AGORA_HARNESS_* round-trip into HarnessConfig (v3)."""
+    monkeypatch.setenv("AGORA_HARNESS_TOOL_ERRORS", "corrective")
+    monkeypatch.setenv("AGORA_HARNESS_NUDGE_BUDGET", "2")
+    cfg = HarnessConfig.from_env()
+    assert cfg.tool_errors == "corrective"
+    assert cfg.nudge_budget == 2
+
+
+def test_from_env_defaults_are_v2_behavior(monkeypatch) -> None:
+    monkeypatch.delenv("AGORA_HARNESS_TOOL_ERRORS", raising=False)
+    monkeypatch.delenv("AGORA_HARNESS_NUDGE_BUDGET", raising=False)
+    cfg = HarnessConfig.from_env()
+    assert cfg.tool_errors == "raw" and cfg.nudge_budget == 0
+
+
+def test_from_env_rejects_invalid_tool_errors(monkeypatch) -> None:
+    monkeypatch.setenv("AGORA_HARNESS_TOOL_ERRORS", "bogus")
+    with pytest.raises(ValueError, match="AGORA_HARNESS_TOOL_ERRORS"):
+        HarnessConfig.from_env()

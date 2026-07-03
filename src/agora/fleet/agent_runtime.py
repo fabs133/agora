@@ -23,6 +23,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from agora.core.agent import AgentIdentity
@@ -76,6 +77,10 @@ class TaskResult:
     tools_used: list[str] = field(default_factory=list)
     first_text_fallback_iteration: int | None = None
     duration_s: float = 0.0
+    # v3 near-miss capture (findings S4). On a postcondition failure where the
+    # output file WAS written (equality near-miss), the first 2KB of the actual
+    # bytes, so a wrong-bytes failure is diagnosable from JSONL alone.
+    artifact_capture: dict[str, Any] | None = None
 
 
 @dataclass
@@ -274,6 +279,9 @@ class AgentRuntime:
         artifacts = _collect_artifacts(self._ctx)
         postcondition_results = _evaluate_postconditions(task, final_text, artifacts, self._ctx)
         success = all(passed for _, passed, _ in postcondition_results)
+        artifact_capture = _capture_failed_artifact(
+            task.output_path or "", success, self._ctx.work_dir
+        )
 
         learnings = await self._extract_learnings(task, final_text, identity, success)
         await self._persist_learnings(identity, learnings)
@@ -299,6 +307,7 @@ class AgentRuntime:
                 token_usage=total_usage,
                 iterations=iterations,
                 stop_reason=last_stop,
+                artifact_capture=artifact_capture,
             )
         )
 
@@ -325,6 +334,13 @@ class AgentRuntime:
         iterations = 0
         final_text = ""
         last_stop = ""
+        nudges_used = 0
+        # Per-tool JSON schemas for the v3 tool-boundary contract (S1). Stable
+        # across turns; used to validate calls and to render CorrectiveErrors.
+        schemas = {
+            t["name"]: (t.get("input_schema") or t.get("parameters") or {})
+            for t in tools
+        }
 
         for iterations in range(1, max_iterations + 1):
             logger.info(
@@ -363,11 +379,39 @@ class AgentRuntime:
             final_text = resp.content or final_text
 
             if not resp.tool_calls:
+                # v3 completion nudge (S2). A dead loop (0 tool calls) with the
+                # expected output still unwritten and budget remaining gets ONE
+                # corrective user turn and continues; otherwise terminate exactly
+                # as v2. nudge_budget=0 (default) ⇒ this branch never fires ⇒
+                # byte-identical to v2.
+                missing = _expected_output_missing(self._ctx)
+                if missing is not None and nudges_used < self._ctx.nudge_budget:
+                    nudges_used += 1
+                    logger.info(
+                        "completion nudge %d/%d: task=%s expected output %r not written",
+                        nudges_used, self._ctx.nudge_budget, task_id, missing,
+                    )
+                    messages.append(_assistant_turn(self._llm, resp))
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"Not complete: expected output {missing} has not been "
+                            "written. Continue with a tool call."
+                        ),
+                    })
+                    continue
                 break
 
             messages.append(_assistant_turn(self._llm, resp))
             call_list = list(resp.tool_calls)
-            results = [await _run_tool(call, executor) for call in call_list]
+            results = [
+                await _dispatch_tool(
+                    call, executor,
+                    schema=schemas.get(call.name),
+                    mode=self._ctx.tool_errors,
+                )
+                for call in call_list
+            ]
             # Record model tool-call fidelity signals (synthetic auto-hook
             # calls below are intentionally excluded — they aren't model-emitted).
             self.tool_stats.note_turn(
@@ -738,6 +782,114 @@ def _build_stub_awareness_hint(task: Task, work_dir: str) -> str:
     )
 
 
+# v3 tool-boundary contract (findings F1). One hard-coded, tool-specific hint;
+# a general hint registry stays speculative until v3 data justifies it.
+_TOOL_HINTS: dict[str, str] = {
+    "mark_complete": (
+        "It does not write files; use write_file(path, content) first, then "
+        "mark_complete(summary=...)"
+    ),
+}
+
+
+@dataclass(frozen=True)
+class CorrectiveError:
+    """A tool failure rendered back to the model as actionable correction.
+
+    Renders to a single tool-result message with three parts: what was wrong,
+    the tool's expected schema, and an optional hint. Replaces the v2
+    crash-as-string (a raw ``KeyError``/traceback), which the autopsy showed
+    weak models could not recover from (they re-emitted the same bad call).
+    """
+
+    tool_name: str
+    problem: str
+    schema: dict[str, Any]
+    hint: str = ""
+
+    def render(self) -> str:
+        parts = [
+            f"ERROR: your {self.tool_name} call was rejected: {self.problem}",
+            f"Expected schema for {self.tool_name}: "
+            f"{json.dumps(self.schema, sort_keys=True)}",
+        ]
+        if self.hint:
+            parts.append(f"Hint: {self.hint}")
+        return "\n".join(parts)
+
+
+def validate_call(
+    call: ToolCall, schema: dict[str, Any] | None
+) -> CorrectiveError | None:
+    """Pure pre-dispatch check: are the call's required arguments present?
+
+    Returns a :class:`CorrectiveError` when a required key from the tool's JSON
+    schema is missing, else ``None``. Only required-key presence is checked here
+    (the cheap, high-signal case — e.g. mark_complete called with write_file's
+    ``path``/``content`` and no ``summary``); deeper type errors surface as
+    handler exceptions, which the corrective dispatch also renders.
+    """
+    if not schema:
+        return None
+    args = call.arguments or {}
+    missing = [k for k in (schema.get("required") or []) if k not in args]
+    if not missing:
+        return None
+    return CorrectiveError(
+        tool_name=call.name,
+        problem=f"missing required argument(s): {', '.join(missing)}",
+        schema=schema,
+        hint=_TOOL_HINTS.get(call.name, ""),
+    )
+
+
+#: Byte bound for the S4 near-miss capture.
+_ARTIFACT_CAPTURE_LIMIT = 2048
+
+
+def _capture_failed_artifact(
+    output_path: str, success: bool, work_dir: str
+) -> dict[str, Any] | None:
+    """Capture the bytes actually written to ``output_path`` on a failed task
+    where the file exists (the equality near-miss, S4). Returns None on success,
+    when the task declared no output, or when nothing was written (a plain
+    file_exists failure — no bytes to diff). First 2KB, truncation flagged.
+    """
+    if success or not output_path:
+        return None
+    path = Path(work_dir) / output_path
+    if not path.is_file():
+        return None
+    raw = path.read_bytes()
+    return {
+        "path": output_path,
+        "size_bytes": len(raw),
+        "truncated": len(raw) > _ARTIFACT_CAPTURE_LIMIT,
+        "text": raw[:_ARTIFACT_CAPTURE_LIMIT].decode("utf-8", errors="replace"),
+    }
+
+
+def _expected_output_missing(ctx: ToolContext) -> str | None:
+    """Return the task's expected output path if it declared one and no bytes
+    have been written there yet, else ``None`` (the completion-nudge trigger, S2).
+
+    This is the "postconditions unmet" proxy the nudge acts on — specifically the
+    ``file_exists`` failure the fidelity probe gates on, and the exact condition
+    its message names ("expected output X has not been written"). A written-but-
+    wrong output (the gemma near-miss) is NOT nudged — the loop already produced
+    output; that failure is byte-precision (see S4 artifact_capture), not a dead
+    loop. Reuses the same output-written signal as the post-task narration
+    redirect, which cannot fire in-loop (it needs the final artifact list).
+    """
+    rel = ctx.expected_output_path
+    if not rel:
+        return None
+    path = Path(ctx.work_dir) / rel
+    if path.is_file() and path.stat().st_size > 0:
+        return None
+    return rel
+
+
 async def _run_tool(call: ToolCall, executor: dict[str, Any]) -> str:
     fn = executor.get(call.name)
     if fn is None:
@@ -746,6 +898,39 @@ async def _run_tool(call: ToolCall, executor: dict[str, Any]) -> str:
         return await fn(call.arguments)
     except Exception as exc:  # noqa: BLE001
         return f"ERROR: tool {call.name} raised: {exc}"
+
+
+async def _dispatch_tool(
+    call: ToolCall,
+    executor: dict[str, Any],
+    *,
+    schema: dict[str, Any] | None,
+    mode: str,
+) -> str:
+    """Execute one tool call under the configured error policy.
+
+    ``mode="raw"`` is byte-identical to v2 (:func:`_run_tool`, crash-as-string
+    included). ``mode="corrective"`` validates arguments before dispatch and
+    renders any handler exception as a :class:`CorrectiveError`, so a raw
+    traceback / bare ``KeyError`` string never reaches the model again.
+    """
+    if mode != "corrective":
+        return await _run_tool(call, executor)
+    fn = executor.get(call.name)
+    if fn is None:
+        return f"ERROR: unknown tool {call.name!r}"
+    rejection = validate_call(call, schema)
+    if rejection is not None:
+        return rejection.render()
+    try:
+        return await fn(call.arguments)
+    except Exception as exc:  # noqa: BLE001
+        return CorrectiveError(
+            tool_name=call.name,
+            problem=f"the call raised while running: {exc}",
+            schema=schema or {},
+            hint=_TOOL_HINTS.get(call.name, ""),
+        ).render()
 
 
 def _collect_artifacts(ctx: ToolContext) -> list[str]:

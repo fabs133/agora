@@ -126,6 +126,13 @@ class ToolContext:
     # — removes one source of 7B confusion. Empty → tool is hidden from the
     # LLM's manifest.
     active_test_file: str = ""
+    # v3 harness-reliability knobs (findings F1). ``tool_errors="corrective"``
+    # routes tool validation/handler failures through CorrectiveError (schema +
+    # hint) instead of leaking a raw traceback/KeyError string to the model;
+    # "raw" reproduces v2 behaviour byte-identically. ``nudge_budget`` caps the
+    # number of in-loop completion nudges (0 = off, byte-identical to v2).
+    tool_errors: str = "raw"
+    nudge_budget: int = 0
 
 
 # ============================ Tool descriptions ============================

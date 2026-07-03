@@ -59,12 +59,28 @@ class Arm(BaseModel):
     strictness: Literal["strict", "permissive"] = "strict"
 
 
+class Harness(BaseModel):
+    """v3 harness-reliability knobs (findings F1). Defaults reproduce v2.
+
+    ``tool_errors`` routes tool failures through CorrectiveError ("corrective")
+    or leaves the v2 crash-as-string ("raw"). ``nudge_budget`` caps in-loop
+    completion nudges (0 = off). Both defaults are byte-identical to v2.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    tool_errors: Literal["raw", "corrective"] = "raw"
+    nudge_budget: int = Field(default=0, ge=0)
+
+
 class CampaignDefaults(BaseModel):
     model_config = {"extra": "forbid"}
 
     params: dict[str, Any] = Field(default_factory=dict)
     output_dir: str
     resume: bool = True
+    # v3 harness-reliability config; per-run override on CampaignRun.harness.
+    harness: Harness = Field(default_factory=Harness)
     # Forwarded to each run as AGORA_REVIEW_TIMEOUT_SECONDS. The probe completes
     # without a human review, so a short value stops the orchestrator's REVIEW
     # phase from idling the full default (300s) between task completion and
@@ -86,6 +102,9 @@ class CampaignRun(BaseModel):
     # is constructed, byte-identical to v1. Non-null names are validated against
     # the strategy registry at load time (see load_campaign).
     strategy: str | None = None
+    # Per-run harness override (field-merged over defaults.harness). None ⇒
+    # inherit the campaign default.
+    harness: Harness | None = None
 
 
 class Campaign(BaseModel):
@@ -125,8 +144,13 @@ def expand_plan(campaign: Campaign) -> list[dict[str, Any]]:
     """
     plan: list[dict[str, Any]] = []
     base_params = dict(campaign.defaults.params)
+    base_harness = campaign.defaults.harness.model_dump()
     for run in campaign.runs:
         params = {**base_params, **(run.params or {})}
+        # Field-merge the per-run harness over defaults (only explicitly-set
+        # fields override, mirroring how params merge).
+        run_harness = run.harness.model_dump(exclude_unset=True) if run.harness else {}
+        harness = {**base_harness, **run_harness}
         plan.append(
             {
                 "id": run.id,
@@ -136,6 +160,7 @@ def expand_plan(campaign: Campaign) -> list[dict[str, Any]]:
                 "repeat": run.repeat,
                 "params": params,
                 "strategy": run.strategy,
+                "harness": harness,
                 "review_timeout_seconds": campaign.defaults.review_timeout_seconds,
             }
         )
@@ -204,6 +229,13 @@ def build_env(run: dict[str, Any], run_dir: str | Path) -> dict[str, str]:
     strategy = run.get("strategy")
     if strategy:
         env["AGORA_STRATEGY"] = str(strategy)
+    # v3 harness config. Emitted only when present so pre-v3 plan dicts (and
+    # thus old campaigns) carry no AGORA_HARNESS_* and the runner defaults to
+    # raw/0 — byte-identical to v2.
+    harness = run.get("harness")
+    if harness:
+        env["AGORA_HARNESS_TOOL_ERRORS"] = str(harness.get("tool_errors", "raw"))
+        env["AGORA_HARNESS_NUDGE_BUDGET"] = str(harness.get("nudge_budget", 0))
     # Short review timeout so the REVIEW phase doesn't idle the runner for the
     # full default (300s) waiting on a human poll that never comes in a sweep.
     rts = run.get("review_timeout_seconds")

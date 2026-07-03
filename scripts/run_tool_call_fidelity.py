@@ -148,7 +148,13 @@ async def main() -> None:
         git_commit=git_commit_short(REPO_ROOT),
         log_path=output_dir / "run.log",
         strategy=strategy_name,
+        # v3 provenance: the harness config actually in force + the probe design
+        # version carried from the flow file.
+        harness={"tool_errors": cfg.tool_errors, "nudge_budget": cfg.nudge_budget},
+        probe_version=getattr(plan.flow, "probe_version", None),
     )
+    if cfg.tool_errors != "raw" or cfg.nudge_budget:
+        print(f"[*] Harness: tool_errors={cfg.tool_errors} nudge_budget={cfg.nudge_budget}")
     print(f"[*] Run observer → {output_dir} (run_id={run_id})")
 
     # When a strategy is set, wrap the profile's factory so every adapter the

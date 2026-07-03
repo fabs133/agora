@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from scripts.expand_campaign import axis1_campaign
 from scripts.run_campaign import (
@@ -188,6 +189,56 @@ runs:
     plan = expand_plan(load_campaign(str(camp)))
     assert plan[0]["strategy"] == "qwen2_5_coder"
     assert plan[1]["strategy"] is None  # control cell
+
+
+def test_harness_defaults_field_merge_and_env(tmp_path) -> None:
+    """v3 harness config: defaults apply, per-run field-merges over them, and
+    build_env emits AGORA_HARNESS_* from the resolved dict."""
+    yaml_text = """
+schema_version: 1
+name: t
+defaults:
+  params: {seed: 42}
+  output_dir: out
+  harness: {tool_errors: corrective, nudge_budget: 1}
+runs:
+  - {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b, arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+  - {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b, arm: {scaffolding: lean, strictness: strict}, repeat: 1, harness: {nudge_budget: 5}}
+"""
+    camp = tmp_path / "c.yaml"
+    camp.write_text(yaml_text, encoding="utf-8")
+    plan = expand_plan(load_campaign(str(camp)))
+    assert plan[0]["harness"] == {"tool_errors": "corrective", "nudge_budget": 1}
+    # per-run overrides only nudge_budget; tool_errors inherited from defaults
+    assert plan[1]["harness"] == {"tool_errors": "corrective", "nudge_budget": 5}
+    env = build_env(plan[0], "d")
+    assert env["AGORA_HARNESS_TOOL_ERRORS"] == "corrective"
+    assert env["AGORA_HARNESS_NUDGE_BUDGET"] == "1"
+
+
+def test_load_campaign_rejects_invalid_tool_errors(tmp_path) -> None:
+    """Invalid harness values fail loudly at load (pydantic Literal)."""
+    yaml_text = """
+schema_version: 1
+name: bad
+defaults:
+  params: {seed: 42}
+  output_dir: out
+  harness: {tool_errors: bogus}
+runs:
+  - {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b, arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+"""
+    camp = tmp_path / "bad.yaml"
+    camp.write_text(yaml_text, encoding="utf-8")
+    with pytest.raises((ValueError, ValidationError)):
+        load_campaign(str(camp))
+
+
+def test_v2_campaign_defaults_to_raw_no_nudge() -> None:
+    """A campaign with no harness block resolves to raw/0 — v2 behaviour — and
+    the committed v2 YAML still loads."""
+    plan = expand_plan(load_campaign(COMMITTED))
+    assert all(r["harness"] == {"tool_errors": "raw", "nudge_budget": 0} for r in plan)
 
 
 def test_expand_plan_carries_review_timeout_from_defaults() -> None:

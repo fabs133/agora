@@ -111,6 +111,9 @@ class Flow:
     # one API, implementer writes a different one" coordination failure
     # observed on 7B in Sprint 7.1-7.4 live runs.
     api_spec: str = ""
+    # Probe design version (findings S4). None for non-probe flows; the
+    # tool-call-fidelity flow sets 3 so v3 provenance is unambiguous.
+    probe_version: int | None = None
 
 
 # ------------------------ Pydantic schemas for YAML validation ------------------------
@@ -170,6 +173,8 @@ class _FlowSchema(BaseModel):
     # v2.7 — shared API spec authored once, scaffolders use it to emit
     # matching imports (tests) and stubs (src/).
     api_spec: str = ""
+    # Probe design version (findings S4); carried into run.jsonl provenance.
+    probe_version: int | None = None
     includes: list[str] = Field(default_factory=list)
     agents: list[_AgentSchema] = Field(default_factory=list)
     task_graph: list[_TaskSchema] = Field(default_factory=list)
@@ -286,6 +291,7 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
         description=schema.description,
         brief=schema.brief,
         api_spec=schema.api_spec,
+        probe_version=schema.probe_version,
         agents=tuple(agents_list),
         task_graph=tuple(included_tasks + own_tasks),
     )
