@@ -141,6 +141,55 @@ def test_build_env_forwards_review_timeout() -> None:
     )
 
 
+def test_build_env_emits_strategy_when_set() -> None:
+    """A per-run strategy reaches the probe runner via AGORA_STRATEGY; a control
+    cell (strategy None/absent) emits nothing so the runner builds no wrapper."""
+    run = {"id": "r001", "profile": "p", "params": {}, "strategy": "qwen2_5_coder"}
+    assert build_env(run, "d")["AGORA_STRATEGY"] == "qwen2_5_coder"
+    assert "AGORA_STRATEGY" not in build_env(
+        {"id": "r", "profile": "p", "params": {}, "strategy": None}, "d"
+    )
+    assert "AGORA_STRATEGY" not in build_env(
+        {"id": "r", "profile": "p", "params": {}}, "d"
+    )
+
+
+def test_load_campaign_rejects_unknown_strategy(tmp_path) -> None:
+    """An unknown strategy name fails at load — not at run 23 of 40."""
+    yaml_text = """
+schema_version: 1
+name: bad
+defaults:
+  params: {seed: 42}
+  output_dir: out
+runs:
+  - {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b, arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: nonexistent_strategy}
+"""
+    camp = tmp_path / "bad.yaml"
+    camp.write_text(yaml_text, encoding="utf-8")
+    with pytest.raises(ValueError, match="unknown strategy"):
+        load_campaign(str(camp))
+
+
+def test_load_campaign_accepts_known_strategy_and_expands(tmp_path) -> None:
+    """A registered strategy loads and survives expand_plan onto the run dict."""
+    yaml_text = """
+schema_version: 1
+name: ok
+defaults:
+  params: {seed: 42}
+  output_dir: out
+runs:
+  - {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-7b, arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: qwen2_5_coder}
+  - {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-7b, arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+"""
+    camp = tmp_path / "ok.yaml"
+    camp.write_text(yaml_text, encoding="utf-8")
+    plan = expand_plan(load_campaign(str(camp)))
+    assert plan[0]["strategy"] == "qwen2_5_coder"
+    assert plan[1]["strategy"] is None  # control cell
+
+
 def test_expand_plan_carries_review_timeout_from_defaults() -> None:
     plan = expand_plan(load_campaign(COMMITTED))
     assert all(r["review_timeout_seconds"] == 5 for r in plan)

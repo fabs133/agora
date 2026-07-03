@@ -222,6 +222,10 @@ class RunRecord(BaseModel):
     git_commit: str
     host: str
     notes: str = ""
+    # Per-model prompting strategy (axis-1 v2). Additive optional field:
+    # schema_version stays 1 — pre-v2 run.jsonl lines lack the key and parse
+    # unchanged (default None = control cell / no strategy).
+    strategy: str | None = None
 
 
 # ------------------------------------------------------------------ pure helpers
@@ -402,6 +406,7 @@ class RunObserver:
         git_commit: str = "unknown",
         host: str | None = None,
         notes: str = "",
+        strategy: str | None = None,
     ) -> None:
         self.run_id = run_id
         self.output_dir = Path(output_dir)
@@ -416,6 +421,7 @@ class RunObserver:
         self.git_commit = git_commit
         self.host = host or socket.gethostname()
         self.notes = notes
+        self.strategy = strategy
         self.started_at = _utc_now_iso()
 
         self._run_path = self.output_dir / "run.jsonl"
@@ -482,6 +488,7 @@ class RunObserver:
         fields.setdefault("git_commit", self.git_commit)
         fields.setdefault("host", self.host)
         fields.setdefault("notes", self.notes)
+        fields.setdefault("strategy", self.strategy)
         if "async_leak_hits" not in fields:
             fields["async_leak_hits"] = scan_async_leaks(self.log_path)
         record = RunRecord(**fields)

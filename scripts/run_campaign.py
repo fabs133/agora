@@ -82,6 +82,10 @@ class CampaignRun(BaseModel):
     repeat: int
     # Per-run override of defaults.params (merged over them). Optional.
     params: dict[str, Any] | None = None
+    # Per-model prompting strategy (axis-1 v2). None ⇒ control cell: no wrapper
+    # is constructed, byte-identical to v1. Non-null names are validated against
+    # the strategy registry at load time (see load_campaign).
+    strategy: str | None = None
 
 
 class Campaign(BaseModel):
@@ -97,8 +101,18 @@ class Campaign(BaseModel):
 def load_campaign(path: str | Path) -> Campaign:
     import yaml
 
+    from agora.fleet.strategies import STRATEGIES
+
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    return Campaign.model_validate(raw)
+    campaign = Campaign.model_validate(raw)
+    # Reject unknown strategy names loudly at load — not at run 23 of 40.
+    for run in campaign.runs:
+        if run.strategy is not None and run.strategy not in STRATEGIES:
+            raise ValueError(
+                f"run {run.id!r}: unknown strategy {run.strategy!r}; "
+                f"known: {sorted(STRATEGIES)}"
+            )
+    return campaign
 
 
 # ------------------------------------------------------------------ pure helpers
@@ -121,6 +135,7 @@ def expand_plan(campaign: Campaign) -> list[dict[str, Any]]:
                 "arm": run.arm.model_dump(),
                 "repeat": run.repeat,
                 "params": params,
+                "strategy": run.strategy,
                 "review_timeout_seconds": campaign.defaults.review_timeout_seconds,
             }
         )
@@ -183,6 +198,12 @@ def build_env(run: dict[str, Any], run_dir: str | Path) -> dict[str, str]:
         env["AGORA_ARM_SCAFFOLDING"] = str(arm["scaffolding"])
     if arm.get("strictness"):
         env["AGORA_ARM_STRICTNESS"] = str(arm["strictness"])
+    # Per-model prompting strategy (axis-1 v2). Emitted only when set, so
+    # control cells (strategy=None) carry no AGORA_STRATEGY and the runner
+    # constructs no wrapper — byte-identical to v1.
+    strategy = run.get("strategy")
+    if strategy:
+        env["AGORA_STRATEGY"] = str(strategy)
     # Short review timeout so the REVIEW phase doesn't idle the runner for the
     # full default (300s) waiting on a human poll that never comes in a sweep.
     rts = run.get("review_timeout_seconds")

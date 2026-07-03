@@ -155,6 +155,7 @@ def build_orchestrator(
     *,
     profile: ModelProfile | None = None,
     observer: Any = None,
+    llm_factory: Any = None,
 ) -> Orchestrator:
     """Construct an :class:`Orchestrator` with sensible defaults for plan runners.
 
@@ -162,6 +163,10 @@ def build_orchestrator(
     :func:`build_llm_factory` so all inference params (num_ctx, max_tokens,
     keep_alive, base_url, num_parallel) flow from the profile. When it's
     None, the legacy env-driven closure is kept verbatim for back-compat.
+
+    ``llm_factory`` overrides the factory entirely (e.g. a strategy-wrapped one
+    from a runner). When None the factory is built as described above — the
+    default path is unchanged.
     """
     room_manager = RoomManager(client, homeserver_name=cfg.server_name)
 
@@ -178,14 +183,14 @@ def build_orchestrator(
         )
 
     if profile is not None:
-        llm_factory = build_llm_factory(profile)
+        built_factory = build_llm_factory(profile)
         ollama_base_url = profile.ollama.base_url
         keep_alive = profile.keep_alive
     else:
         ollama_base_url = cfg.ollama_base_url
         keep_alive = "30m"
 
-        def llm_factory(model_ref: str):
+        def built_factory(model_ref: str):
             # Empty model → fall back to the harness default. v2.3 plan-builder
             # emits agents with ``model=""`` (the model can't reliably guess a
             # valid model id); the harness owns the runtime model choice anyway.
@@ -203,6 +208,11 @@ def build_orchestrator(
                 if api_key:
                     kwargs["api_key"] = api_key
             return create_llm_adapter(model_ref, **kwargs)
+
+    # Caller-supplied factory (e.g. a strategy-wrapped one) wins; else use the
+    # one built above. None ⇒ default path, unchanged.
+    if llm_factory is None:
+        llm_factory = built_factory
 
     cfg.work_dir.mkdir(parents=True, exist_ok=True)
     if cfg.knowledge_cache_dir is not None:

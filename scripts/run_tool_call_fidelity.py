@@ -29,7 +29,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from agora.fleet.profiles import apply_env_overrides, load_profiles
+from agora.fleet.profiles import apply_env_overrides, build_llm_factory, load_profiles
+from agora.fleet.strategies import StrategyAdapter, resolve
 from agora.observe.jsonl import (
     ArmSpec,
     RunObserver,
@@ -128,6 +129,13 @@ async def main() -> None:
         scaffolding=os.getenv("AGORA_ARM_SCAFFOLDING", "rich"),
         strictness=os.getenv("AGORA_ARM_STRICTNESS", "strict"),
     )
+    # Per-model prompting strategy (axis-1 v2). Unset ⇒ control cell: strategy
+    # is None and no wrapper is constructed (build_orchestrator builds the bare
+    # factory), byte-identical to v1.
+    strategy_name = os.getenv("AGORA_STRATEGY", "").strip() or None
+    strategy = resolve(strategy_name)
+    if strategy is not None:
+        print(f"[*] Strategy: {strategy_name}")
     observer = RunObserver(
         run_id=run_id,
         output_dir=output_dir,
@@ -139,13 +147,29 @@ async def main() -> None:
         ollama_version=query_ollama_version(profile.ollama.base_url),
         git_commit=git_commit_short(REPO_ROOT),
         log_path=output_dir / "run.log",
+        strategy=strategy_name,
     )
     print(f"[*] Run observer → {output_dir} (run_id={run_id})")
+
+    # When a strategy is set, wrap the profile's factory so every adapter the
+    # orchestrator builds is strategy-aware. None ⇒ pass nothing; the default
+    # factory path in build_orchestrator is untouched.
+    llm_factory = None
+    if strategy is not None:
+        _base_factory = build_llm_factory(profile)
+
+        def llm_factory(model_ref: str, _f=_base_factory, _s=strategy):
+            return StrategyAdapter(_f(model_ref), _s)
 
     client = await build_matrix_client(cfg)
     try:
         orchestrator = build_orchestrator(
-            cfg, client, profile.model, profile=profile, observer=observer
+            cfg,
+            client,
+            profile.model,
+            profile=profile,
+            observer=observer,
+            llm_factory=llm_factory,
         )
         print(f"[*] Running probe '{PROJECT_NAME}' ({len(tasks)} tasks)")
         result = await orchestrator.run_project(
