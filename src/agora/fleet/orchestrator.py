@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -781,7 +782,13 @@ class Orchestrator:
             ready = ready_tasks(pending)
             if not ready:
                 break
-            outcomes = await asyncio.gather(*(_execute(t) for t in ready))
+            # AGORA_SERIAL_TASKS (debug, default off): dispatch ready tasks
+            # sequentially instead of concurrently, to isolate scheduling/batching
+            # as a non-determinism source. Off ⇒ the concurrent gather, unchanged.
+            if os.getenv("AGORA_SERIAL_TASKS", "").strip().lower() in ("1", "true", "yes", "on"):
+                outcomes = [await _execute(t) for t in ready]
+            else:
+                outcomes = await asyncio.gather(*(_execute(t) for t in ready))
             for task, agent, outcome in outcomes:
                 attempts[task.id] = attempts.get(task.id, 0) + 1
                 attempt_n = attempts[task.id]
