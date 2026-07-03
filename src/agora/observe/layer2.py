@@ -13,9 +13,12 @@ characterization questions the raw counts can't on their own:
    ``mixed-fails``) codified as a deterministic rule over the JSONL-derived
    metrics (:func:`classify`), so future characterization runs classify the same
    way without a human eyeballing the table.
-3. **Capability vectors** — :func:`capability_vectors` emits the locked CSV
-   schema (``model, axis, sub_target, raw_value, normalized_score, repeats,
-   ci_low, ci_high``): one row per (model, sub_target).
+3. **Capability vectors** — :func:`capability_vectors` emits the CSV schema
+   (``campaign, model, strategy, axis, sub_target, raw_value, normalized_score,
+   repeats, excluded_repeats, ci_low, ci_high``): one row per
+   (model, strategy, sub_target). The ``campaign`` + ``strategy`` columns let
+   axis-1 v1 (strategy null) and v2 (control + per-model treatment) rows coexist
+   in one CSV.
 
 Everything here is pure (same input → same output, no I/O, no globals). Nullable
 pandas dtypes from Layer 1 are handled by coercing to float before arithmetic so
@@ -347,7 +350,9 @@ _SUB_TARGETS: tuple[tuple[str, str, bool, bool], ...] = (
 )
 
 _CAP_COLUMNS = (
+    "campaign",
     "model",
+    "strategy",
     "axis",
     "sub_target",
     "raw_value",
@@ -368,12 +373,19 @@ def capability_vectors(
     runs_df: pd.DataFrame | None = None,
     *,
     axis: str = AXIS_TOOL_CALL_FIDELITY,
+    campaign: str = "",
     reproducibility_override: dict[str, tuple[float | None, int]] | None = None,
 ) -> pd.DataFrame:
-    """Emit the locked capability-vector CSV schema, one row per (model, sub_target).
+    """Emit the locked capability-vector CSV schema, one row per (model, strategy, sub_target).
 
-    Columns: ``model, axis, sub_target, raw_value, normalized_score, repeats,
-    excluded_repeats, ci_low, ci_high``. ``model`` is the profile name when
+    Columns: ``campaign, model, strategy, axis, sub_target, raw_value,
+    normalized_score, repeats, excluded_repeats, ci_low, ci_high``. ``campaign``
+    is the caller-supplied label (constant per invocation) that lets v1 and v2
+    rows coexist in one CSV. ``strategy`` is the per-model prompting strategy
+    (axis-1 v2); rows are keyed on ``(model, strategy, sub_target)`` so a model's
+    control (strategy null) and treatment cells stay separate. When ``tasks_df``
+    has no ``strategy`` column (v1), every row carries strategy null.
+    ``model`` is the profile name when
     ``runs_df`` supplies a ``model → profile_name`` map, else the raw model
     string. ``repeats`` is the model's run count (the design repeat count, kept
     constant); ``excluded_repeats`` is how many of those were dropped from the
@@ -391,7 +403,6 @@ def capability_vectors(
     if tasks_df.empty:
         return pd.DataFrame(columns=_CAP_COLUMNS)
 
-    mm = model_metrics(tasks_df)
     override = reproducibility_override or {}
 
     # model string → profile label (falls back to the raw model string).
@@ -401,30 +412,43 @@ def capability_vectors(
             if pd.notna(r["profile_name"]):
                 label[r["model"]] = r["profile_name"]
 
+    # Key cells on strategy: a v2 model appears in both control (strategy null)
+    # and treatment runs, and collapsing them would average two arms into one
+    # cell. v1 tasks_df has no strategy column ⇒ one null group, unchanged.
+    if "strategy" in tasks_df.columns:
+        groups = list(tasks_df.groupby("strategy", dropna=False))
+    else:
+        groups = [(None, tasks_df)]
+
     rows: list[dict[str, Any]] = []
-    for _, m in mm.iterrows():
-        model = m["model"]
-        repeats = int(m["n_runs"])
-        for sub_target, col, _higher_better, normalize in _SUB_TARGETS:
-            raw = m[col]
-            lo = m.get(f"{col}_lo", float("nan"))
-            hi = m.get(f"{col}_hi", float("nan"))
-            excluded = 0
-            if sub_target == _REPRODUCIBILITY_SUB_TARGET and model in override:
-                raw, excluded = override[model]
-                lo = hi = float("nan")  # recomputed subset carries no CI
-            norm = raw if (normalize and not pd.isna(raw)) else None
-            rows.append(
-                {
-                    "model": label.get(model, model),
-                    "axis": axis,
-                    "sub_target": sub_target,
-                    "raw_value": None if pd.isna(raw) else float(raw),
-                    "normalized_score": None if norm is None or pd.isna(norm) else float(norm),
-                    "repeats": repeats,
-                    "excluded_repeats": int(excluded),
-                    "ci_low": None if pd.isna(lo) else float(lo),
-                    "ci_high": None if pd.isna(hi) else float(hi),
-                }
-            )
+    for strat_val, sub in groups:
+        strategy = None if pd.isna(strat_val) else str(strat_val)
+        mm = model_metrics(sub)
+        for _, m in mm.iterrows():
+            model = m["model"]
+            repeats = int(m["n_runs"])
+            for sub_target, col, _higher_better, normalize in _SUB_TARGETS:
+                raw = m[col]
+                lo = m.get(f"{col}_lo", float("nan"))
+                hi = m.get(f"{col}_hi", float("nan"))
+                excluded = 0
+                if sub_target == _REPRODUCIBILITY_SUB_TARGET and model in override:
+                    raw, excluded = override[model]
+                    lo = hi = float("nan")  # recomputed subset carries no CI
+                norm = raw if (normalize and not pd.isna(raw)) else None
+                rows.append(
+                    {
+                        "campaign": campaign,
+                        "model": label.get(model, model),
+                        "strategy": strategy,
+                        "axis": axis,
+                        "sub_target": sub_target,
+                        "raw_value": None if pd.isna(raw) else float(raw),
+                        "normalized_score": None if norm is None or pd.isna(norm) else float(norm),
+                        "repeats": repeats,
+                        "excluded_repeats": int(excluded),
+                        "ci_low": None if pd.isna(lo) else float(lo),
+                        "ci_high": None if pd.isna(hi) else float(hi),
+                    }
+                )
     return pd.DataFrame(rows, columns=_CAP_COLUMNS)

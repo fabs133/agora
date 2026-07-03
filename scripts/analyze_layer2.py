@@ -276,19 +276,23 @@ def build_report(campaign_dir: Path) -> str:
     # ---- 5. capability vectors ----------------------------------------------
     w("\n## 5. Capability vectors\n")
     override = reproducibility_override(tasks_df, runs_df)
-    cv = capability_vectors(tasks_df, runs_df, reproducibility_override=override)
-    w("Locked schema `model, axis, sub_target, raw_value, normalized_score, "
-      "repeats, excluded_repeats, ci_low, ci_high`. `repeats=6` (lean+rich "
+    cv = capability_vectors(
+        tasks_df, runs_df, campaign=campaign_dir.name, reproducibility_override=override
+    )
+    w("Schema `campaign, model, strategy, axis, sub_target, raw_value, "
+      "normalized_score, repeats, excluded_repeats, ci_low, ci_high` — cells key "
+      "on (model, strategy, sub_target). `repeats=6` (lean+rich "
       "combine in v1); `excluded_repeats` counts runs dropped from the reported "
       "value — nonzero only where a model's `trajectory_reproducibility_rate` is "
       "recomputed after excluding its prewarm-contaminated block-first run. "
       "`normalized_score` is provisional identity for higher-is-better 0–1 rates, "
       "null where scale/direction isn't locked. Written to "
       "`reports/capability_vectors.csv`.\n")
-    w("| model | sub_target | raw | norm | repeats | excl | ci_low | ci_high |")
-    w("|---|---|---|---|---|---|---|---|")
+    w("| model | strategy | sub_target | raw | norm | repeats | excl | ci_low | ci_high |")
+    w("|---|---|---|---|---|---|---|---|---|")
     for _, r in cv.iterrows():
-        w(f"| {r['model']} | {r['sub_target']} | {_fmt(r['raw_value'])} | "
+        w(f"| {r['model']} | {r['strategy'] or '—'} | {r['sub_target']} | "
+          f"{_fmt(r['raw_value'])} | "
           f"{_fmt(r['normalized_score'])} | {int(r['repeats'])} | "
           f"{int(r['excluded_repeats'])} | {_fmt(r['ci_low'])} | {_fmt(r['ci_high'])} |")
 
@@ -309,7 +313,10 @@ def main() -> None:
 
     frames = load_campaign(campaign_dir)
     override = reproducibility_override(frames["tasks"], frames["runs"])
-    cv = capability_vectors(frames["tasks"], frames["runs"], reproducibility_override=override)
+    cv = capability_vectors(
+        frames["tasks"], frames["runs"], campaign=campaign_dir.name,
+        reproducibility_override=override,
+    )
     cv.to_csv(reports / "capability_vectors.csv", index=False)
 
     print(f"[layer2] report  -> {reports / 'layer2_findings.md'}")

@@ -34,8 +34,10 @@ _MODELS = {
 _TASK_IDS = ("small_chain", "loop_depth", "content_robustness")
 
 
-def _run(cid: str, profile: str, *, scaffolding: str, passed: int, failed: int) -> RunRecord:
+def _run(cid: str, profile: str, *, scaffolding: str, passed: int, failed: int,
+         strategy: str | None = None) -> RunRecord:
     return RunRecord(
+        strategy=strategy,
         run_id=f"uuid-{cid}",
         started_at="2026-07-01T08:00:00+00:00",
         ended_at="2026-07-01T08:05:00+00:00",
@@ -86,13 +88,15 @@ def _frames(runs: list[RunRecord], tasks: list[TaskRecord], repeats: dict[str, i
     return runs_df, tasks_df
 
 
-def _model_runs(profile: str, cids: list[str], task_specs) -> tuple[list, list, dict]:
+def _model_runs(profile: str, cids: list[str], task_specs,
+                strategy: str | None = None) -> tuple[list, list, dict]:
     """task_specs: list (one per cid) of {task_id: (status, structured, fallback, malformed)}."""
     runs, tasks, reps = [], [], {}
     for rep, (cid, spec) in enumerate(zip(cids, task_specs, strict=True), start=1):
         arm = "lean" if rep <= 3 else "rich"
         passed = sum(1 for v in spec.values() if v[0] == "passed")
-        r = _run(cid, profile, scaffolding=arm, passed=passed, failed=len(spec) - passed)
+        r = _run(cid, profile, scaffolding=arm, passed=passed, failed=len(spec) - passed,
+                 strategy=strategy)
         runs.append(r)
         reps[r.run_id] = rep if rep <= 3 else rep - 3
         for idx, tid in enumerate(_TASK_IDS):
@@ -216,19 +220,41 @@ def test_capability_vectors_locked_schema_and_rows() -> None:
             "content_robustness": ("passed", 3, 0)}
     runs, tasks, reps = _model_runs("gemma-e4b", [f"g{i}" for i in range(6)], [spec] * 6)
     rdf, tdf = _frames(runs, tasks, reps)
-    cv = capability_vectors(tdf, rdf)
+    cv = capability_vectors(tdf, rdf, campaign="axis-1")
     assert list(cv.columns) == [
-        "model", "axis", "sub_target", "raw_value", "normalized_score",
-        "repeats", "excluded_repeats", "ci_low", "ci_high",
+        "campaign", "model", "strategy", "axis", "sub_target", "raw_value",
+        "normalized_score", "repeats", "excluded_repeats", "ci_low", "ci_high",
     ]
     # one row per sub_target for the single model.
     assert len(cv) == 7
     assert (cv["axis"] == AXIS_TOOL_CALL_FIDELITY).all()
+    assert (cv["campaign"] == "axis-1").all()
+    assert cv["strategy"].isna().all()  # no strategy set → null (v1 / control)
     assert (cv["repeats"] == 6).all()  # lean+rich combine → 6, not 3
     assert (cv["excluded_repeats"] == 0).all()  # nothing excluded without an override
     assert (cv["model"] == "gemma-e4b").all()  # profile name, not the ollama tag
     # reproducibility appended as an ordinary sub_target row.
     assert "trajectory_reproducibility_rate" in set(cv["sub_target"])
+
+
+def test_capability_vectors_keys_cells_by_strategy() -> None:
+    """A v2 model with control + treatment runs yields separate cells per strategy
+    (control and treatment must not average into one cell)."""
+    spec = {"small_chain": ("passed", 4, 0), "loop_depth": ("failed", 0, 0),
+            "content_robustness": ("passed", 3, 0)}
+    c_runs, c_tasks, c_reps = _model_runs("gemma-e4b", [f"c{i}" for i in range(3)], [spec] * 3)
+    t_runs, t_tasks, t_reps = _model_runs(
+        "gemma-e4b", [f"t{i}" for i in range(3)], [spec] * 3, strategy="qwen2_5_coder"
+    )
+    rdf, tdf = _frames(c_runs + t_runs, c_tasks + t_tasks, {**c_reps, **t_reps})
+    cv = capability_vectors(tdf, rdf, campaign="axis-1-v2")
+    assert (cv["campaign"] == "axis-1-v2").all()
+    # 7 sub_targets × 2 strategy cells (control null + treatment).
+    assert len(cv) == 14
+    assert set(cv["strategy"].dropna()) == {"qwen2_5_coder"}  # treatment cells
+    assert cv["strategy"].isna().any()  # control cells present
+    # each strategy cell-set is a full 7 sub_targets.
+    assert (cv["strategy"] == "qwen2_5_coder").sum() == 7
 
 
 def test_capability_vectors_structured_rate_and_normalization() -> None:
