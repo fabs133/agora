@@ -85,9 +85,26 @@ SEED_FILES: dict[str, str] = {
 }
 
 
+def reset_out_dir(project_dir: Path) -> None:
+    """Remove the project's ``out/`` so each run starts with a clean output slate.
+
+    Without this a prior run's ``out/*.txt`` persists; the write_file overwrite-
+    guard then blocks the model's write and equality postconditions compare
+    against STALE bytes — the confound that made ``live_pass`` ≈ 0 across v1/v2/v3
+    (``docs/runs/axis-1-v3/forensics-stale-out.md``). ``plan/`` is NEVER touched:
+    those are the seeded probe inputs.
+    """
+    import shutil
+
+    out = project_dir / "out"
+    if out.exists():
+        shutil.rmtree(out)
+
+
 def seed_probe_files(work_dir: Path, project_name: str) -> Path:
-    """Write the four plan/*.txt fixtures into the project's work_dir. Idempotent."""
+    """Reset ``out/`` then write the plan/*.txt fixtures. Each run starts fresh."""
     project_dir = work_dir / project_name
+    reset_out_dir(project_dir)
     for rel, content in SEED_FILES.items():
         path = project_dir / rel
         path.parent.mkdir(parents=True, exist_ok=True)

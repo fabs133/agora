@@ -25,6 +25,7 @@ from agora.core.task import Task
 from agora.fleet.agent_runtime import (
     AgentRuntime,
     TaskResult,
+    _capture_failed_artifact,
     _collect_artifacts,
     _evaluate_postconditions,
     _merge_usage,
@@ -428,6 +429,12 @@ class StageRunner:
             task, last_final_text, artifacts, self._ctx
         )
         success = all(passed for _, passed, _ in postcondition_results)
+        # S4 near-miss capture — staged tasks (which is every probe task) build
+        # their own TaskResult here, so the capture must live on this path too;
+        # without it artifact_capture was 0/45 in v3.0 despite the field existing.
+        artifact_capture = _capture_failed_artifact(
+            task.output_path or "", success, self._ctx.work_dir
+        )
 
         reinforced_ids: list[str] = []
         if success and identity.learned_patterns:
@@ -446,6 +453,7 @@ class StageRunner:
                 token_usage=total_usage,
                 iterations=total_iterations,
                 stop_reason=last_stop,
+                artifact_capture=artifact_capture,
             )
         )
 

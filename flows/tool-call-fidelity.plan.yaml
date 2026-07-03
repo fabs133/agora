@@ -1,9 +1,13 @@
 version: "2.0"
 name: tool-call-fidelity
-# Probe design version (findings S4). Carried into run.jsonl provenance so v3
-# cells (byte-exactness prompt, artifact capture) are never silently compared
-# against v1/v2 cells.
-probe_version: 3
+# Probe design version, carried into run.jsonl provenance so cells are never
+# silently compared across measurement conditions.
+#   3: byte-exactness prompt + artifact_capture (v3.0).
+#   4: out/ is reset before each run (no stale-file guard-block) AND artifact
+#      capture now fires on the staged path — the measurement conditions changed
+#      materially, so v4 cells are not comparable to v3.0 (see
+#      docs/runs/axis-1-v3/forensics-stale-out.md).
+probe_version: 4
 description: >
   Axis-1 atomic probe for tool-call fidelity. One implementer agent runs three
   short, fully-specified tool chains (copy, list+read+concat, follow-a-redirect).
