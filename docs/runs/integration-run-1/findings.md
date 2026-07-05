@@ -657,3 +657,68 @@ passes its smoke -> P7 acceptance green -> P9 -> PROJECT_STATE.md ->
 the deferred human fact-check. (b) P7 reds with a now-informative,
 now-persisted oracle -> ONE repair (first repair in program history fed
 by a post-repair-quality oracle); second red stops. Waivers forbidden.
+
+---
+
+## Part 10 — run 2.2 findings (2026-07-05)
+
+**Run 2.2:** the deepest run in program history. **P6 re-established, P7
+GREEN first-ever** (F16/F17 fixes landed), **P9 RED -> repair -> RED ->
+STOP** on T9.2. World (a) for P7; a new model floor (F18) at P9.
+
+**F16/F17 VALIDATED (world (a)).** T6.1, given the explicit inline import
+contract + the no-swallow clause, wrote `from echobot.core import
+handle_message` (line 3 of __main__.py) and the assembled bot passed all
+three P7 stdin acceptance checks first try (`pong`, `hello world`,
+`rolled 2d6: 1+2=3`). The F10-analogue smoke gate on T6.1 (`python -m
+echobot` stdin `!ping` -> `pong`) means the adapter now reds on its own
+defect at P6, not two phases downstream. The re-establishment consumed no
+budget (F16/F17 were a verified missing-contract/weak-gate defect).
+
+**F17b VERIFIED LIVE.** The mechanical P7 re-eval persisted a
+mechanical-marked T7.1 TaskRecord (mechanical=True, 3 run_check records)
+to tasks.jsonl — the re-eval's captures now survive for any subsequent
+oracle_records_for_phase (latest-record-wins), closing the stale-oracle
+hole. (Here the re-eval was GREEN so no repair keyed off it, but the
+persistence is the durable fix.)
+
+**F18 — model floor on large structured-document generation (the deferred
+run-1 measurement, ANSWERED).** T9.2 (PROJECT_STATE.md: eight mandatory
+verbatim section headers + a verification record + a file map) stalled
+into pure empty turns (tool_calls=0, content_len=0) on BOTH the attempt
+and the repair — the S2 nudge did not recover, no artifact was ever
+written. T9.1 (README, ~20 lines, two substrings) passed first try, so the
+floor is the LARGE, highly-structured document specifically, not
+doc-writing. This directly answers the amendment's deferred question —
+"can the implementer describe its own project accurately?": at gemma-e4b's
+size, it produces NOTHING for the 8-section handoff brief. F18 is distinct
+from F14 (partial/incorrect output): F14 is a wrong answer, F18 is no
+answer — a generation stall on document scale/structure. The one-repair
+budget was spent reproducing the stall exactly. Fix candidates (run 2.3,
+owner's call): decompose T9.2 into per-section tasks (the F14 small-task
+mitigation applied to docs — build the handoff incrementally, as the core
+was built), reduce the mandatory-section scope, or seed a scaffolded
+template the model only fills. None is a run-2.2 change.
+
+**Verifier fidelity (continued).** V7.1 and V9.1 produced VALID JSON this
+run; V5.1 (malformed) and V6.1 (empty) did not. Still phase-inconsistent;
+the record is the measurement.
+
+**Nudge / truncation.** P9 T9.2: 1 nudge each attempt (ineffective against
+the stall); all other 2.2 tasks 0. No truncation events.
+
+**Disposition.** Run 2.2 is the program's high-water mark: seven of eight
+phases green (P3-P7 + the P9 README), the first-ever end-to-end assembled
+bot passing stdin acceptance, and the last-phase measurement answered.
+Every framework finding in the F1-F17b arc is now closed or verified live;
+the sole remaining blocker, F18, is a MODEL floor (document-scale
+generation), not a framework or spec defect — the same category the
+program was built to isolate. PROJECT_STATE.md, the deferred human
+fact-check target, does not exist because producing it is exactly the
+capability the run measured and found absent. **Run 2.3 (pre-registration
+sketch, owner's call):** decompose the P9 handoff into small per-section
+tasks and re-establish P9 (F18 = a task-granularity defect, analogous to
+F14's incremental-build mitigation); on completion the (now
+incrementally-built) PROJECT_STATE.md finally reaches the human
+fact-check. Standard protocol; the P3-P7 gates stand as a regression
+suite. Waivers forbidden.

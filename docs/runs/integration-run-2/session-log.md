@@ -314,3 +314,90 @@ action: conditions-defect re-establishment of P6 -> `--rerun-task T6.1 --oracle 
   --oracle; consumes no budget per the standing rule — F16/F17 are a verified missing-contract/weak-gate
   defect), then --next through P7/P9.
 ```
+
+## P6 re-establishment + P7 acceptance — GREEN (F16/F17 fixes landed) (2026-07-05)
+`--rerun-task T6.1 --oracle P7` (no budget). T6.1 rewrote __main__.py under the
+new contract; item-3 capture — the import is now present:
+```
+runs_out/integration-run-2/echobot/echobot/echobot/__main__.py
+  1: import sys
+  2: import random
+  3: from echobot.core import handle_message      <- F16 fix: explicit import present
+```
+```
+=== phase P7 gate: GREEN (mechanical re-eval) ===
+  [PASS] T7.1 (block)
+      ok  python -m echobot  stdin "!ping\n"        -> stdout "pong"
+      ok  python -m echobot  stdin "!echo hello world\n" -> stdout "hello world"
+      ok  python -m echobot  stdin "!roll 2d6\n"    -> stdout "rolled 2d6: 1+2=3"
+  [PASS] V7.1 (nonblock) -> verdicts/p7.json VALID
+```
+World (a): adapter imports + acceptance all green, first-ever P7 pass. The no-swallow
+clause (F17) + import contract (F16) resolved it; T6.1's own new stdin smoke gate
+(python -m echobot !ping -> pong) means the adapter now reds on its OWN defect at P6.
+### F17b VERIFIED LIVE
+The mechanical P7 re-eval persisted a mechanical-marked T7.1 TaskRecord
+(mechanical=True, status=passed, 3 run_check records) to tasks.jsonl — the re-eval's
+captures now survive for any subsequent oracle_records_for_phase (latest-record-wins).
+
+## P9 docs + handoff — RED first pass (T9.2 stalled on PROJECT_STATE.md) (2026-07-05)
+```
+=== phase P9 gate: RED ===
+  blockers: T9.2
+  nudge accounting: 1 fired
+  [PASS] T9.1 (block)  README.md -> contains "python -m echobot" + "pytest"
+  [FAIL] T9.2 (block)  PROJECT_STATE.md -> ALL 10 file_contains checks fail (8 headers + 2 gate cmds)
+      tools_used=[] , iters=2, nudges=1 : TWO empty turns (tool_calls=0 content_len=0) -> no artifact written
+  [PASS] V9.1 (nonblock) -> verdicts/p9.json VALID
+```
+T9.2 stalled: both turns empty, the one nudge did not recover, PROJECT_STATE.md never
+created. The task is fully specified (8 headers inline, F6), so this is a genuine model
+stall on a large structured document — NOT a conditions defect; it consumes budget.
+Designated repair per standard protocol: ONE `--rerun-task T9.2 --oracle P9`.
+
+### P9 repair — RED (second red): STOP
+```
+=== phase P9 gate: RED ===
+  blockers: T9.2
+  [FAIL] T9.2 (block)  PROJECT_STATE.md -> all 10 checks fail again
+      tools_used=[], iters=2, nudges=1 : TWO empty turns AGAIN — PROJECT_STATE.md still never written
+  [PASS] V9.1 (nonblock) -> verdicts/p9.json VALID
+```
+The repair reproduced the stall exactly (two empty turns, one ineffective nudge, no
+artifact). Second P9 red -> STOP, waivers forbidden.
+
+### F18 — model floor on large structured-document generation (the deferred measurement, answered)
+gemma-e4b stalls on T9.2 (PROJECT_STATE.md: 8 mandatory verbatim section headers +
+verification record + file map) — pure empty turns (tool_calls=0, content_len=0), both
+the attempt and the repair, the S2 nudge not recovering. Contrast T9.1 (README, ~20
+lines, 2 substrings) which PASSED first try. So the floor is specifically the LARGE,
+highly-structured handoff document, not doc-writing per se. This IS the deferred run-1
+measurement — "can the implementer describe its own project accurately?" — answered:
+at this model size, NO; it produces no output at all for the 8-section brief. Distinct
+from F14 (partial/incorrect implementation): here the model emits nothing. Fix
+candidates for a run 2.3 (owner's call): decompose T9.2 into per-section tasks (the
+F14 small-task mitigation applied to docs), or reduce the mandatory-section scope, or
+seed a scaffolded template the model fills. None is a run-2.2 change.
+
+### Phase gate ledger (run 2.2)
+```
+P3 GREEN | P4 GREEN | P5 GREEN | P6 GREEN | P7 RED(2.1)->[F16/F17 fix, re-est]->GREEN | P9 RED->(repair T9.2)->RED -> STOP
+```
+
+**RUN 2.2 STOPPED at P9 (second red on the same gate; T9.2 PROJECT_STATE.md stall, F18).
+Reached the FURTHEST point in program history: P3-P7 green (first-ever P7 acceptance
+pass), P9 exercised (first-ever), README green, PROJECT_STATE.md unwritten. Run did NOT
+complete; no PROJECT_STATE.md to fact-check (the stalled artifact IS the fact-check
+target). No waiver.** V-fidelity: V7.1/V9.1 valid JSON this run; V5.1/V6.1 not.
+
+### Final workspace tree (runs_out/integration-run-2/echobot/echobot, git/pycache elided)
+```
+README.md                  (T9.1 GREEN — small doc, ~20 lines)
+echobot/__init__.py
+echobot/__main__.py        (imports echobot.core; python -m echobot acceptance GREEN)
+echobot/core.py            (module-level handle_message; 8/8 core tests pass)
+requirements.txt
+tests/test_core.py         (8 tests incl. F15-predicate roll_malformed)
+verdicts/p4.json (valid) p5.json (malformed) p6.json (empty) p7.json (valid) p9.json (valid)
+```
+PROJECT_STATE.md: NOT PRESENT (T9.2 stalled twice — F18; P9 not passed).
