@@ -393,3 +393,117 @@ end-to-end repair path (contract + authority + local gate + write_file
 affordance + a manifest that actually offers write_file) before declaring
 run 1.x closed and moving to 2.0. This would be the first repair cell in
 program history to have every provision simultaneously in channel.
+
+**Part 6 addendum — chat-side ruling (2026-07-05).**
+
+**F12 narrative correction:** in run 1.3 write_file was HIDDEN by the
+v2.4 guard (core.py had bytes) — gemma did not fail to fall back to
+write_file; there was nothing to fall back to. Its add_function choice
+was the semantically correct pick from the only family offered. F12's
+tool-surface doctrine stands; the model's 1.3 conduct upgrades. Run 1's
+"no guard friction" observation is likewise reinterpreted: friction was
+invisible because the guard shaped the MANIFEST, and manifest shaping
+does not appear in tools_used forensics. New observability rule:
+manifest deltas (guard hides, allowlist filters) are logged per turn.
+
+**F13 correction to the report:** NOT repair-path-only. Greenfield
+T3.1 writes a non-empty stub core.py; T4.1 must modify it; guard hides
+write_file; allowlisted seat has no edit family -> the same collision
+at P4 in run 2.0. F13 is on the greenfield critical path.
+
+**F13 fix (invariant form):** the guard may never reduce a seat to zero
+file-mutation affordances — if hiding write_file would leave the
+manifest without any mutation tool, the hide is skipped. Regression
+test: allowlisted seat + existing output file -> manifest contains
+write_file. Property test: any task with an output_path always has
+>=1 mutation affordance offered.
+
+**Exit-criterion amendment, made openly:** the 1.4 pre-commitment
+("last repair iteration") targeted repair grinding against unknown
+walls. 1.4 was INVALIDATED (manifest contained no write affordance —
+the trial never reached the model), not failed — same category as run
+1's scope-blocked P5, ratified precedent. Therefore: run 1.5 is granted
+as the RE-ESTABLISHMENT of the 1.4 trial, and is FINAL for run 1.x
+regardless of colour. Green -> proceed P6-P9 to completion. Red -> the
+repair cell closes as model-side under full provisioning (contract +
+authority + local gate + oracle + offered affordance — the first
+attempt in program history with all five simultaneously in channel),
+and run 1.x ends. No further fixes inside run 1.x after 1.5.
+
+**Run 1.5 worlds:** (a) write_file(force) rewrite lands -> local smoke
+green -> mechanical P5 green -> --next P6/P7/P9 -> completion +
+PROJECT_STATE fact-check. (b) red with all five provisions verified
+in-channel -> model-side repair-floor finding, run 1.x closed, full
+report written. (c) any provision found NOT in channel post-hoc ->
+invalidated trial, run 1.x closed anyway (exit rule), defect queued for
+run 2.0. Budget: this one rerun. Waivers forbidden.
+
+---
+
+## Part 7 — run 1.5 findings — RUN 1.x CLOSED (2026-07-05)
+
+**Run 1.5 outcome:** P5 red -> STOP, run 1.x closed per the exit
+amendment. But the character of the red inverted: **world (b)** — the
+repair path worked END-TO-END for the first time in program history, and
+the residual is a clean, model-side implementation-completeness floor.
+
+**F13 fix VERIFIED LIVE.** The invariant `_apply_overwrite_guard` held:
+with the impl seat allowlisted (edit/AST family de-listed), the guard did
+NOT hide write_file on the pre-existing drifted core.py — run.log shows
+`manifest: filtered 13 tools (allowlist) task=T4.1` and NO
+`manifest: hid write_file` line for T4.1. write_file was offered; gemma
+read the drift, called `write_file` (turn 2), and landed a MODULE-LEVEL
+`def handle_message(text: str, rng: random.Random) -> Optional[str]`.
+T4.1 passed its own gate (all four postconditions, incl. the F10 ping
+smoke). **The tool that wrote core.py: write_file. The F4 drift is GONE.**
+The 1.4 guard×allowlist collision cannot recur; manifest shaping now
+leaves evidence (the Part-6 observability rule).
+
+**F14 — the repair floor is implementation COMPLETENESS, not perception,
+tool choice, or affordance.** With all five provisions simultaneously in
+channel for the first time (inline contract + F9 authority + F10 local
+gate + verbatim oracle + offered write_file), gemma executed the
+class->function refactor and got 4 of 8 spec behaviours right (ping, echo,
+unknown_command, non_command). The 4 it missed, on a from-scratch rewrite
+under a fully-NAMING oracle:
+- test_help_lists_all_commands — help omits `!roll` (implemented dispatch,
+  forgot the help line);
+- test_roll_malformed — usage string `Usage: !roll <N> <M>...` vs the
+  spec/test's `Usage: !roll NdM`;
+- test_roll_deterministic — `rolled NdM: a+b=total` format mismatch;
+- test_echo_preserves_spacing — internal spacing not preserved.
+This is not F7 (oracle expressiveness — the oracle NAMED roll_malformed /
+help): the oracle told gemma these failed and it still did not reproduce
+the exact contract. The floor is capability to reconstitute a full
+behavioural spec from scratch, gate-checked. The prior floors are now
+retired as instrument artifacts: 1.2 no-op (no local gate), 1.3
+add_function (unmeasured tool surface), 1.4 no affordance (guard
+collision). 1.5 removed all three and reached the real one.
+
+**The repair doctrine is complete for run 1.x.** The full recipe that
+makes an oracle-fed repair ACT correctly: (i) the failing gate on — or a
+contract naming — the repaired task (F10, [[repair-oracle-needs-local-gate]]);
+(ii) the authoritative contract inline + an authority clause (F8/F9);
+(iii) a verbatim, tail-preserving oracle (F7/F11); (iv) a seat held to a
+measured tool surface (F12); (v) that surface actually OFFERING a write
+affordance on an existing file (F13). All five landed; the repair then
+does exactly what the model is capable of — here, a partial reimplementation.
+
+**Run 1.x CLOSED.** Per the Part-6 exit amendment, 1.5 was final
+regardless of colour. No further fixes inside run 1.x. Net yield of run
+1.x (from a bot that still does not fully pass its own tests): F1–F14,
+role-scope lint, run.log observer, order_after verifiers, mechanical-flag
+ledger, inline-contract tasks, behavioural smoke gates, head+tail oracle
+capture, the F9 authority clause, the seat allowlist mechanism
+(AgentConfig.allowed_tools), the F13 guard invariant, manifest-delta
+logging, and the model×tool-surface casting dimension. Next execution is
+**run 2.0** — a clean greenfield run of the full flow under all
+accumulated fixes, where T4.1 carries its contract from turn 1 and the
+drift most likely never occurs. The one open behavioural question F14
+raises (does gemma reconstitute the FULL contract when writing fresh,
+rather than repairing?) is a run-2.0 measurement, not a run-1.x fix.
+
+**Deferred, still registered (not built in run 1.x):** rejection-stall
+detector; add_function audit (append vs upsert, `path` requirement);
+verdicts/p5.json confirmation on a P5-touching run (V5.1 never re-ran in a
+P4-task rerun). These carry into the run-2.0 backlog.

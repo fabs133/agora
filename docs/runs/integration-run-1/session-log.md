@@ -919,3 +919,96 @@ verdicts/p3.json
 verdicts/p4.json
 ```
 PROJECT_STATE.md: NOT PRESENT (P9 not reached).
+
+---
+
+# RUN 1.5 — FINAL run-1.x iteration (F13 invariant + manifest-delta logging)
+
+## Pre-flight (2026-07-05 19:24) @ 7e462df (run-1.5 prep committed; suite green 1449, ruff clean)
+```
+ollama /api/version: {"version":"0.31.1"}; gemma4:e4b + qwen2.5:7b-instruct resident
+workspace prep: NOTHING TOUCHED — tests/test_core.py + core.py (handle_message(self,message) drift) both intact
+ledger: P3/P4 green, P5 red frontier (run 1.4 #10 mechanical); --next BLOCKED
+conditions delta (2 items, one variable = the F13 invariant + its observability):
+  (1) F13 invariant at the v2.4 hide site (_apply_overwrite_guard): never hide write_file when the
+      post-hide manifest would carry zero file-mutation tools (write_file + edit + AST). The 1.4
+      collision (allowlist removed the edit family, guard hid write_file, seat had no write tool) cannot recur.
+  (2) manifest-delta logging: one INFO line per allowlist filter + per write_file hide.
+exit amendment (Part 6 addendum): 1.5 RE-ESTABLISHES the INVALIDATED 1.4 trial and is FINAL for run 1.x
+  regardless of colour. Green -> P6-P9 to completion. Red -> model-side repair-floor finding, run 1.x closed.
+```
+### Execution reading
+The single `--rerun-task T4.1 --oracle P5`. First repair in program history with ALL FIVE provisions simultaneously in channel: contract inline (item 1, run 1.3) + F9 authority clause (1.3) + F10 local smoke gate (1.3) + verbatim P5 oracle + an OFFERED write_file affordance (F13, this run).
+
+## P5 (1.5) designated repair — RED, but the REPAIR PATH WORKED end-to-end (WORLD (b): model-side completeness floor) (2026-07-05 19:26)
+
+### Gate report (verbatim — mechanical P5 re-eval)
+```
+=== phase P5 gate: RED ===
+  blockers: T5.1
+  [FAIL] T5.1 (block)
+      ... 8 name/collect checks ok; collect-only exit 0 ...
+      FAIL run_check_python_-m_pytest_-q_949dde
+      run_check: python -m pytest -q -> exit=1 passed=False
+        stdout: ...
+tests\test_core.py:57: AssertionError
+FAILED tests\test_core.py::test_echo_preserves_spacing
+FAILED tests\test_core.py::test_roll_deterministic
+FAILED tests\test_core.py::test_roll_malformed
+FAILED tests\test_core.py::test_help_lists_all_commands
+4 failed, 4 passed in 0.09s
+  [FAIL] V5.1 (nonblock)  -> verdicts/p5.json still absent (V5.1 not re-run in a P4-task rerun)
+```
+**The gate went from 7 failed (1.2–1.4, the drift) to 4 failed / 4 passed (1.5).** ping / echo / unknown_command / non_command_returns_none now PASS — the drift is gone.
+
+### Item-4 verification (from run.log + provenance, quoted)
+**(i) write_file appeared in T4.1's manifest this time — the new delta logging PROVES it:**
+```
+manifest: filtered 13 tools (allowlist) task=T4.1        <- allowlist applied (13 dropped)
+   (NO "manifest: hid write_file" line for T4.1)          <- F13 invariant SKIPPED the hide:
+                                                              write_file was the only mutation affordance, so it stayed
+tool call: task=T4.1 turn=1 name=read_file  ...
+tool call: task=T4.1 turn=2 name=write_file args={'content': 'import random\nfrom typing import Optiona...
+tool call: task=T4.1 turn=3 name=mark_complete artifacts=['echobot/core.py']
+```
+**(ii) which tool wrote core.py: `write_file`** (T4.1 turn 2). core.py is now
+`def handle_message(text: str, rng: random.Random) -> Optional[str]` — the correct MODULE-LEVEL function. T4.1 record: status=PASSED, tools_used=['mark_complete','read_file','write_file'], all four postconditions ok INCLUDING the F10 smoke `assert handle_message('!ping', Random(0)) == 'pong'`. The workspace committed `39b268d auto: wrote echobot/core.py`.
+
+### Which world: (b) — RED with all five provisions verified in-channel, so a MODEL-side repair-floor finding
+This is NOT a no-op (1.2), a wrong-tool wall (1.3), or a no-affordance collision (1.4). The repair mechanism worked end-to-end for the first time: the seat was OFFERED write_file, gemma read the drift, REWROTE core.py as a module-level function, landed it, and passed its own gate. What remains is ordinary implementation INCOMPLETENESS in the from-scratch rewrite — 4 of 8 spec behaviours are wrong:
+```
+test_help_lists_all_commands : help lists ping/echo/help but OMITS !roll
+test_roll_malformed          : returns 'Usage: !roll <N> <M>...' ; spec/test want substring 'Usage: !roll NdM'
+test_roll_deterministic      : "rolled NdM: a+b=total" format mismatch under the seeded rng
+test_echo_preserves_spacing  : internal spacing not preserved verbatim
+```
+gemma got ping/echo/unknown/non-command right; it did not reproduce the full roll/help/echo-spacing contract on a from-scratch rewrite, even under a fully-naming oracle. **The repair floor is now precisely: implementation completeness, not perception, tool choice, or affordance.** (Note the F10 smoke is single-behaviour by design — it proved the refactor landed and ping dispatches; the full contract lives in P5's suite, which is where the incompleteness surfaces.)
+
+### F-fix verifications this run
+- F13 invariant: VERIFIED LIVE — no "hid write_file" for the allowlisted T4.1 seat; write_file offered; the write landed. The 1.4 collision is fixed.
+- Manifest-delta logging (item 2): VERIFIED — "manifest: filtered 13 tools (allowlist)" present in run.log; manifest shaping now leaves evidence (Part 6 observability rule satisfied).
+- Item 1 allowlist (1.4): still in force — 13 tools filtered; gemma used only allowlisted tools (read_file, write_file, mark_complete). No add_function this run.
+- F9 authority + item-2 write_file line (1.3/1.4): now EFFECTIVE (were inert under the 1.4 collision) — gemma rewrote the file via write_file exactly as the authority section instructed.
+- F10 local smoke: PASSED this run (ping) — first time T4.1's own gate went green post-repair.
+
+### Phase gate ledger (P5 rows)
+```
+#3 #4 P5 RED [run 1]   #5 #6 P5 RED [1.1]   #7 P5 RED (world-a fresh)
+#8 RED MECH [1.2 repair]   #9 RED MECH [1.3 add_function wall]   #10 RED MECH [1.4 guard×allowlist F13]
+#11 P5 RED MECHANICAL [1.5 repair — write LANDED, drift fixed, 4/8 behaviours; model completeness floor] -> STOP, run 1.x CLOSED
+```
+
+**RUN 1.5 STOPPED at P5 and run 1.x is CLOSED per the exit amendment. The repair path is proven end-to-end (write_file offered → drift fixed → T4.1 gate green); P5 remains red on a model-side implementation-completeness floor (4/8 behaviours). P6/P7/P9 not reached; the run did NOT complete, so no PROJECT_STATE.md is produced. No waiver. The F4 drift is, for the first time, GONE from the workspace — core.py is now a spec-shaped module-level function.**
+
+### Final workspace tree (runs_out/integration-run-1/echobot/echobot, git/pycache elided)
+```
+README.md
+echobot/__init__.py
+echobot/__main__.py
+echobot/core.py            (NOW def handle_message(text, rng) -> Optional[str] — drift FIXED via write_file; 4/8 behaviours pass)
+requirements.txt
+tests/test_core.py
+verdicts/p3.json
+verdicts/p4.json
+```
+PROJECT_STATE.md: NOT PRESENT (P9 not reached — run did not complete).
