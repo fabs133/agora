@@ -101,3 +101,24 @@ or (ii) accept F15 as a spec-doctrine finding and fold the wording fix into the
 run-2 spec before a 2.1. Either way the deferred run-1 measurement
 (PROJECT_STATE.md human fact-check) waits on a completed run. P6/P7 remain the
 first-unexercised frontier.
+
+---
+
+## Run 2.1 addendum (2026-07-05) — see run-1 findings Part 9 for the full analysis
+
+Run 2.1 applied the F15 acceptance predicate (T5.1 inline contract: usage
+message MUST contain "NdM") and re-established P5. Result — the furthest point in
+program history:
+- **P5 GREEN** (world (a): tester wrote `assert result is not None and "NdM" in
+  result`, citing F15 — predicate-conformance exact; zero implementation change).
+- **P6 GREEN, first-ever** (T6.1 wrote the __main__ adapter; suite still 8/8).
+- **P7 RED, first-ever -> repair -> RED -> STOP.** F16: the adapter never imports
+  handle_message (T6.1's description omits the import contract) AND T6.1's gate is
+  only `pytest -q` (never runs __main__) — F6/F8 + F10 recurrence at the adapter.
+  F17: the adapter's `except NameError: pass` swallowed the failure, so the P7
+  oracle carried only "no stdout", not the NameError — defensive swallowing
+  degrades oracle expressiveness. P9 not reached; no PROJECT_STATE.md.
+
+**Run 2.2 (pre-registered, run-1 findings Part 9):** T6.1 gains the inline import
+contract + a `python -m echobot` stdin smoke gate (F16 fix); conditions-defect
+re-establishment of P6, then --next through P7/P9.

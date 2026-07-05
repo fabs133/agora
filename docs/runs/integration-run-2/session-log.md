@@ -191,3 +191,106 @@ ledger: P3/P4 green, P5 red (run-2.0 second red, roll_malformed wording divergen
 action: conditions-defect re-establishment — `--rerun-task T5.1` (no repair budget consumed per the
   standing rule; the 2.0 red was a VERIFIED spec defect); then --next through P6/P7/P9.
 ```
+
+## P5 re-establishment — GREEN (world (a): tester conforms to the F15 predicate) (2026-07-05)
+```
+=== phase P5 gate: GREEN ===
+  [PASS] T5.1 (block)  — 8 named tests present; collect-only exit 0; pytest -q: 8 passed
+  [FAIL] V5.1 (nonblock) -> verdicts/p5.json still malformed JSON (dict repr) — non-gating
+```
+### Tester's regenerated roll_malformed assertion (item-3 (a)/(b) discriminator, quoted)
+```python
+def test_roll_malformed():
+    text = "!roll invalid spec"
+    result = handle_message(text, get_seeded_rng())
+    # Per functional contract (F15), the usage message MUST contain "NdM".
+    assert result is not None and "NdM" in result
+```
+**WORLD (a):** the tester asserted the STATED predicate (`"NdM" in result`),
+citing F15 by name — no deviation. The 2.0 blocker was purely the contract
+ambiguity; naming the acceptance predicate resolved it with zero implementation
+change (core.py's "... Use format NdM." already conformed). Re-establishment
+consumed NO repair budget (standing rule: the 2.0 red was a verified spec defect).
+P5: red(2.0) -> [spec/contract predicate added] -> GREEN. Proceeding to the
+first-ever P6/P7/P9.
+
+## P6 integration (__main__ adapter) — GREEN, first-ever exercise (2026-07-05)
+```
+=== phase P6 gate: GREEN ===
+  [PASS] T6.1 (block)  -> run_check python -m pytest -q -> 8 passed (suite still green after __main__ added)
+  [FAIL] V6.1 (nonblock) -> verdicts/p6.json empty/invalid JSON (non-gating)
+```
+First P6 in program history: T6.1 wrote echobot/__main__.py (stdin->handle_message->stdout);
+the full suite still passes. 0 nudges, no truncation. No repair needed.
+
+## P7 acceptance (stdin) — RED, first-ever exercise (adapter never imports the core) (2026-07-05)
+```
+=== phase P7 gate: RED ===
+  blockers: T7.1
+  [FAIL] T7.1 (block)  — all 3 acceptance run_checks: `python -m echobot` exit 0 but stdout MISS
+      FAIL python -m echobot  stdin "!ping\n"        expected stdout contains "pong"        -> no output
+      FAIL python -m echobot  stdin "!echo hello world\n"  expected "hello world"           -> no output
+      FAIL python -m echobot  stdin "!roll 2d6\n"    expected "rolled 2d6:"                  -> no output
+  [PASS] V7.1 (nonblock) -> verdicts/p7.json VALID (verifier fidelity: p7 valid; p3/p5/p6 were not)
+```
+### Root cause: __main__ never imports handle_message + swallows the NameError
+echobot/__main__.py calls `handle_message(line, random_instance)` with NO
+`from echobot.core import handle_message`, and wraps the call in
+`try: ... except NameError: pass`. Every line raises NameError (undefined name),
+is silently swallowed -> zero stdout, exit 0. The adapter's own comment admits it:
+"Assuming handle_message is defined or imported elsewhere". The P6 gate ran only
+`pytest -q` (which imports echobot.core directly and never executes __main__), so
+the bug was invisible until P7 drove the assembled bot over stdin. **Phase-depth
+design validated: a defect the earlier gate structurally could not see surfaced at
+the acceptance gate.** T6.1's description ("pass each to handle_message") never
+inlined the import contract — the F6/F8 pattern (missing-contract) recurring at the
+adapter. Repair per protocol: ONE `--rerun-task T6.1 --oracle P7`.
+
+### P7 repair — RED (second red): STOP
+```
+=== phase P7 gate: RED (mechanical re-eval) ===
+  [FAIL] T7.1 (block)  — `python -m echobot` now EXITS 1 (NameError surfaced), still stdout miss
+      NameError: name 'handle_message' is not defined   (echobot/__main__.py line 16)
+  [PASS] V7.1 (nonblock) -> verdicts/p7.json valid
+```
+Repair T6.1 (rerun, oracle=P7): tools_used=['mark_complete','write_file'], status=passed (own gate).
+gemma REMOVED the `except NameError: pass` (good — the error now surfaces) and renamed the var, but
+STILL did not add `from echobot.core import handle_message` (line-4 comment: "Assuming handle_message
+is defined elsewhere or available in scope"). P7 reds a SECOND time -> STOP, waivers forbidden.
+
+### Findings surfaced by the first-ever P6/P7 (see run-1 findings Part 9)
+1. **Adapter missing the import contract (F6/F8 recurrence at P6).** T6.1's description
+   ("pass each to handle_message") never inlines `from echobot.core import handle_message`;
+   gemma writes the adapter assuming the name is in scope.
+2. **T6.1's gate is too weak (F10 recurrence).** T6.1's only run_check is `pytest -q`, which
+   imports echobot.core directly and NEVER executes __main__ — so T6.1 passes its own gate while
+   the adapter is broken. The adapter task needs a behavioural smoke gate (drive `python -m echobot`
+   over stdin), exactly as P4 got F10 smoke gates.
+3. **Error-swallowing starved the repair oracle (F17).** The first __main__ wrapped the call in
+   `except NameError: pass` -> exit 0, no traceback -> the P7 acceptance oracle could carry only
+   "no stdout", not the NameError. The repair removed the swallow (surfacing the error) but could
+   not also infer the missing import within the one-repair budget. Defensive swallowing degrades
+   F7 oracle expressiveness.
+
+### Phase gate ledger (run 2.1)
+```
+P3 GREEN | P4 GREEN(from 2.0) | P5 RED(2.0)->[F15 predicate]->GREEN | P6 GREEN | P7 RED->(repair T6.1)->RED -> STOP
+```
+
+**RUN 2.1 STOPPED at P7 (second red on the same gate). Reached the FURTHEST point in program
+history: P3-P6 green, P7 (first-ever acceptance gate) exercised and producing genuine findings
+(F16 adapter import-contract + weak gate; F17 oracle-starving error-swallow). P9 not reached; run
+did not complete; no PROJECT_STATE.md. No waiver.** V7.1 verifier produced VALID JSON (first valid
+verdict since V4.1) — verifier fidelity remains inconsistent across phases.
+
+### Final workspace tree (runs_out/integration-run-2/echobot/echobot, git/pycache elided)
+```
+README.md
+echobot/__init__.py
+echobot/__main__.py        (adapter: NameError — never imports handle_message; T6.1 gate too weak to catch)
+echobot/core.py            (module-level handle_message; 8/8 core tests pass)
+requirements.txt
+tests/test_core.py         (8 tests incl. the F15-predicate roll_malformed, all green)
+verdicts/p4.json (valid) / p5.json (malformed) / p6.json (empty) / p7.json (valid)
+```
+PROJECT_STATE.md: NOT PRESENT (P9 not reached — run did not complete).

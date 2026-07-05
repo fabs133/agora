@@ -558,3 +558,73 @@ red; ONE repair (this time deviation is attributable — the contract
 names the predicate); second red stops with a genuine tester-fidelity
 finding. Waivers forbidden. Budget: fresh per gate for the never-run
 phases; P5's re-establishment consumes none per the standing rule.
+
+---
+
+## Part 9 — run 2.1 findings (2026-07-05)
+
+**Run 2.1:** furthest point in program history. P5 re-established GREEN
+(world (a) — the tester wrote `assert result is not None and "NdM" in
+result`, citing F15; the named acceptance predicate resolved the 2.0
+ambiguity with zero implementation change). **P6 GREEN first-ever** (T6.1
+wrote the __main__ adapter; suite still 8/8). **P7 RED first-ever ->
+repair -> RED -> STOP.** P9 not reached; no PROJECT_STATE.md.
+
+**F15 validated.** Naming the acceptance predicate ("usage message MUST
+contain 'NdM'") closed the 2.0 blocker at the re-establishment: the tester
+conformed to the stated predicate verbatim. Spec self-testability works —
+the ambiguity was the whole defect. Re-establishment consumed no repair
+budget (standing rule; the 2.0 red was a verified spec defect).
+
+**F16 — the adapter task repeats the missing-contract + weak-gate pattern
+at a new phase (F6/F8 x F10, recurrence).** P7's stdin acceptance is the
+first thing to actually EXECUTE __main__; it caught a bug two green gates
+could not. Two coupled causes: (i) T6.1's description says "pass each to
+handle_message" but never inlines `from echobot.core import
+handle_message`, so gemma wrote the adapter assuming the name was in scope
+(the F6/F8 missing-contract pattern, now implementer-side at the adapter);
+(ii) T6.1's ONLY gate is `pytest -q`, which imports echobot.core directly
+and never runs __main__ — so T6.1 passes its own gate while the adapter is
+broken (the F10 weak-gate pattern: a task's gate must exercise the
+contract that task owns). Fix (run-2.2 flow delta): T6.1 gains the import
+contract inline AND a behavioural smoke run_check that drives `python -m
+echobot` over stdin (`!ping` -> `pong`), so the adapter's own gate reds on
+its own defect — the direct analogue of the P4 F10 smoke gates.
+
+**F17 — defensive error-swallowing starves the repair oracle.** The first
+__main__ wrapped the call in `try: ... except NameError: pass`. The
+NameError from the missing import was swallowed, so `python -m echobot`
+exited 0 with empty stdout — and the P7 acceptance oracle could carry only
+"stdout did not contain 'pong'", NOT the NameError that explains it. The
+one repair (rerun T6.1 --oracle P7) correctly removed the swallow
+(surfacing the error, exit 1 now) but could not also infer the missing
+import from a symptom-only oracle within budget. Doctrine: an artifact
+that swallows its own errors degrades F7 oracle expressiveness — the
+oracle can only teach what the failure EXPOSES. This pairs with F16(ii):
+a behavioural smoke gate on T6.1 would have surfaced the NameError at P6
+(exit 1), before the acceptance phase, with the error un-swallowed and the
+repair budget intact.
+
+**Verifier fidelity record (continued).** V7.1 produced VALID JSON (first
+since V4.1); V5.1/V6.1 did not (malformed / empty). Instruct's verdict
+fidelity remains phase-inconsistent — the record is the measurement, no
+fix.
+
+**Nudge / truncation.** P3 1 nudge (S2); P5-re-est / P6 / P7 tasks 0. No
+truncation events (all outputs under the F11 head+tail bound). Infra held.
+
+**Disposition — run 2.2 pre-registration.** The stop is a clean instrument
+result: the first-ever adapter+acceptance exercise found a real,
+previously-unreachable class (F16/F17), exactly the phase-depth design's
+purpose. Conditions delta (flow, small): T6.1 gains (i) the inline import
+contract (`from echobot.core import handle_message`) and (ii) a
+behavioural smoke run_check (`python -m echobot` stdin `!ping\n` ->
+stdout contains `pong`) — the F16 fix. Action: conditions-defect
+re-establishment of P6 (rerun T6.1 — a verified missing-contract/weak-gate
+defect, no budget) then --next through P7/P9. Worlds: (a) adapter imports
++ smoke green -> P6 green -> P7 acceptance green -> P9 -> completion +
+PROJECT_STATE human fact-check; (b) adapter still wrong under the inline
+import + smoke oracle -> one repair -> second red stops with a genuine
+model-side adapter finding. Waivers forbidden. The deferred PROJECT_STATE
+measurement still waits on a completed run; P9 remains the last
+never-reached phase.
