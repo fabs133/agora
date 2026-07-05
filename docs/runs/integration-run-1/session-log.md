@@ -746,3 +746,96 @@ tests/test_core.py
 verdicts/p3.json
 ```
 PROJECT_STATE.md: NOT PRESENT (P9 not reached).
+
+---
+
+# RUN 1.3 — continuation (resumed ledger, full provisioning: contract + authority + local gate + head/tail oracle)
+
+## Pre-flight (2026-07-05 18:23) @ HEAD (5 prep items applied, suite green, ruff clean)
+```
+ollama /api/version: {"version":"0.31.1"}; 12 models resident (gemma4:e4b, qwen2.5:7b-instruct present)
+  (daemon was down at first attempt — started bare-serve P40-pinned per OLLAMA.md)
+workspace prep: NOTHING TOUCHED — tests/test_core.py (spec-faithful, importing) and core.py (handle_message(self,message) drift) both intact, per pre-registration
+ledger: P3/P4 green, P5 red frontier (from run 1.2 #8 mechanical); --next BLOCKED (waivers forbidden)
+conditions delta (all 5 items live):
+  (1) T4.1/T4.2 descriptions carry the contract inline VERBATIM: handle_message(text: str, rng: random.Random) -> str | None — pure MODULE-LEVEL FUNCTION (not a class/method); rng injected
+  (2) P4 behavioural smoke gates: T4.1 assert handle_message('!ping', Random(0)) == 'pong'; T4.2 assert 'rolled 2d6:' in handle_message('!roll 2d6', Random(0))  [F10 local gate]
+  (3) repair template + build_repair_description carry the F9 authority clause before the oracle block
+  (4) run_check._bound is now head+tail (2 KB each end + '\n[... N bytes truncated ...]\n')  [F11]
+  (5) V-task descriptions instruct "Create your verdict file at <path> using write_file"
+```
+### Execution reading
+Designated action per Part-4 pre-registration: the single `--rerun-task T4.1 --oracle P5`. T4.1 lives in P4, so the rerun runs P4's T4.1 + its order_after verifier V4.1; the oracle (--oracle P5) drives a MECHANICAL P5 re-eval over the modified workspace for the gate result. (V5.1 is a P5 verifier — it does NOT re-run in a P4-task rerun; the item-5 write_file fix is therefore exercised via V4.1 this run, not V5.1.)
+
+## P5 (1.3) designated repair — RED (WORLD (c): correct refactor authored, tool layer rejected every write) (2026-07-05 18:29)
+
+### Gate report (verbatim — mechanical P5 re-eval)
+```
+=== phase P5 gate: RED ===
+  blockers: T5.1
+  [FAIL] T5.1 (block)
+      ... 8 name/collect checks ok ...
+      FAIL run_check_python_-m_pytest_-q_949dde
+      run_check: python -m pytest -q -> exit=1 passed=False
+        stdout [stdout truncated]: ...
+FAILED tests\test_core.py::test_echo - AssertionError: assert None == 'Hello ...
+FAILED tests\test_core.py::test_echo_preserves_spacing - AssertionError: ...
+FAILED tests\test_core.py::test_roll_deterministic - AssertionError: assert N...
+FAILED tests\test_core.py::test_roll_malformed - TypeError: argument of type ...
+FAILED tests\test_core.py::test_help_lists_all_commands - TypeError: argument...
+FAILED tests\test_core.py::test_unknown_command - AssertionError: assert None...
+7 failed, 1 passed in 0.11s
+  [FAIL] V5.1 (nonblock)  -> verdicts/p5.json still absent (V5.1 did not re-run this rerun)
+```
+
+### Which world: (c) — but NOT the pessimistic (c) the pre-registration sketched
+The pre-registration's world (c) reserved a MODEL-side finding ("gemma cannot execute a contract-driven refactor under full provisioning"). Run 1.3 FALSIFIES that reading. Under full provisioning gemma DID produce the correct fix — the wall is the TOOL layer, not the model.
+
+**Evidence — T4.1 rerun record (newest):** status=failed, tools_used=['add_function'], iterations=8, nudges=0. Its NEW local smoke gate FAILED exactly as designed:
+```
+    ok   echobot_core.py_has_def_handle_message
+    ok   run_check ... from echobot.core import handle_message        -> exit 0
+    FAIL run_check ... assert handle_message('!ping', Random(0)) == 'pong'  -> exit 1   [F10 fired]
+    ok   mark_complete_called
+```
+**Evidence — run.log, all 8 turns:** gemma authored the CORRECT artifact every turn —
+`def handle_message(text: str, rng: random.Random) -> str | None:` (the exact contract signature) — and chose `add_function` to land it. Every call was tool-rejected:
+- turns 1,2,6,7: `rejected: missing required argument(s): path` — the model never supplies add_function's required `path` arg (a tool-call-fidelity failure; cf. axis-1 — gemma's 9/9 was on write_file, a DIFFERENT tool).
+- turns 3,4,5: `rejected: ... function code must contain exactly one function` — gemma's code carried `import re / import random` + the def; add_function accepts one bare function only. add_function is an APPEND-one-function tool; a class->function REPLACEMENT of an existing `handle_message` is not what it does.
+- turn 8: empty turn (tool_calls=0) -> auto-mark-complete synthesized -> "expected output 'echobot/core.py' not written".
+
+So core.py stayed `def handle_message(self, message)`; the mechanical P5 re-eval re-ran pytest against the unchanged drift -> 7 failed -> RED. **Second P5 red -> STOP** (budget: one repair per gate).
+
+### Repair-doctrine reading (F9/F10 worked; a new tool-affordance wall)
+- **F9 (authority clause) + inline contract (item 1) WORKED**: the run-1.2 read-only no-op (tools_used=['read_file']) became an 8-turn active repair authoring the correct signature. The model perceived the defect as its own and tried to fix it.
+- **F10 (local smoke gate) WORKED**: T4.1's own gate red on the local contract violation (vs run 1.2's green-gate no-op). The provisioning items did their jobs.
+- **The residual is TOOL-side, not model-side (new F12):** the implementer reached for `add_function` — wrong tool for editing an existing function, and one whose required `path` arg gemma cannot reliably emit — and never fell back to write_file/edit_file_replace across 8 rejections. The claim "gemma cannot do the refactor" is NOT earned; "gemma authored the refactor but could not land it through add_function" is. Chat-side finding; fix candidates: (a) route implementer edits of an existing file through write_file/edit_file_replace and de-list or fix add_function's affordance; (b) name the target tool + its `path` in the repair prompt; (c) surface the repeated identical tool-rejection as a stall the nudge/redirect can act on.
+
+### F-fix verifications this run
+- Item 1 (inline contract): VERIFIED live in the authored artifact — gemma emitted the exact `handle_message(text: str, rng: random.Random) -> str | None` signature.
+- Item 2 (F10 local smoke gate): VERIFIED — T4.1's `assert handle_message('!ping', Random(0)) == 'pong'` run_check RED on the drift; the gate is now structurally incapable of a green no-op.
+- Item 3 (F9 authority clause): VERIFIED indirectly — behaviour flipped from read-only no-op (1.2) to active edit attempts (1.3). (Prompt-text unit test also added: test_repair_description_carries_authority_clause.)
+- Item 4 (head+tail truncation): VERIFIED by unit tests (tail-marker retained); pytest -q stdout still truncated+flagged, tail summary now preserved.
+- Item 5 (V-task write_file): VERIFIED — V4.1 wrote verdicts/p4.json via write_file (tools_used=['mark_complete','write_file']) — the FIRST verifier artifact the program has produced (verifiers previously post_note'd -> nothing). Caveat: V5.1 was not re-run in a P4-task rerun, so verdicts/p5.json is still absent; the fix is confirmed for the verifier seat via V4.1.
+
+### Phase gate ledger (P5 rows)
+```
+#3 #4 P5 RED  [run 1]        #5 #6 P5 RED [run 1.1]
+#7 P5 RED (world-a fresh)    #8 P5 RED MECHANICAL [run 1.2 designated repair]
+#9 P5 RED MECHANICAL [run 1.3 designated repair — add_function tool wall] -> STOP
+```
+
+**RUN 1.3 STOPPED at P5 (second red on the same gate; designated repair authored the correct fix but could not land it via add_function). P6/P7/P9 not reached. No PROJECT_STATE.md. No waiver. Drift (F4) intact — the repair produced no file write.**
+
+### Final workspace tree (runs_out/integration-run-1/echobot/echobot, git/pycache elided)
+```
+README.md
+echobot/__init__.py
+echobot/__main__.py
+echobot/core.py            (still handle_message(self, message) — unchanged; add_function never landed)
+requirements.txt
+tests/test_core.py
+verdicts/p3.json
+verdicts/p4.json           (NEW this run — V4.1 write_file, item-5 fix)
+```
+PROJECT_STATE.md: NOT PRESENT (P9 not reached).

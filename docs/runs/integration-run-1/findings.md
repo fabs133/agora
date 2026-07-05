@@ -154,3 +154,181 @@ drifted core.py REMAINS (still the F4 experiment). Worlds:
 - (c) anything else -> stop, interpret chat-side.
 Budget: one repair per gate, second red stops. Waivers forbidden.
 V5.1 verdict is expected to exist this run regardless of gate colour.
+
+---
+
+## Part 4 — run 1.2 findings and run 1.3 pre-registration (2026-07-05)
+
+**Run 1.2 outcome:** world (a) reached — the F4 drift experiment finally
+ran. Spec-faithful, importing tests; pytest red on the drift; designated
+cross-phase repair (--rerun-task T4.1 --oracle P5) produced a READ-ONLY
+NO-OP; second red; stop. World-(a) prediction FALSIFIED as registered.
+All five 1.2 prep fixes verified live (F5/F6/F7, observer, mechanical
+flag); first truncation event observed and correctly flagged.
+
+**F8 — the drift and the failed repair share one root cause: the
+implementer never had the contract.** T4.1's description names command
+behaviours but never the signature `handle_message(text, rng) -> str |
+None` nor "pure module-level function". The class-shaped core was not
+drift FROM a contract — it was invention in the ABSENCE of one. F6
+(spec-channel starvation), third occurrence, implementer-side. The
+model is substantially exonerated again, with a recorded residual: a
+stronger inference from the traceback call sites was possible; no
+capability-floor claim is available while the channel is still hungry.
+
+**F9 — repair inherits the original task's context.** The repair prompt
+= original description + oracle. A repair of a context-starved task
+re-runs the starvation: gemma re-read a description that never
+specified a function, found core.py consistent with it, and no-oped.
+Repair doctrine addition: a repair prompt must carry (i) the oracle,
+(ii) the authoritative contract the oracle enforces, (iii) an explicit
+authority clause ("the tests/spec are authoritative; modify YOUR
+artifact").
+
+**F10 — local gates must red on local contract violations (executor's
+finding, adopted; plan-lint doctrine revised).** The plan-lint had
+explicitly accepted P4's weak gate ("behaviour verified at P5"); run
+1.2 falsifies that acceptance: cross-phase repair against a
+locally-green gate no-ops. Every task's gate must be able to red on
+violations of the contract that task OWNS. P4 gains a behavioural
+smoke run_check.
+
+**F11 — head-only truncation endangers the repair channel.**
+run_check keeps the FIRST 4 KB; pytest's most diagnostic lines (tail
+summary) are the first casualties. Fix: head+tail split capture with a
+marked gap.
+
+**Ratifications:** the runner extension (rerun executes order_after
+verifiers) — accepted, natural completion of F5. The fresh-P5-via-rerun
+protocol reading — already ratified in Part 3, stands.
+
+**Verifier tool-fidelity (from 1.2):** V5.1 ran (F5 fix works) but
+emitted via post_note, producing no verdicts/p5.json. V-task
+descriptions gain an explicit "create <path> with write_file"
+instruction. Calibration capture, not gating.
+
+**Run 1.3 pre-registration.** Conditions delta: T4.1/T4.2 descriptions
+carry the exact contract inline (signature, str|None return, pure
+module-level function, rng injected — copied from the spec); P4 gains
+run_check `python -c "import random; from echobot.core import
+handle_message; assert handle_message('!ping', random.Random(0)) ==
+'pong'"`; repair template gains the F9 authority+contract clause;
+run_check capture becomes head+tail; V-task write_file instruction.
+Workspace untouched (spec-faithful tests REMAIN; drifted core.py
+REMAINS — still the experiment). Ledger note: P4's historical green
+records stand; T4.1's rerun is evaluated against the NEW postconditions
+at execution time — the no-op is now structurally incapable of going
+green.
+
+Designated action: ONE `--rerun-task T4.1 --oracle P5`. Worlds:
+- (a) class->function refactor lands; T4.1's own smoke gate green;
+  mechanical P5 re-eval green; --next proceeds P6/P7/P9. Success shape:
+  run completes, PROJECT_STATE.md produced, human fact-check follows.
+- (b) T4.1 edits but fails its own smoke gate -> in-task loopback data;
+  green-after-loopback still counts as (a) for the run.
+- (c) red again with contract + authority + local gate + oracle all in
+  channel -> STOP. Only now would a model-side finding be claimable:
+  gemma cannot execute a contract-driven refactor under full
+  provisioning. That claim requires this run to earn it.
+Budget: the one designated rerun; second P5 red stops. Waivers
+forbidden. P6/P7/P9 watchlist unchanged (adapter spec inline, T9.2
+headers inline, acceptance stdin checks).
+
+---
+
+## Part 5 — run 1.3 findings (2026-07-05)
+
+**Run 1.3 outcome:** P5 red -> designated repair -> red -> stop, world (c).
+But world (c) resolved OPPOSITE to the pre-registration's pessimistic
+reading. All five 1.2/1.3 provisioning fixes were verified live and F9/F10
+did their jobs; the run did NOT earn a model-capability finding. It earned
+a tool-affordance one.
+
+**F9/F10 confirmed effective (the provisioning worked).** The inline
+contract (item 1) + authority clause (F9) flipped the implementer out of
+the run-1.2 read-only no-op: T4.1 went from `tools_used=['read_file']`
+(1.2, zero edits) to an 8-turn active repair (1.3) that AUTHORED THE EXACT
+CORRECT SIGNATURE — `def handle_message(text: str, rng: random.Random) ->
+str | None` — every turn. The F10 local smoke gate red on the local
+contract violation (`assert handle_message('!ping', Random(0)) == 'pong'`
+-> exit 1), giving the model the local defect signal
+[[repair-oracle-needs-local-gate]] said was the missing ingredient. Both
+levers are validated: the model perceived the defect as its own and
+produced the fix.
+
+**F12 — the repair wall moved from perception to tool affordance.** gemma
+could not LAND the correct artifact because it drove it through
+`add_function`, the wrong tool twice over: (i) it requires a `path`
+argument gemma does not reliably emit (turns 1/2/6/7 rejected `missing
+required argument(s): path` — the axis-1 tool-call-fidelity failure mode
+resurfacing on a tool that is NOT gemma's proven write_file), and (ii)
+`add_function` appends exactly one bare function and rejects code carrying
+imports (turns 3/4/5 rejected `function code must contain exactly one
+function`) — it structurally cannot REPLACE an existing drifted
+`handle_message`. Across 8 identical-shaped rejections the model never
+fell back to write_file / edit_file_replace, and the final empty turn
+auto-completed with core.py never written. The stop is real (second P5
+red, budget spent) but the diagnosis is: *under full provisioning gemma
+authored the refactor; the implementer's edit-an-existing-file affordance
+defeated it.* No capability-floor claim is available.
+
+**F5/write_file (item 5) confirmed for the verifier seat.** V4.1 produced
+verdicts/p4.json via write_file (`tools_used=['mark_complete',
+'write_file']`) — the first verifier ARTIFACT the program has emitted
+(verifiers previously post_note'd, producing nothing). V5.1 was not
+re-run in a P4-task rerun, so verdicts/p5.json remains absent; the fix is
+confirmed via V4.1 rather than V5.1 this run.
+
+**Chat-side decision (owner's, not pre-registerable as a lever).** The
+next run's condition delta is a tool-affordance fix, not a prompt/gate
+fix. Candidates: (a) route implementer edits of an EXISTING file through
+write_file/edit_file_replace and de-list or repair `add_function`'s
+affordance (append-only + required `path`); (b) name the target tool and
+its `path` in the repair prompt; (c) treat a repeated identical
+tool-schema rejection as a stall the nudge/redirect acts on (the S2 nudge
+did not fire — the rejections were non-empty turns, not empty ones, so the
+empty-turn trigger stayed false — the [[repair-oracle-needs-local-gate]]
+read-only-no-op corollary now extends to "rejected-write no-op"). Until
+that is chosen, P5 stands red and the F4 drift is intact.
+
+**Part 5 decision + run 1.4 pre-registration (chat-side, 2026-07-05).**
+
+**F12 doctrine yield — tool surface is part of the evidence key.**
+gemma's 9/9 casting evidence was earned on the probe's tool surface
+({read_file, write_file(+force), list_directory, mark_complete}); the
+AST/edit-tool family was never measured for any model. Casting the
+implementer onto add_function was casting onto UNMEASURED surface — the
+capability matrix gains a dimension (model x tool-surface), and Stage-3
+benchmark batteries must sweep tool families. Recorded as a
+roles/casting amendment: a binding's evidence must cover the tool
+surface the seat exposes.
+
+**Run 1.4 — affordance provisioning (one package, one variable):**
+(i) the implementer seat in this flow gets a tool ALLOWLIST = its
+measured surface (read_file, write_file, list_directory, mark_complete,
+run-adjacent read-only tools as already exposed); the AST/edit family is
+de-listed for this seat pending measurement. (ii) The repair prompt's
+authority section gains one affordance line: "Rewrite the file with
+write_file using force=true — the file exists and must be replaced."
+Deferred, each with its own future registration: rejection-stall
+detector (S2 extension for non-empty rejected-turn loops); add_function
+audit (terse self-validation vs schema-echoing corrective rendering;
+upsert-vs-append behaviour); guard-message toolset-awareness.
+
+Designated action: ONE --rerun-task T4.1 --oracle P5 under (i)+(ii).
+Worlds: (a) write_file(force) rewrite lands -> local smoke green ->
+mechanical P5 green -> --next through P6/P7/P9, completion path.
+(b) overwrite-guard interaction stall (its error text recommends edit
+tools this seat no longer has) -> red -> STOP; guard-message
+toolset-awareness becomes the single 1.5 fix. (c) other -> stop,
+chat-side. Budget: one rerun; second P5 red stops; waivers forbidden.
+
+**Exit criterion (pre-committed):** run 1.4 is the LAST repair iteration
+on this workspace instance. Whatever its colour, the next execution is
+run 2.0 — a CLEAN greenfield run of the full flow under ALL accumulated
+fixes (contract-inline tasks, smoke gates, spec channels, order_after
+verifiers, allowlisted seat), where the P4 drift most likely never
+occurs because T4.1 now carries its contract from turn 1. Run 1.x has
+already paid: five permanent framework upgrades and one casting-doctrine
+dimension from a bot that does not exist yet. Run 2.0 is where it gets
+to exist.
