@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import urllib.request
 from dataclasses import replace
@@ -46,7 +47,7 @@ PENDING, GREEN, RED, WAIVED = "pending", "green", "red", "waived"
 ROLE_TO_CAST_KEY: dict[AgentRole, str] = {
     AgentRole.IMPLEMENTER: "implementer",
     AgentRole.REVIEWER: "verifier",
-    AgentRole.TESTER: "verifier",
+    AgentRole.TESTER: "tester",
     AgentRole.ARCHITECT: "planner",
 }
 
@@ -154,6 +155,44 @@ def outcomes_from_results(
         ]
         outs.append(TaskGateOutcome(task_id=r.task_id, blocking=blocking, postconditions=pcs))
     return outs
+
+
+def reevaluate_phase_gate(project_work_dir: Path, phase: str, flow_tasks: list[Any]) -> tuple[Any, dict[str, Any]]:
+    """Re-evaluate a phase's gate MECHANICALLY over the current workspace — no LLM.
+
+    Used by cross-phase repair: after ``--rerun-task <Y> --oracle <X>`` fixes a
+    task in phase Y (e.g. src), the gate that must go green is phase X's (e.g.
+    the pytest gate). This re-runs X's postconditions (run_check re-executes
+    pytest; file_contains re-reads files) against the workspace and returns
+    ``(PhaseGateResult, results_by_id)``.
+
+    Seeding note: ``completions`` is seeded truthy (mark_complete is treated as
+    already satisfied — the task completed in its prior run; we re-check its
+    ARTIFACTS, not its completion signal) and ``artifacts`` is seeded with the
+    real on-disk file list so ``file_exists`` reflects the workspace.
+    """
+    from types import SimpleNamespace
+
+    wd = Path(project_work_dir)
+    artifacts = (
+        [str(p.relative_to(wd)).replace("\\", "/") for p in wd.rglob("*") if p.is_file()]
+        if wd.is_dir() else []
+    )
+    outcomes: list[TaskGateOutcome] = []
+    results_by_id: dict[str, Any] = {}
+    for t in flow_tasks:
+        if t.phase != phase:
+            continue
+        sink: list[dict[str, Any]] = []
+        ctx = {
+            "work_dir": str(wd), "artifacts": artifacts,
+            "completions": [{"synthetic": True}], "progress_log": [],
+            "run_check_sink": sink,
+        }
+        pcs = [(pred.name, bool(pred.evaluate(ctx)[0])) for pred in t.spec.postconditions]
+        outcomes.append(TaskGateOutcome(task_id=t.id, blocking=t.blocking, postconditions=pcs))
+        results_by_id[t.id] = SimpleNamespace(task_id=t.id, run_check_records=list(sink), nudges_used=0)
+    return evaluate_phase_gate(phase, outcomes), results_by_id
 
 
 def _tail(text: str, limit: int = 500) -> str:
@@ -373,6 +412,47 @@ def append_task_records(tasks_path: Path, records: list[Any]) -> None:
             fh.write(rec.model_dump_json() + "\n")
 
 
+# ------------------------------------------------------------------ run.log
+
+_RUN_LOG_FORMAT = "%(asctime)s %(levelname)-5s %(name)s: %(message)s"
+
+
+def attach_run_log(log_path: Path, phase_label: str = "") -> tuple[logging.Handler, int]:
+    """Attach a FileHandler capturing the ``agora`` logger (INFO) to ``run.log``.
+
+    This is the observer the phased runner was missing: campaign runs get
+    ``run.log`` from the subprocess capture, but ``run_phased`` runs in-process,
+    so nothing recorded the per-turn tool results — the T5.1 path-scope
+    rejections ("result=ERROR: implementer role may not write ...") were
+    invisible. Appends across phase invocations. Returns ``(handler, prev_level)``
+    for :func:`detach_run_log`.
+    """
+    Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+    handler.setFormatter(logging.Formatter(_RUN_LOG_FORMAT))
+    handler.setLevel(logging.INFO)
+    agora_logger = logging.getLogger("agora")
+    prev_level = agora_logger.level
+    agora_logger.setLevel(logging.INFO)
+    agora_logger.addHandler(handler)
+    if phase_label:
+        agora_logger.info("=== run_phased %s ===", phase_label)
+    return handler, prev_level
+
+
+def detach_run_log(state: tuple[logging.Handler, int]) -> None:
+    """Flush + remove the run.log handler and restore the prior logger level."""
+    handler, prev_level = state
+    agora_logger = logging.getLogger("agora")
+    agora_logger.removeHandler(handler)
+    try:
+        handler.flush()
+        handler.close()
+    except OSError:
+        pass
+    agora_logger.setLevel(prev_level)
+
+
 # ------------------------------------------------------------------ ollama health
 
 def ollama_missing_models(tags: dict[str, Any], required: list[str]) -> list[str]:
@@ -489,17 +569,32 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         prof = _m2p.get(model_ref) or _prof.select()
         return build_llm_factory(prof)(model_ref)
 
+    # Attach run.log (per-turn tool results + path-scope rejections) for this
+    # phase invocation — the observer campaign runs get for free from subprocess
+    # capture, which the in-process phased runner otherwise lacks.
+    label = f"{phase}{' rerun ' + rerun_task if rerun_task else ''}"
+    log_state = attach_run_log(Path(campaign["output_dir"]) / "run.log", label)
     client = await build_matrix_client(cfg)
     try:
         orch = build_orchestrator(cfg, client, agents[0].model, llm_factory=llm_factory)
         result = await orch.run_project("echobot", phase_agents, phase_tasks, max_loopbacks=0)
     finally:
         await client.close()
+        detach_run_log(log_state)
 
     tasks_by_id = {t.id: t for t in phase_tasks}
-    outcomes = outcomes_from_results(tasks_by_id, result.task_results)
-    gate = evaluate_phase_gate(phase, outcomes)
-    gate_results_by_id = {r.task_id: r for r in result.task_results}
+    # Cross-phase repair: the reran task lives in phase ``phase`` (its owner),
+    # but --oracle names a DIFFERENT phase whose gate must be re-checked. Fixing
+    # a src task (Y) to satisfy the pytest gate (X) → re-evaluate X's gate
+    # mechanically over the now-modified workspace. Same-phase repair keeps the
+    # normal evaluate-over-the-reran-task path.
+    if rerun_task and oracle_phase and oracle_phase != phase:
+        project_dir = Path(campaign["output_dir"]) / "echobot" / "echobot"
+        gate, gate_results_by_id = reevaluate_phase_gate(project_dir, oracle_phase, tasks)
+    else:
+        outcomes = outcomes_from_results(tasks_by_id, result.task_results)
+        gate = evaluate_phase_gate(phase, outcomes)
+        gate_results_by_id = {r.task_id: r for r in result.task_results}
     role_by_agent = {a.name: getattr(a.role, "value", str(a.role)) for a in agents}
     task_records = [
         build_task_record(

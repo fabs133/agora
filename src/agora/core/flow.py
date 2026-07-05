@@ -298,6 +298,8 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
             )
         )
 
+    _lint_role_write_scope(own_tasks, {a.name: a.role for a in agents_list}, schema.name)
+
     return Flow(
         name=schema.name,
         description=schema.description,
@@ -307,6 +309,41 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
         agents=tuple(agents_list),
         task_graph=tuple(included_tasks + own_tasks),
     )
+
+
+def _lint_role_write_scope(
+    tasks: list[TaskTemplate], name_to_role: dict[str, AgentRole], flow_name: str
+) -> None:
+    """Fail loudly if a task is assigned to a role that cannot WRITE its own
+    declared output (``output_path`` or any postcondition ``rel`` path).
+
+    Catches the integration-run-1 T5.1 class of bug at LOAD time: an implementer
+    task whose output is ``tests/test_core.py`` is unrunnable — the runtime
+    write guard rejects every write silently. Better to refuse the flow than to
+    watch a role burn its whole budget writing where it may not.
+    """
+    from agora.core.role_scope import role_can_write, write_scope_reason
+
+    problems: list[str] = []
+    for t in tasks:
+        role = name_to_role.get(t.assigned_to)
+        if role is None:
+            continue  # assigned_to mismatch is caught elsewhere
+        paths = [t.output_path] + [dict(pc.args).get("rel", "") for pc in t.postconditions]
+        for rel in paths:
+            if rel and not role_can_write(role, rel):
+                problems.append(f"task {t.id!r} (assigned_to {t.assigned_to!r}): {write_scope_reason(role, rel)}")
+    if problems:
+        # Dedupe while preserving order (a task often repeats one bad rel across
+        # several postconditions).
+        seen: set[str] = set()
+        unique = [p for p in problems if not (p in seen or seen.add(p))]
+        joined = "\n  - ".join(unique)
+        raise AgoraError(
+            f"flow {flow_name!r} has role-scope violations (a task cannot write "
+            f"its own output):\n  - {joined}\n"
+            "Reassign the task to a role that owns that path (e.g. tests/ → tester)."
+        )
 
 
 def _validate_and_build_stage(

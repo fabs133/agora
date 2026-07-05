@@ -62,6 +62,52 @@ task_graph:
         load_flow(p)
 
 
+# --- role write-scope lint (integration-run-1 T5.1 bug) ---
+
+_SCOPE_YAML = """
+version: "2.0"
+name: scope-demo
+agents:
+  - name: impl
+    role: implementer
+  - name: t
+    role: tester
+task_graph:
+  - id: write_tests
+    assigned_to: {assignee}
+    description: author the tests
+    output_path: tests/test_core.py
+    postconditions:
+      - name: file_contains
+        args: {{rel: tests/test_core.py, substring: "def test_ping"}}
+"""
+
+
+def test_flow_lint_rejects_implementer_writing_tests(tmp_path: Path) -> None:
+    """A task whose output is under tests/ but assigned to an implementer is
+    refused at LOAD (the runtime write guard would reject every write silently)."""
+    p = tmp_path / "bad_scope.yaml"
+    p.write_text(_SCOPE_YAML.format(assignee="impl"), encoding="utf-8")
+    with pytest.raises(AgoraError, match="role-scope"):
+        load_flow(p)
+
+
+def test_flow_lint_passes_when_tester_writes_tests(tmp_path: Path) -> None:
+    """The same task assigned to a tester (owns tests/) loads clean."""
+    p = tmp_path / "ok_scope.yaml"
+    p.write_text(_SCOPE_YAML.format(assignee="t"), encoding="utf-8")
+    flow = load_flow(p)  # must not raise
+    assert flow.task_graph[0].assigned_to == "t"
+
+
+def test_real_echobot_flow_passes_lint() -> None:
+    """The fixed run-1 flow (T5.1 → tester) loads clean under the lint."""
+    flow = load_flow("flows/integration-run-1-echobot.flow.yaml")
+    roles = {a.name: a.role for a in flow.agents}
+    t51 = next(t for t in flow.task_graph if t.id == "T5.1")
+    assert roles[t51.assigned_to] is AgentRole.TESTER
+
+
 def test_instantiate_flow_generates_uuids(tmp_path: Path) -> None:
     p = tmp_path / "flow.yaml"
     p.write_text(VALID_YAML, encoding="utf-8")

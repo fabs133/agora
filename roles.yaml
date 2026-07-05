@@ -14,6 +14,19 @@ roles:
       min:
         pass_rate: 1.0            # gate: 9/9 under production harness
         repeat_distinct_max: 1    # trajectory + content determinism
+  tester:
+    contract: >
+      Authors tests under tests/** from the spec's named cases (read spec ->
+      write test file -> declare via mark_complete). NEVER edits src/ — a
+      failing test is fixed by the implementer, not by rewriting the test.
+      Turf-separated from the implementer so both seats can share a model
+      without sharing writes (enforced by agora.core.role_scope).
+    harness: {tool_errors: corrective, nudge_budget: 1, review_budget: 0}
+    requires:
+      probe: tool-call-fidelity
+      min:
+        pass_rate: 1.0
+        repeat_distinct_max: 1
   verifier:
     contract: >
       Reads artifacts and task spec, emits verdict {pass|fail, reasons}. Never

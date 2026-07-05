@@ -303,3 +303,113 @@ def test_oracle_skips_passed_and_nonblocking_tasks(tmp_path) -> None:
     assert "REAL_ORACLE" in blob          # failing blocking task's oracle included
     assert "GREEN_OK" not in blob         # passed task excluded
     assert "VERIFIER_FAIL" not in blob    # non-blocking task excluded
+
+
+# --------------------------------------------------------------- run.log (item 1)
+
+async def test_run_log_captures_tool_result(tmp_path, fake_matrix_client) -> None:
+    """A fixture phase run produces run.log containing a per-turn tool-result
+    string — the observer the phased runner was missing. Here an implementer
+    write to tests/ is scope-rejected, and that rejection is now VISIBLE."""
+    from agora.core.agent import AgentConfig, AgentIdentity
+    from agora.core.contract import Specification
+    from agora.core.task import Task
+    from agora.core.types import AgentRole, TaskStatus
+    from agora.fleet.agent_runtime import AgentRuntime
+    from agora.fleet.inner_tools import ToolContext
+    from agora.fleet.llm_adapter import LLMResponse
+    from tests.conftest import FakeLLM, tool_call
+
+    llm = FakeLLM([
+        LLMResponse(content="", tool_calls=(tool_call("write_file", {"path": "tests/x.py", "content": "x"}),)),
+        LLMResponse(content="done", tool_calls=()),
+        LLMResponse(content="[]"),
+    ])
+    await fake_matrix_client.create_room(name="agent", topic="")
+    room = next(iter(fake_matrix_client.rooms))
+    proj = await fake_matrix_client.create_room(name="proj", topic="")
+    ctx = ToolContext(
+        work_dir=str(tmp_path), matrix_client=fake_matrix_client,
+        agent_room_id=room, project_room_id=proj, tool_errors="corrective",
+    )
+    identity = AgentIdentity(
+        agent_id="@i:x", room_id=room,
+        config=AgentConfig(name="i", role=AgentRole.IMPLEMENTER, instructions="do"),
+    )
+    runtime = AgentRuntime(llm=llm, matrix_client=fake_matrix_client, tool_context=ctx)
+
+    log_path = tmp_path / "run.log"
+    state = rp.attach_run_log(log_path, "P5")
+    try:
+        await runtime.execute_task(
+            Task(id="t", spec=Specification(), description="x", status=TaskStatus.PENDING),
+            identity,
+        )
+    finally:
+        rp.detach_run_log(state)
+
+    text = log_path.read_text(encoding="utf-8")
+    assert "tool call:" in text          # per-turn tool result recorded
+    assert "write_file" in text
+    assert "rejected" in text            # the scope rejection is now visible in run.log
+
+
+def test_detach_run_log_restores_logger(tmp_path) -> None:
+    import logging as _logging
+
+    lg = _logging.getLogger("agora")
+    before = len(lg.handlers)
+    state = rp.attach_run_log(tmp_path / "run.log", "P3")
+    assert len(lg.handlers) == before + 1
+    rp.detach_run_log(state)
+    assert len(lg.handlers) == before  # handler removed, no leak
+
+
+# --------------------------------------------------------------- cross-phase rerun (item 4)
+
+def test_reevaluate_phase_gate_over_workspace(tmp_path) -> None:
+    """Gate of phase X re-evaluated mechanically over the workspace (no LLM):
+    green when the artifact satisfies it, red when it does not."""
+    from agora.core.contract import Specification
+    from agora.core.task import Task
+    from agora.plan.predicate_registry import build_predicate
+
+    (tmp_path / "src.txt").write_text("contains the MARKER token", encoding="utf-8")
+    spec = Specification(postconditions=(
+        build_predicate("file_contains", {"rel": "src.txt", "substring": "MARKER"}),
+    ))
+    task = Task(id="TX", spec=spec, phase="P5", blocking=True)
+
+    gate, results = rp.reevaluate_phase_gate(tmp_path, "P5", [task])
+    assert gate.passed is True
+    assert "TX" in results
+
+    (tmp_path / "src.txt").write_text("marker removed", encoding="utf-8")
+    gate2, _ = rp.reevaluate_phase_gate(tmp_path, "P5", [task])
+    assert gate2.passed is False
+    assert gate2.blockers == ("TX",)
+
+
+def test_cross_phase_oracle_templated_onto_other_phase_task(tmp_path) -> None:
+    """--rerun-task Y --oracle X: oracle sourced from phase X (persisted records)
+    is templated onto a task from a DIFFERENT phase Y (verbatim), and phase X's
+    gate is what gets re-evaluated afterward."""
+    from agora.observe.jsonl import TaskRecord
+
+    marker = "E   assert handle_message signature mismatch <<xphase-marker>>"
+    # Phase X = P5 has a red record whose oracle names the failure.
+    tr = TaskRecord(
+        run_id="r", task_id="T5.1", task_index=0, role="tester", task_kind="test_authoring",
+        status="failed", first_pass=False, loopback_count=0, iterations=2, phase="P5", blocking=True,
+        postconditions=[{"name": "run_check_pytest", "passed": False}],
+        run_check_records=[{"cmd": ["python", "-m", "pytest", "-q"], "exit_code": 1,
+                            "timed_out": False, "stdout": marker, "stderr": "",
+                            "stdout_truncated": False, "stderr_truncated": False, "passed": False}],
+    )
+    (tmp_path / "tasks.jsonl").write_text(tr.model_dump_json() + "\n", encoding="utf-8")
+
+    # Oracle from X=P5, templated onto Y=T4.1 (a P4 src task) — X's stdout verbatim.
+    oracle = rp.oracle_records_for_phase(rp.load_jsonl(tmp_path / "tasks.jsonl"), "P5")
+    prompt = rp.build_repair_description("Implement handle_message router in src", oracle)
+    assert "Implement handle_message router in src" in prompt   # Y's original task
+    assert marker in prompt                                     # X's oracle, verbatim
