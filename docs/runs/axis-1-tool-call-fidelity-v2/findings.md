@@ -309,3 +309,51 @@ not a prompt-format question, and belongs to the next axis design.
   lines with test.
 - plan.jsonl repair provenance: `plan.jsonl.stage6-only.bak` +
   byte-identity check (this document, C1).
+
+---
+
+## 8. Integrity addendum (2026-07-03, post-campaign): stale-output forensics
+
+Recorded after `docs/runs/axis-1-v3/forensics-stale-out.md` (transcript-level
+classification of every equality/contains task-cell, v1/v2/v3.0). A
+pre-existing probe defect confounded task-success attribution in ALL
+campaigns: `workspace out/` was never reset between runs, and write_file's
+overwrite guard both blocked the model's write AND disabled write_file for
+the remainder of the task. Predicates then evaluated STALE files.
+
+**Retracted (attribution level):**
+- All live-pass claims. Forensics: v1 = 2 live / 46 stale-backed passes;
+  v2 = 0 live / 80 stale-backed; v3.0 = 0 live / 30 stale-backed. gemma's
+  "12/18 anchor pass" (v1 and v2) was stale-backed in every cell — it never
+  wrote live. qwen3's "pass modes" (F5, 7/30) are stale-backed as passes.
+- gemma's loop_depth failure as a capability floor. All three campaigns:
+  guard_artifact_fail with BYTE-CORRECT attempted content (forensics
+  appendix). The claim "even the best model fails loop_depth" is withdrawn
+  — it failed the guard, not the task.
+
+**Reaffirmed (trajectory level — unaffected by file state):**
+- Emission channels, call volumes, determinism-as-observed, the drift
+  anchor's v1==v2 byte-identity, qwen3's trajectory multimodality.
+- Both strategy verdicts (F2 PARTIAL, F3 FALSIFIED). Stale files made
+  passing EASIER, and treatment cells still recorded 0 passes; the verdicts
+  are conservative-safe. v2's 6 guard_artifact_fails are all gemma
+  loop_depth cells; non-gemma fails are genuine.
+- The resolver decision (§7) — built on trajectory metrics and zero
+  treatment passes; unchanged.
+
+**Amended:**
+- F1 strengthens: completion was an even higher wall than measured — most
+  recorded "completions" were not live. The two v1 live passes are the only
+  live task completions in the program's history to date.
+- New standing defect (integration-blocking, since scheduled): tool-result
+  rendering leaks its `[read_file#N]` marker into content-fidelity tasks.
+  Prefix-tolerant `contains` predicates masked this throughout.
+
+**Provisional at time of writing (since resolved — see
+docs/runs/determinism-probe/findings.md):** the v3.0.1 gemma content
+anomalies (newline-stripped concat, non-identical repeats) were traced to
+near-tie greedy decoding under weakly-transmitted byte information, not a
+capability change.
+
+Probe v4 (out/ reset + staged-path artifact_capture) restores intended
+semantics; v4+ cells are never pooled with earlier probes.
