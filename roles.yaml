@@ -1,0 +1,35 @@
+# Role contracts — DRAFT (schema not yet loaded by Agora; Stage 1 builds the loader)
+# A role is a stable contract: what the seat requires, independent of who sits in it.
+# Requirements reference capability-matrix columns; `unmeasured` roles need a
+# waiver or a human binding when cast. See docs/design/roles-and-casting.md.
+schema_version: 1
+roles:
+  implementer:
+    contract: >
+      Agentic tool loop. Reads inputs, writes outputs via write_file, declares
+      completion via mark_complete(summary). Outputs verifiable by postcondition.
+    harness: {tool_errors: corrective, nudge_budget: 0, review_budget: 1}
+    requires:
+      probe: tool-call-fidelity
+      min:
+        pass_rate: 1.0            # gate: 9/9 under production harness
+        repeat_distinct_max: 1    # trajectory + content determinism
+  verifier:
+    contract: >
+      Reads artifacts and task spec, emits verdict {pass|fail, reasons}. Never
+      writes. Prefer a model whose error surface is uncorrelated with the
+      implementer's.
+    harness: {tool_errors: corrective, nudge_budget: 0, review_budget: 0}
+    requires: unmeasured   # axis-2; S6 completion-review is this role's precursor
+    prefer: {uncorrelated_with: implementer}
+  planner:
+    contract: >
+      Decomposes a project goal into probe-shaped tasks (read -> transform ->
+      write -> declare) with explicit postconditions per task.
+    requires: unmeasured   # axis-2
+  classifier:
+    contract: Labels inputs per the fine-tune's task spec.
+    requires: task_specific   # evidence = fine-tune provenance, not the matrix
+  retriever:
+    contract: Embeddings for search and similarity.
+    requires: task_specific

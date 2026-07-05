@@ -1,0 +1,55 @@
+# Cast: Tesla P40 24GB envelope — gate renegotiated to single-profile (World B)
+# A cast binds roles -> profiles for ONE hardware envelope, with evidence
+# citations. Changing GPUs = choosing/writing a different cast file.
+# Validation rules: see docs/design/roles-and-casting.md.
+#
+# v8 resolution (2026-07-05, docs/runs/axis-1-v8/findings.md): the integration
+# gate (>=2 profiles at 9/9) was NOT met. instruct reached only 6/9 (loop_depth
+# 0/3 — the S6 review was observed-and-ignored, confirm-without-fix on the
+# trailing-newline error). gemma-e4b remains the SOLE 9/9 profile. Per the
+# pre-committed stopping rule the implementer pool is renegotiated to
+# single-profile (gemma) + qwen3 ensemble-optional; no v9 lever.
+schema_version: 1
+name: p40-24gb
+hardware:
+  gpu: Tesla P40
+  gpu_uuid: GPU-5ccbe0fc-ad04-8f9e-0193-ada20d7dba30
+  vram_budget_gb: 24
+bindings:
+  implementer:
+    profile: gemma-e4b            # 9.6 GB
+    resident: true
+    keep_alive: 30m
+    evidence: {campaign: axis-1-v8, gate: "9/9 sole-profile — gate renegotiated to single-profile (World B)"}
+  # implementer_secondary REMOVED (World B): instruct did not reach 9/9 at v8
+  # (6/9; loop_depth 0/3, review confirm-without-fix). No second gate-passing
+  # profile exists on this envelope; the implementer pool is single-profile.
+  verifier:
+    # Cross-model review: instruct's residual errors are protocol-shaped
+    # (trailing-newline, confirm-without-fix), gemma's byte-shaped — uncorrelated
+    # surfaces (axis-1-v8 grid). instruct stays resident for THIS role only.
+    profile: qwen-instruct-7b
+    resident: true
+    waiver: verifier role unmeasured (axis-2 pending); provisional per axis-1-v8 grid — the S6 review (this role's mechanical precursor) confirmed instruct's protocol error surface is uncorrelated with gemma's byte-precision surface
+  planner:
+    binding: human                # honest until axis-2 measures decomposition
+  classifier:
+    profile: classification-12b   # 7.5 GB — NOT resident; load-on-demand
+    resident: false
+    evidence: {basis: task-specific fine-tune (roster)}
+  retriever:
+    profile: nomic-embed-text     # 0.3 GB
+    resident: true
+    evidence: {basis: embedding model (roster)}
+# INELIGIBLE — coder-14b (qwen2.5-coder): 0/9 at v8. Forensics
+# (docs/runs/axis-1-v8/regression-forensics.md) confirm a MODE FLIP — its only
+# v3.2-passing task (small_chain) collapsed 3/3 -> 0/3 the moment the nudge was
+# removed (nudge_budget 1->0). The two runs are model-identical through turn 2;
+# the divergence at turn 3 is harness-config, NOT S6. A profile whose sole pass
+# depends on the S2 nudge is not a stable implementer on this envelope.
+# Residency arithmetic (validate must check): gemma 9.6 + instruct 4.7 (verifier)
+# + nomic 0.3 = 14.6 GB resident, 9.4 GB headroom for KV cache at num_ctx=8192.
+# classification-12b swaps in on demand (14.6 + 7.5 = 22.1 <= 24, tight; the
+# eviction protocol may prefer evicting instruct during classification bursts).
+# qwen3-30b (18.6 GB) is envelope-incompatible with any co-residency here:
+# ensemble-only, dedicated-load, and only where verification is cheap.
