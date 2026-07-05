@@ -200,6 +200,8 @@ class TaskRecord(BaseModel):
     # model did on the turn after the last review. Additive; schema stays 1.
     reviews_used: int = 0
     post_review_action: Literal["confirm", "revise", "other"] | None = None
+    # Integration run 1 (v3.2 erratum): completion nudges (S2) that fired. Additive.
+    nudges_used: int = 0
     # Integration run 1: per-task phase membership + whether the task gates its
     # phase (verifier tasks are non-blocking). Additive; None phase = pre-run-1.
     phase: str | None = None
@@ -681,6 +683,7 @@ class RunObserver:
             artifact_capture=getattr(result, "artifact_capture", None),
             reviews_used=int(getattr(result, "reviews_used", 0) or 0),
             post_review_action=getattr(result, "post_review_action", None),
+            nudges_used=int(getattr(result, "nudges_used", 0) or 0),
             phase=(getattr(task, "phase", "") or None),
             blocking=bool(getattr(task, "blocking", True)),
             run_check_records=list(getattr(result, "run_check_records", []) or []),

@@ -49,6 +49,8 @@ task_graph:
         args: {rel: echobot/core.py}
       - name: file_exists
         args: {rel: echobot/__main__.py}
+      - name: file_exists
+        args: {rel: requirements.txt}
       - name: run_check
         args: {cmd: ["python", "-c", "import echobot"], expect_exit: 0}
       - name: mark_complete
@@ -64,8 +66,12 @@ task_graph:
     postconditions:
       - name: file_exists
         args: {rel: verdicts/p3.json}
-      - name: file_contains
-        args: {rel: verdicts/p3.json, substring: '"verdict"'}
+      # Verdict gate: parse the JSON and assert the contract keys + a valid
+      # verdict value (non-blocking — recorded for axis-2, gates nothing).
+      - name: run_check
+        args:
+          cmd: ["python", "-c", "import json,sys; d=json.load(open('verdicts/p3.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail')"]
+          expect_exit: 0
       - name: mark_complete
 
   # ===================== P4 implement core =====================
@@ -108,8 +114,10 @@ task_graph:
     description: Verify P4 core against the spec (Functional spec + Phase P4).
     output_path: verdicts/p4.json
     postconditions:
-      - name: file_contains
-        args: {rel: verdicts/p4.json, substring: '"verdict"'}
+      - name: run_check
+        args:
+          cmd: ["python", "-c", "import json,sys; d=json.load(open('verdicts/p4.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail')"]
+          expect_exit: 0
       - name: mark_complete
 
   # ===================== P5 tests =====================
@@ -139,6 +147,9 @@ task_graph:
         args: {rel: tests/test_core.py, substring: "def test_unknown_command"}
       - name: file_contains
         args: {rel: tests/test_core.py, substring: "def test_non_command_returns_none"}
+      # `python -m pytest` (NOT bare `pytest`) is load-bearing: -m puts the run
+      # cwd (the project root) on sys.path so `import echobot` resolves without
+      # an install step.
       - name: run_check
         args: {cmd: ["python", "-m", "pytest", "--collect-only", "-q"], expect_exit: 0, timeout_s: 60}
       - name: run_check
@@ -152,8 +163,10 @@ task_graph:
     description: Verify P5 tests cover the named cases (spec Required tests).
     output_path: verdicts/p5.json
     postconditions:
-      - name: file_contains
-        args: {rel: verdicts/p5.json, substring: '"verdict"'}
+      - name: run_check
+        args:
+          cmd: ["python", "-c", "import json,sys; d=json.load(open('verdicts/p5.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail')"]
+          expect_exit: 0
       - name: mark_complete
 
   # ===================== P6 integration =====================
@@ -178,8 +191,10 @@ task_graph:
     description: Verify P6 — the full suite still collects and passes.
     output_path: verdicts/p6.json
     postconditions:
-      - name: file_contains
-        args: {rel: verdicts/p6.json, substring: '"verdict"'}
+      - name: run_check
+        args:
+          cmd: ["python", "-c", "import json,sys; d=json.load(open('verdicts/p6.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail')"]
+          expect_exit: 0
       - name: mark_complete
 
   # ===================== P7 acceptance (gate only) =====================
@@ -221,8 +236,10 @@ task_graph:
     description: Verify P7 acceptance outputs match the spec's command contract.
     output_path: verdicts/p7.json
     postconditions:
-      - name: file_contains
-        args: {rel: verdicts/p7.json, substring: '"verdict"'}
+      - name: run_check
+        args:
+          cmd: ["python", "-c", "import json,sys; d=json.load(open('verdicts/p7.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail')"]
+          expect_exit: 0
       - name: mark_complete
 
   # ===================== P9 docs + handoff =====================
@@ -281,6 +298,8 @@ task_graph:
     description: Verify P9 docs + PROJECT_STATE.md against the actual tree.
     output_path: verdicts/p9.json
     postconditions:
-      - name: file_contains
-        args: {rel: verdicts/p9.json, substring: '"verdict"'}
+      - name: run_check
+        args:
+          cmd: ["python", "-c", "import json,sys; d=json.load(open('verdicts/p9.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail')"]
+          expect_exit: 0
       - name: mark_complete

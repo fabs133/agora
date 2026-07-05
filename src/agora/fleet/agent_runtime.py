@@ -88,6 +88,9 @@ class TaskResult:
     # ⇒ no review fired (review_budget=0 or no valid mark_complete reached).
     reviews_used: int = 0
     post_review_action: str | None = None
+    # Integration run 1 (v3.2 erratum): completion nudges (S2) that fired this
+    # task — the rehabilitated stall-recovery mechanism. Additive; default 0.
+    nudges_used: int = 0
     # Integration run 1: one capture dict per run_check command executed during
     # postcondition evaluation (cmd, exit_code, timed_out, stdout/stderr bounded
     # 4 KB with truncation flags, passed). Additive; default empty.
@@ -228,6 +231,9 @@ class AgentRuntime:
         # Per-attempt S6 completion-review accumulator (v8). Scoped to one task
         # attempt like ``tool_stats``; aggregates across a staged task's stages.
         self.review_stats = _ReviewStats()
+        # Integration run 1: per-attempt completion-nudge counter (S2), surfaced
+        # to TaskResult.nudges_used. Accumulates across a staged task's stages.
+        self._nudges_used = 0
         # Authoritative 0-based iteration index for the active tool loop turn,
         # set in ``_run_loop``. ``_fallback_this_turn`` is flipped by the
         # adapter hook when the current turn's calls came from text fallback;
@@ -349,6 +355,7 @@ class AgentRuntime:
                     stop_reason=last_stop,
                     artifact_capture=artifact_capture,
                     run_check_records=list(self._ctx.run_check_records),
+                    nudges_used=self._nudges_used,
                 )
             )
         )
@@ -440,6 +447,7 @@ class AgentRuntime:
                 missing = _expected_output_missing(self._ctx)
                 if missing is not None and nudges_used < self._ctx.nudge_budget:
                     nudges_used += 1
+                    self._nudges_used += 1  # provenance (accumulates across stages)
                     logger.info(
                         "completion nudge %d/%d: task=%s expected output %r not written",
                         nudges_used, self._ctx.nudge_budget, task_id, missing,
