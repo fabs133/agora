@@ -16,7 +16,7 @@ FLOW = "flows/tool-call-fidelity.plan.yaml"
 def test_probe_flow_loads_and_validates() -> None:
     flow = load_flow(FLOW)
     assert flow.name == "tool-call-fidelity"
-    assert flow.probe_version == 6  # v6: per-result tool messages + newline prompt
+    assert flow.probe_version == 7  # v7: bare (form-B) tool messages + LF seeds
     assert [a.name for a in flow.agents] == ["probe_impl"]
     assert flow.agents[0].model == ""  # profile-driven
     assert [t.id for t in flow.task_graph] == [

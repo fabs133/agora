@@ -25,3 +25,15 @@ def test_seed_probe_files_resets_stale_out(tmp_path) -> None:
     seed_probe_files(tmp_path, PROJECT_NAME)
     assert not (project / "out" / "concat.txt").exists()  # stale output removed
     assert (project / "plan" / "seed.txt").is_file()  # plan/ seeded fresh
+
+
+def test_seed_files_are_lf_no_crlf_on_disk(tmp_path) -> None:
+    """Seeds are the equality baseline — they must be exact LF bytes (no 0x0d),
+    even on Windows, so byte-exact model output can match (determinism-probe)."""
+    seed_probe_files(tmp_path, PROJECT_NAME)
+    plan = tmp_path / PROJECT_NAME / "plan"
+    for f in plan.iterdir():
+        raw = f.read_bytes()
+        assert b"\r" not in raw, f"{f.name} contains 0x0d (CRLF)"
+    # and a known seed round-trips to its exact LF content
+    assert (plan / "seed_a.txt").read_bytes() == b"apple\napricot\navocado\n"

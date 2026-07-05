@@ -108,7 +108,11 @@ def seed_probe_files(work_dir: Path, project_name: str) -> Path:
     for rel, content in SEED_FILES.items():
         path = project_dir / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        # Byte-IO discipline (determinism-probe): write exact LF bytes, never
+        # text-mode \n→CRLF. The seed files ARE the equality baseline — a CRLF
+        # seed makes byte-exact copies/concat fail vs the model's LF output (the
+        # v6 loop_depth near-miss). Last write_text hole in the byte path.
+        path.write_bytes(content.encode("utf-8"))
     return project_dir
 
 

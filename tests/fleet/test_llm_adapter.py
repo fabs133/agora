@@ -435,9 +435,11 @@ def test_ollama_adapter_strips_thinking_in_response(monkeypatch) -> None:
     assert resp.content == "actual reply"
 
 
-def test_ollama_adapter_shapes_tool_results_one_message_per_result() -> None:
-    """Probe v6: one tool-role message per result; content is the result string
-    VERBATIM (no [name#id] marker); correlation via tool_name / tool_call_id."""
+def test_ollama_adapter_shapes_tool_results_bare_per_result() -> None:
+    """Probe v7 (form B): one BARE tool-role message per result — content is the
+    result VERBATIM, and NO protocol fields (tool_name/tool_call_id), no marker.
+    The fields made gemma's renderer escape newlines; a bare message renders
+    plainly (rendering arbitration)."""
     adapter = OllamaAdapter()
     msgs = adapter.format_tool_results(
         calls=[
@@ -447,12 +449,9 @@ def test_ollama_adapter_shapes_tool_results_one_message_per_result() -> None:
         results=["apple\napricot\n", "wrote 3 bytes"],
     )
     assert isinstance(msgs, list) and len(msgs) == 2
-    assert msgs[0] == {
-        "role": "tool", "content": "apple\napricot\n",
-        "tool_name": "read_file", "tool_call_id": "0",
-    }
-    assert msgs[1]["content"] == "wrote 3 bytes"  # verbatim, nothing prepended
-    # No marker leaks into any content field.
+    # Bare: role + verbatim content ONLY — no protocol fields, no marker.
+    assert msgs[0] == {"role": "tool", "content": "apple\napricot\n"}
+    assert msgs[1] == {"role": "tool", "content": "wrote 3 bytes"}
     assert all("[read_file#" not in m["content"] for m in msgs)
 
 

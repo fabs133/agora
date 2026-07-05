@@ -315,21 +315,15 @@ class OllamaAdapter:
         calls: list[ToolCall],
         results: list[str],
     ) -> list[dict[str, Any]]:
-        # Probe v6: ONE tool-role message per result. Correlation rides the
-        # protocol's tool_name / tool_call_id fields — NOT the content. The
-        # content field is the result string VERBATIM, nothing prepended. This
-        # removes the [name#id] marker entirely, so a model copying a tool result
-        # copies only the bytes it was given (no marker leak; determinism-probe
-        # P2). agent_runtime._append_turn extends messages with the list.
-        return [
-            {
-                "role": "tool",
-                "content": res,
-                "tool_name": call.name,
-                "tool_call_id": call.id,
-            }
-            for call, res in zip(calls, results, strict=True)
-        ]
+        # Probe v7 (form B): ONE bare tool-role message per result — content is
+        # the result string VERBATIM, and NO protocol fields (tool_name /
+        # tool_call_id). The rendering arbitration showed that including those
+        # fields makes gemma's daemon renderer wrap the tool result as structure
+        # and escape its newlines (\n → \\n), which the model then reproduces as
+        # literal "\n"; a bare content message renders plainly with real newline
+        # bytes. Correlation is by order + content, which is enough for the probe.
+        # No marker, so a verbatim copy copies only the bytes given.
+        return [{"role": "tool", "content": res} for res in results]
 
     # --- completion ---
 

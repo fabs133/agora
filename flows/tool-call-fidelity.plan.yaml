@@ -13,10 +13,17 @@ name: tool-call-fidelity
 #      (docs/runs/determinism-probe/findings.md, P1/P2). v5 collapsed loop_depth
 #      to 1/1 but the marker still leaked (whole message copied) and loop_depth
 #      wrote literal \n escapes.
-#   6: one tool-role message PER result (marker removed entirely; correlation via
-#      tool_name/tool_call_id, content verbatim) + loop_depth prompt gains a
-#      "write actual newline characters, not \n escapes" sentence.
-probe_version: 6
+#   6: one tool-role message PER result (marker removed; correlation via
+#      tool_name/tool_call_id) + loop_depth "write actual newlines" sentence.
+#      Determinism 1/1 and marker gone, BUT the protocol fields made gemma's
+#      renderer escape newlines (\n→\\n) so copies wrote literal "\n"; and the
+#      seed files were still CRLF (write_text) so loop_depth's byte-correct LF
+#      failed equality vs CRLF seeds.
+#   7: form B delivery — BARE tool message per result (content verbatim, NO
+#      tool_name/tool_call_id fields, no marker); renders plainly with real
+#      newlines (rendering arbitration). PLUS seed_probe_files writes exact LF
+#      bytes. Predicts the first genuine full pass.
+probe_version: 7
 description: >
   Axis-1 atomic probe for tool-call fidelity. One implementer agent runs three
   short, fully-specified tool chains (copy, list+read+concat, follow-a-redirect).
