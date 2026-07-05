@@ -209,6 +209,10 @@ class TaskRecord(BaseModel):
     # Integration run 1: run_check command captures (cmd, exit_code, timed_out,
     # stdout/stderr bounded 4 KB with truncation flags, passed). Additive.
     run_check_records: list[dict[str, Any]] = Field(default_factory=list)
+    # F17b (run 2.2): True when this record is a MECHANICAL phase re-eval
+    # (cross-phase repair over the workspace), not a live task run — so a later
+    # oracle resolves post-repair reality via latest-record-wins. Additive.
+    mechanical: bool = False
 
 
 class RunRecord(BaseModel):

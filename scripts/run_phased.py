@@ -444,6 +444,52 @@ def build_task_record(task: Any, result: Any, role: str, task_index: int, run_id
     )
 
 
+def build_mechanical_task_records(
+    gate: Any,
+    results_by_id: dict[str, Any],
+    run_id: str,
+    flow_tasks: list[Any] | None = None,
+    role_by_agent: dict[str, str] | None = None,
+) -> list[Any]:
+    """F17b: TaskRecords for a MECHANICAL phase re-eval (cross-phase repair).
+
+    ``reevaluate_phase_gate`` re-runs an oracle phase's postconditions over the
+    workspace but the caller only persisted the LIVE reran task's record — so the
+    re-eval's run_check captures (e.g. the post-repair NameError) lived only in
+    the printed report, and the NEXT ``oracle_records_for_phase`` resolved the
+    STALE pre-repair records. This builds one mechanical-marked TaskRecord per
+    re-evaluated task (attributed to the OWNING task, carrying the re-eval's
+    run_check captures) so latest-record-wins reflects post-repair reality.
+    """
+    from agora.observe.jsonl import TaskRecord, classify_task_kind
+
+    tasks_by_id = {t.id: t for t in (flow_tasks or [])}
+    roles = role_by_agent or {}
+    records: list[Any] = []
+    for i, tgt in enumerate(gate.tasks):
+        res = results_by_id.get(tgt.task_id)
+        rc = list(getattr(res, "run_check_records", []) or []) if res else []
+        t = tasks_by_id.get(tgt.task_id)
+        role = roles.get(getattr(t, "agent_id", ""), "") if t else ""
+        pc_names = [n for n, _ in tgt.postconditions]
+        kind = classify_task_kind(
+            output_path=(getattr(t, "output_path", "") or "" if t else ""),
+            postcondition_names=pc_names, stage_kinds=[], role=role,
+        )
+        records.append(
+            TaskRecord(
+                run_id=run_id, task_id=tgt.task_id, task_index=i, role=role,
+                task_kind=kind, status="passed" if tgt.passed else "failed",
+                first_pass=None, loopback_count=None, iterations=None,
+                postconditions=[{"name": n, "passed": bool(p)} for n, p in tgt.postconditions],
+                phase=(getattr(gate, "phase", "") or None),
+                blocking=bool(tgt.blocking), mechanical=True,
+                run_check_records=rc,
+            )
+        )
+    return records
+
+
 def append_task_records(tasks_path: Path, records: list[Any]) -> None:
     """Append per-phase TaskRecords to ``tasks.jsonl`` (create if absent)."""
     with Path(tasks_path).open("a", encoding="utf-8") as fh:
@@ -637,7 +683,8 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
     # a src task (Y) to satisfy the pytest gate (X) → re-evaluate X's gate
     # mechanically over the now-modified workspace. Same-phase repair keeps the
     # normal evaluate-over-the-reran-task path.
-    if rerun_task and oracle_phase and oracle_phase != phase:
+    mechanical_reeval = bool(rerun_task and oracle_phase and oracle_phase != phase)
+    if mechanical_reeval:
         project_dir = Path(campaign["output_dir"]) / "echobot" / "echobot"
         gate, gate_results_by_id = reevaluate_phase_gate(project_dir, oracle_phase, tasks)
     else:
@@ -653,6 +700,13 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         for i, res in enumerate(result.task_results)
         if res.task_id in tasks_by_id
     ]
+    # F17b: persist the mechanical re-eval's run_check captures (mechanical-marked,
+    # attributed to the owning oracle-phase task) so a later oracle_records_for_phase
+    # resolves post-repair reality, not the stale pre-repair records.
+    if mechanical_reeval:
+        task_records += build_mechanical_task_records(
+            gate, gate_results_by_id, run_id, flow_tasks=tasks, role_by_agent=role_by_agent,
+        )
     return gate, gate_results_by_id, task_records
 
 

@@ -226,14 +226,26 @@ task_graph:
     assigned_to: impl
     phase: P6
     depends_on: [T5.1]
-    description: >
-      Implement echobot/__main__.py: read lines from stdin, pass each to
-      handle_message (with a default random.Random), write non-None responses to
-      stdout, ignore None. No other IO.
+    description: |
+      Implement echobot/__main__.py. Import the core function EXPLICITLY at the
+      module top:
+          from echobot.core import handle_message
+      Then read lines from stdin, pass each to handle_message (with a default
+      random.Random()), write non-None responses to stdout, ignore None. No other
+      IO. Do not wrap the core call in defensive try/except; let errors propagate.
     output_path: echobot/__main__.py
     postconditions:
       - name: run_check
         args: {cmd: ["python", "-m", "pytest", "-q"], expect_exit: 0, timeout_s: 60}
+      # F16 behavioural smoke gate (F10-analogue): drive the ASSEMBLED bot over
+      # stdin so the adapter's own gate reds on its own defect (a missing import
+      # or a swallowed error). pytest above never executes __main__.
+      - name: run_check
+        args:
+          cmd: ["python", "-m", "echobot"]
+          stdin: "!ping\n"
+          expect_stdout_contains: "pong"
+          timeout_s: 30
       - name: mark_complete
   - id: V6.1
     assigned_to: verifier

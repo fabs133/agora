@@ -628,3 +628,32 @@ import + smoke oracle -> one repair -> second red stops with a genuine
 model-side adapter finding. Waivers forbidden. The deferred PROJECT_STATE
 measurement still waits on a completed run; P9 remains the last
 never-reached phase.
+
+**Part 9 addendum — chat-side ruling (2026-07-05).**
+
+**Answer to the repair question:** the model read the oracle; the oracle
+was contentless. F17 (artifact swallowed its own NameError) meant
+attempt-1's captures said only "exit 0, empty stdout". The repair's
+removal of the swallow was the most oracle-improving move available and
+CREATED the informative failure — which then never persisted:
+
+**F17b — mechanical re-evals drop their run_check captures.**
+reevaluate_phase_gate runs predicates over the workspace but appends no
+task records; the post-repair NameError exists only in the printed gate
+report. oracle_records_for_phase would therefore resolve the STALE
+pre-repair records for any subsequent P7 repair. Fix: mechanical
+re-evals append their run_check records to tasks.jsonl (mechanical-
+marked, attributed to the owning task) so latest-record-wins reflects
+post-repair reality.
+
+**Run 2.2 (greenlit, augmenting Part 9's pre-registration):** T6.1 gains
+(i) the inline import contract, (ii) the F10-analogue smoke gate
+(python -m echobot, stdin "!ping\n" -> stdout contains "pong"),
+(iii) one F17 clause: "Do not wrap the core call in defensive
+try/except; let errors propagate." Plus the F17b persistence fix.
+Re-establishment of P6 under the conditions-defect rule (F16 = channel
+starvation class), then --next P7/P9. Worlds: (a) adapter imports and
+passes its smoke -> P7 acceptance green -> P9 -> PROJECT_STATE.md ->
+the deferred human fact-check. (b) P7 reds with a now-informative,
+now-persisted oracle -> ONE repair (first repair in program history fed
+by a post-repair-quality oracle); second red stops. Waivers forbidden.

@@ -294,3 +294,23 @@ tests/test_core.py         (8 tests incl. the F15-predicate roll_malformed, all 
 verdicts/p4.json (valid) / p5.json (malformed) / p6.json (empty) / p7.json (valid)
 ```
 PROJECT_STATE.md: NOT PRESENT (P9 not reached — run did not complete).
+
+---
+
+# RUN 2.2 — F16/F17 fixes: T6.1 import contract + stdin smoke gate + no-swallow clause; F17b persistence
+
+## Pre-flight (2026-07-05) @ run-2.2 prep (suite green 1450, ruff clean)
+```
+ollama /api/version: {"version":"0.31.1"}; gemma4:e4b + qwen2.5:7b-instruct resident
+conditions delta:
+  (F16) T6.1 inline contract now names `from echobot.core import handle_message` explicitly + adds a
+        behavioural smoke run_check (python -m echobot, stdin "!ping\n" -> stdout contains "pong").
+  (F17) T6.1 clause: "Do not wrap the core call in defensive try/except; let errors propagate."
+  (F17b) reevaluate_phase_gate's run_check captures now PERSIST to tasks.jsonl as mechanical-marked
+         TaskRecords attributed to the owning task (build_mechanical_task_records; TaskRecord.mechanical
+         field added, additive). So the next oracle_records_for_phase resolves post-repair reality.
+ledger: P3/P4/P5/P6 green, P7 red (run-2.1 second red). core.py untouched (8/8 core tests pass).
+action: conditions-defect re-establishment of P6 -> `--rerun-task T6.1 --oracle P7` (runner requires
+  --oracle; consumes no budget per the standing rule — F16/F17 are a verified missing-contract/weak-gate
+  defect), then --next through P7/P9.
+```

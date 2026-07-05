@@ -323,6 +323,54 @@ def test_cross_invocation_oracle_carries_stdout_verbatim(tmp_path) -> None:
     assert "The following gate failed." in prompt
 
 
+def test_mechanical_reeval_records_supersede_stale_oracle(tmp_path) -> None:
+    """F17b: a mechanical cross-phase re-eval persists its run_check captures
+    (mechanical-marked, attributed to the owning task), so the NEXT
+    oracle_records_for_phase resolves the POST-repair stderr — not the stale
+    pre-repair record. Without the fix the re-eval's captures were dropped and the
+    oracle carried the older, less-informative failure."""
+    from types import SimpleNamespace
+
+    from agora.fleet.phase_gate import PhaseGateResult, TaskGateOutcome
+    from agora.observe.jsonl import TaskRecord
+
+    # --- invocation 1: a stale P7 record (the pre-repair, symptom-only failure) ---
+    stale = TaskRecord(
+        run_id="r", task_id="T7.1", task_index=0, role="implementer",
+        task_kind="code_body", status="failed", first_pass=False, loopback_count=0,
+        iterations=1, phase="P7", blocking=True,
+        postconditions=[{"name": "run_check_echobot", "passed": False}],
+        run_check_records=[{
+            "cmd": ["python", "-m", "echobot"], "exit_code": 0, "timed_out": False,
+            "stdout": "", "stderr": "OLD_STALE_STDERR_swallowed", "stdout_truncated": False,
+            "stderr_truncated": False, "passed": False,
+        }],
+    )
+    (tmp_path / "tasks.jsonl").write_text(stale.model_dump_json() + "\n", encoding="utf-8")
+
+    # --- invocation 2: a mechanical re-eval surfaces a distinctive NEW stderr ---
+    new_stderr = "NameError: name 'handle_message' is not defined  <<post-repair-marker-88>>"
+    tgo = TaskGateOutcome(task_id="T7.1", blocking=True,
+                          postconditions=[("run_check_echobot", False)])
+    gate = PhaseGateResult(phase="P7", tasks=(tgo,), passed=False,
+                           blockers=("T7.1",), mechanical=True)
+    results_by_id = {"T7.1": SimpleNamespace(task_id="T7.1", run_check_records=[{
+        "cmd": ["python", "-m", "echobot"], "exit_code": 1, "timed_out": False,
+        "stdout": "", "stderr": new_stderr, "stdout_truncated": False,
+        "stderr_truncated": False, "passed": False,
+    }])}
+    recs = rp.build_mechanical_task_records(gate, results_by_id, "r")
+    assert recs and recs[0].task_id == "T7.1" and recs[0].mechanical is True
+    assert recs[0].status == "failed" and recs[0].blocking is True
+    rp.append_task_records(tmp_path / "tasks.jsonl", recs)
+
+    # --- resolution: latest-record-wins → the NEW stderr, not the stale one ---
+    oracle = rp.oracle_records_for_phase(rp.load_jsonl(tmp_path / "tasks.jsonl"), "P7")
+    blob = rp.build_repair_description("Implement echobot/__main__.py", oracle)
+    assert new_stderr in blob                    # post-repair reality resolved
+    assert "OLD_STALE_STDERR_swallowed" not in blob  # stale record superseded
+
+
 def test_oracle_skips_passed_and_nonblocking_tasks(tmp_path) -> None:
     from agora.observe.jsonl import TaskRecord
 
