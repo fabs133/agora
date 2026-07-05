@@ -267,13 +267,17 @@ def resolve_agent_models(agents: list[Any], cast: Any, profiles: Any) -> tuple[l
 
 
 def strip_cross_phase_deps(phase_task_ids: set[str], tasks: list[Any]) -> list[Any]:
-    """Return ``tasks`` with every depends_on edge pointing OUTSIDE the phase
-    dropped — prior phases already ran and left their artifacts on disk, so the
-    orchestrator DAG for one phase must not reference absent tasks."""
+    """Return ``tasks`` with every depends_on / order_after edge pointing OUTSIDE
+    the phase dropped — prior phases already ran and left their artifacts on
+    disk, so the orchestrator DAG for one phase must not reference absent tasks.
+    Within-phase order_after (e.g. a verifier ordered after its blocking task) is
+    preserved so the verifier still runs at gate time."""
     out: list[Any] = []
     for t in tasks:
         kept = tuple(d for d in t.depends_on if d in phase_task_ids)
-        out.append(replace(t, depends_on=kept) if kept != t.depends_on else t)
+        kept_order = tuple(o for o in getattr(t, "order_after", ()) if o in phase_task_ids)
+        changed = kept != t.depends_on or kept_order != getattr(t, "order_after", ())
+        out.append(replace(t, depends_on=kept, order_after=kept_order) if changed else t)
     return out
 
 
@@ -543,14 +547,24 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
 
     phase_tasks = [t for t in tasks if t.phase == phase]
     if rerun_task:
-        phase_tasks = [t for t in phase_tasks if t.id == rerun_task]
+        # Re-run the named task PLUS any same-phase verifier ordered after it —
+        # the F5 fix means verifiers run at their phase even when the task they
+        # observe failed, so a re-establishment of the phase must include them
+        # (this is what lets V5.1 produce a verdict on a red P5 re-run).
+        keep = {rerun_task} | {
+            t.id for t in phase_tasks
+            if not t.blocking and rerun_task in getattr(t, "order_after", ())
+        }
+        phase_tasks = [t for t in phase_tasks if t.id in keep]
         if oracle_phase:
             # Oracle is resolved from the PERSISTED per-phase TaskRecords, so the
             # repair prompt carries the red gate's run_check stdout/stderr verbatim.
+            # Only the reran task carries the oracle; verifiers keep their prompt.
             task_records = load_jsonl(Path(campaign["output_dir"]) / "tasks.jsonl")
             oracle = oracle_records_for_phase(task_records, oracle_phase)
             phase_tasks = [
                 replace(t, description=build_repair_description(t.description, oracle))
+                if t.id == rerun_task else t
                 for t in phase_tasks
             ]
     phase_ids = {t.id for t in phase_tasks}

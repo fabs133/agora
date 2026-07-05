@@ -108,6 +108,67 @@ def test_real_echobot_flow_passes_lint() -> None:
     assert roles[t51.assigned_to] is AgentRole.TESTER
 
 
+# --- F6-L spec-channel lint (warn loudly, not fatal) ---
+
+def _spec_channel_flow(tmp_path: Path, desc: str) -> Path:
+    import json as _json
+
+    yaml_text = (
+        'version: "2.0"\n'
+        "name: spec-channel-demo\n"
+        "agents:\n"
+        "  - name: t\n"
+        "    role: tester\n"
+        "task_graph:\n"
+        "  - id: T5.1\n"
+        "    assigned_to: t\n"
+        "    phase: P5\n"
+        f"    description: {_json.dumps(desc)}\n"  # JSON string = safe YAML scalar
+        "    output_path: tests/test_core.py\n"
+        "    postconditions:\n"
+        "      - name: file_exists\n"
+        "        args: {rel: tests/test_core.py}\n"
+    )
+    p = tmp_path / "sc.yaml"
+    p.write_text(yaml_text, encoding="utf-8")
+    return p
+
+
+def test_f6l_lint_warns_on_spec_reference_without_content(tmp_path: Path) -> None:
+    """A task told to author 'from the spec' with no inline contract / readable
+    path warns loudly (not fatal) — the F6 spec-channel starvation class."""
+    p = _spec_channel_flow(tmp_path, "Write the named cases from the spec - test_ping, test_echo.")
+    with pytest.warns(UserWarning, match="spec-channel starvation"):
+        flow = load_flow(p)  # WARNS but does not raise (not fatal)
+    assert flow.task_graph[0].id == "T5.1"  # load still succeeded
+
+
+def test_f6l_lint_silent_when_contract_inlined(tmp_path: Path, recwarn) -> None:
+    """Inlining a signature (-> / def / ## / code fence) suppresses the warning."""
+    p = _spec_channel_flow(
+        tmp_path, "Write tests from the spec. Contract: handle_message(text, rng) -> str | None."
+    )
+    load_flow(p)
+    assert not [w for w in recwarn.list if "spec-channel" in str(w.message)]
+
+
+def test_f6l_lint_silent_when_readable_path_named(tmp_path: Path, recwarn) -> None:
+    """Naming a readable, non-docs workspace path (not the output) escapes."""
+    p = _spec_channel_flow(
+        tmp_path, "Write tests per the spec; the implementation is at echobot/core.py."
+    )
+    load_flow(p)
+    assert not [w for w in recwarn.list if "spec-channel" in str(w.message)]
+
+
+def test_f6l_lint_does_not_fire_on_verifier_or_input_spec(tmp_path: Path, recwarn) -> None:
+    """'verify against the spec' and 'a malformed spec' are not authoring-from-a-
+    document and must not trip the lint (narrower than bare 'spec')."""
+    p = _spec_channel_flow(tmp_path, "Verify against the spec; a malformed spec returns usage.")
+    load_flow(p)
+    assert not [w for w in recwarn.list if "spec-channel" in str(w.message)]
+
+
 def test_instantiate_flow_generates_uuids(tmp_path: Path) -> None:
     p = tmp_path / "flow.yaml"
     p.write_text(VALID_YAML, encoding="utf-8")

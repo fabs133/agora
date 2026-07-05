@@ -98,3 +98,59 @@ be visually distinguishable in the ledger (see execution brief).
 registered repair), PROJECT_STATE.md produced and human fact-checked,
 repair-doctrine cell filled with a genuine defect. Any stop follows the
 same protocol as run 1 and produces its findings the same way.
+
+---
+
+## Part 3 — run 1.1 findings and run 1.2 pre-registration (2026-07-05)
+
+**Run 1.1 outcome:** P5 red -> repair -> red -> stop. Both run-1 fixes
+verified live (role-scope: 0 rejections, write landed turn 1;
+observer: tool results in run.log). The P5 red was an UNREGISTERED
+world (c).
+
+**F6 — world (c): specification-channel starvation.** The tester's
+delivered context was its instructions + eight test names + the phrase
+"from the spec" — with the spec never inlined and unreadable from the
+workspace. Zero read attempts; turn-1 write opening "# Assuming the
+module..."; a fabricated run_command() API; tests testing their own
+mocks. The model is exonerated: it was asked to transcribe a document
+it was never shown. Root asymmetry: T4.x carried their spec sections
+inline; T5.1 carried names only. The plan-lint verified name fidelity
+and never asked "does the task carry or point to the contract it
+cites" — that question becomes a lint rule (F6-L): any task description
+referencing an external document must inline the needed content or name
+a workspace-readable path.
+
+**F7 — repair quality is bounded by oracle expressiveness.** The
+oracle-fed repair fixed exactly the failures pytest NAMED (2 failed ->
+1 failed) and none it could not name (mock-only structure, zero
+echobot imports). Consequence: postconditions are the vocabulary of
+future repair oracles — a gate that cannot name a defect produces an
+oracle that cannot teach its fix. T5.1 gains
+file_contains "from echobot.core import handle_message".
+
+**F5 (second recurrence) — verifiers gated behind failing tasks.**
+V5.1 would plausibly have named the mock-only structure; it never ran.
+Fix now: order_after (ordering-only) semantics for verifier tasks;
+verifiers run unconditionally at their phase.
+
+**Protocol ratification:** the executor's reading was correct — the
+fresh P5 execution under fixed conditions re-established the phase the
+run-1 framework bug invalidated; the repair budget applied to the
+subsequent red. Ledger #5/#6 stand as attempt/repair.
+
+**Run 1.2 pre-registration.** Conditions delta: T5.1 carries the
+functional contract inline + the import postcondition; T9.2 carries the
+template headers inline; verifiers order_after; mock test file removed
+from the workspace (defective artifact of an invalidated attempt);
+drifted core.py REMAINS (still the F4 experiment). Worlds:
+- (a) spec-faithful tests -> pytest red on the drift (TypeError) ->
+  designated cross-phase repair --rerun-task T4.1 --oracle P5 ->
+  prediction: class->function refactor, mechanical re-eval green. The
+  original experiment, third attempt at running it.
+- (b) tester mocks again -> the import gate reds and NAMES it; the
+  branch-2 repair (T5.1, oracle now containing the naming) tests F7
+  directly: does a nameable structural defect become repairable?
+- (c) anything else -> stop, interpret chat-side.
+Budget: one repair per gate, second red stops. Waivers forbidden.
+V5.1 verdict is expected to exist this run regardless of gate colour.

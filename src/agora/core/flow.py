@@ -93,6 +93,9 @@ class TaskTemplate:
     # verifier) whose postconditions are recorded but do not gate the phase.
     phase: str = ""
     blocking: bool = True
+    # Integration run 1.2 (F5): ordering-only predecessors (run AFTER these reach
+    # a terminal state, regardless of success). depends_on keeps success-gating.
+    order_after: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -169,6 +172,8 @@ class _TaskSchema(BaseModel):
     # Integration run 1: phase membership + gate participation.
     phase: str = ""
     blocking: bool = True
+    # Integration run 1.2 (F5): ordering-only predecessors.
+    order_after: list[str] = Field(default_factory=list)
 
 
 class _FlowSchema(BaseModel):
@@ -251,6 +256,7 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
                     stages=t.stages,
                     phase=t.phase,
                     blocking=t.blocking,
+                    order_after=tuple(prefix + o for o in t.order_after),
                 )
             )
 
@@ -295,10 +301,12 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
                 ),
                 phase=t.phase,
                 blocking=t.blocking,
+                order_after=tuple(t.order_after),
             )
         )
 
     _lint_role_write_scope(own_tasks, {a.name: a.role for a in agents_list}, schema.name)
+    _lint_spec_channel(own_tasks, schema.name)
 
     return Flow(
         name=schema.name,
@@ -309,6 +317,58 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
         agents=tuple(agents_list),
         task_graph=tuple(included_tasks + own_tasks),
     )
+
+
+#: A relative source/doc path (used by the F6-L spec-channel lint to spot a
+#: task that points at a readable file instead of inlining its contract).
+_SRC_PATH_RE = __import__("re").compile(r"\b[\w][\w./-]*\.(?:py|md|txt|json|yaml|toml)\b")
+
+
+def _lint_spec_channel(tasks: list[TaskTemplate], flow_name: str) -> None:
+    """Warn loudly (not fatal) when a task description CITES an external spec/doc
+    but carries neither inline contract content nor a workspace-readable path to
+    it — the F6 spec-channel-starvation class (run 1.1: the tester was asked to
+    transcribe a spec it was never shown, and mocked the system instead).
+
+    Heuristic (loud, not fatal): the trigger is a task asked to AUTHOR from an
+    external source — a ``docs/`` path, or a "from/per (the) spec[ification]"
+    phrase. It escapes the warning only if it carries an inline contract signal
+    (a signature ``->``, a ``def ``, a markdown ``## `` header, or a code fence)
+    OR names a readable workspace path that is NOT under ``docs/`` and is not
+    merely the task's own output_path. (Deliberately narrower than bare "spec":
+    a verifier "verify against the spec" or "a malformed spec" is not an
+    authoring-from-a-document task and does not trip it.)
+    """
+    import re
+    import warnings
+
+    offenders: list[str] = []
+    for t in tasks:
+        desc = t.description or ""
+        low = desc.lower()
+        cites_external = (
+            "docs/" in desc
+            or bool(re.search(r"\b(from|per)\s+(the\s+)?spec(ification)?", low))
+        )
+        if not cites_external:
+            continue
+        inline_contract = any(tok in desc for tok in ("->", "def ", "## ", "```"))
+        readable_path = any(
+            not p.startswith("docs/") and p != (t.output_path or "")
+            for p in _SRC_PATH_RE.findall(desc)
+        )
+        if not (inline_contract or readable_path):
+            offenders.append(t.id)
+    if offenders:
+        warnings.warn(
+            f"flow {flow_name!r}: task(s) {offenders} cite an external spec/doc "
+            f"but carry neither inline contract content nor a workspace-readable "
+            f"path (F6 spec-channel starvation — the model may be asked to "
+            f"transcribe a document it is never shown). Inline the needed content "
+            f"or name a readable path.",
+            UserWarning,
+            stacklevel=2,
+        )
 
 
 def _lint_role_write_scope(
@@ -490,7 +550,8 @@ def save_flow(flow: Flow, path: str | Path) -> None:
     backward compatibility with existing fixtures.
     """
     needs_v2 = any(
-        t.postconditions or t.output_path or t.stages or t.phase or not t.blocking
+        t.postconditions or t.output_path or t.stages or t.phase
+        or not t.blocking or t.order_after
         for t in flow.task_graph
     )
     version = "2.0" if needs_v2 else "1.0"
@@ -515,6 +576,8 @@ def save_flow(flow: Flow, path: str | Path) -> None:
             row["phase"] = t.phase
         if not t.blocking:
             row["blocking"] = False
+        if t.order_after:
+            row["order_after"] = list(t.order_after)
         if t.stages:
             stage_rows: list[dict[str, Any]] = []
             for s in t.stages:
@@ -654,6 +717,7 @@ def instantiate_flow(
                 output_path=t.output_path,
                 phase=t.phase,
                 blocking=t.blocking,
+                order_after=tuple(id_map[o] for o in t.order_after if o in id_map),
             )
         )
     return agents, tasks

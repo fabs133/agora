@@ -62,6 +62,12 @@ class Task:
     #: Verifier tasks are ``blocking=False`` — their verdict is recorded but
     #: never blocks the next phase.
     blocking: bool = True
+    #: Integration run 1.2 (F5 fix): ORDERING-only predecessors. Unlike
+    #: ``depends_on`` (which gates readiness on the predecessor reaching DONE),
+    #: an ``order_after`` task runs once its predecessors reach a TERMINAL state
+    #: (DONE **or** FAILED) — so a verifier ordered after a blocking task runs
+    #: unconditionally at gate time, even when that task failed.
+    order_after: tuple[TaskId, ...] = ()
 
 
 def transition_task(task: Task, new_status: TaskStatus) -> Task:
@@ -84,7 +90,15 @@ def build_dag(tasks: list[Task]) -> dict[TaskId, list[TaskId]]:
         for dep in t.depends_on:
             if dep not in by_id:
                 raise AgoraError(f"task {t.id} depends on unknown task {dep}")
-        adjacency[t.id] = list(t.depends_on)
+        for pred in t.order_after:
+            if pred not in by_id:
+                raise AgoraError(f"task {t.id} order_after unknown task {pred}")
+        # order_after edges are ordering constraints too — include them so cycle
+        # detection and topological_sort treat them like depends_on for SEQUENCE
+        # (readiness/gating semantics differ; see ready_tasks).
+        adjacency[t.id] = list(t.depends_on) + [
+            p for p in t.order_after if p not in t.depends_on
+        ]
     # Cycle detection via DFS with coloring.
     WHITE, GRAY, BLACK = 0, 1, 2
     color: dict[TaskId, int] = {tid: WHITE for tid in adjacency}
@@ -132,13 +146,32 @@ def topological_sort(tasks: list[Task]) -> list[Task]:
     return ordered
 
 
+#: A task ordered after another may run once the predecessor is TERMINAL —
+#: succeeded or failed. (depends_on requires DONE; order_after requires only
+#: that the predecessor has finished running.)
+_TERMINAL_STATUSES = frozenset({TaskStatus.DONE, TaskStatus.FAILED})
+
+
 def ready_tasks(tasks: list[Task]) -> list[Task]:
-    """Return PENDING tasks whose dependencies are all DONE."""
+    """Return PENDING tasks whose ``depends_on`` are all DONE **and** whose
+    ``order_after`` predecessors have all reached a terminal state.
+
+    ``depends_on`` gates on success (predecessor DONE); ``order_after`` gates
+    only on completion (DONE or FAILED) — so a verifier ordered after a blocking
+    task runs even when that task failed (F5 fix).
+    """
     by_id = {t.id: t for t in tasks}
     ready: list[Task] = []
     for t in tasks:
         if t.status != TaskStatus.PENDING:
             continue
-        if all(by_id[dep].status == TaskStatus.DONE for dep in t.depends_on if dep in by_id):
+        deps_done = all(
+            by_id[dep].status == TaskStatus.DONE for dep in t.depends_on if dep in by_id
+        )
+        order_done = all(
+            by_id[pred].status in _TERMINAL_STATUSES
+            for pred in t.order_after if pred in by_id
+        )
+        if deps_done and order_done:
             ready.append(t)
     return ready

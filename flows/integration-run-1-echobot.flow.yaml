@@ -69,7 +69,7 @@ task_graph:
     assigned_to: verifier
     phase: P3
     blocking: false
-    depends_on: [T3.1]
+    order_after: [T3.1]
     description: >
       Verify the P3 scaffold against the spec's Phase plan (P3). Emit the JSON
       verdict to verdicts/p3.json.
@@ -121,7 +121,7 @@ task_graph:
     assigned_to: verifier
     phase: P4
     blocking: false
-    depends_on: [T4.1, T4.2]
+    order_after: [T4.1, T4.2]
     description: Verify P4 core against the spec (Functional spec + Phase P4).
     output_path: verdicts/p4.json
     postconditions:
@@ -136,14 +136,33 @@ task_graph:
     assigned_to: tester
     phase: P5
     depends_on: [T4.2]
-    description: >
-      Write tests/test_core.py implementing EXACTLY the named cases from the
-      spec: test_ping, test_echo, test_echo_preserves_spacing,
-      test_roll_deterministic (seeded random.Random), test_roll_malformed,
-      test_help_lists_all_commands, test_unknown_command,
-      test_non_command_returns_none.
+    description: |
+      Write tests/test_core.py with the eight named test functions below, each
+      exercising the REAL implementation. The implementation exists at
+      echobot/core.py; your tests MUST import and exercise it:
+          from echobot.core import handle_message
+      Do NOT mock the system under test; call the real function.
+
+      Functional contract (from the spec):
+        handle_message(text: str, rng: random.Random) -> str | None
+        A pure function. Returns None for non-command input. Commands:
+          !ping                -> "pong"
+          !echo <text>         -> <text> verbatim (everything after the 1st space)
+          !roll NdM (e.g. 2d6) -> "rolled NdM: a+b+...=total"; rng injected
+                                  (deterministic under a seeded random.Random);
+                                  a malformed spec -> a usage message
+          !help                -> one line per command
+          unknown !cmd         -> "unknown command: cmd (try !help)"
+
+      Required test functions (exact names):
+        test_ping, test_echo, test_echo_preserves_spacing,
+        test_roll_deterministic (seeded random.Random), test_roll_malformed,
+        test_help_lists_all_commands, test_unknown_command,
+        test_non_command_returns_none.
     output_path: tests/test_core.py
     postconditions:
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "from echobot.core import handle_message"}
       - name: file_contains
         args: {rel: tests/test_core.py, substring: "def test_ping"}
       - name: file_contains
@@ -170,7 +189,7 @@ task_graph:
     assigned_to: verifier
     phase: P5
     blocking: false
-    depends_on: [T5.1]
+    order_after: [T5.1]
     description: Verify P5 tests cover the named cases (spec Required tests).
     output_path: verdicts/p5.json
     postconditions:
@@ -198,7 +217,7 @@ task_graph:
     assigned_to: verifier
     phase: P6
     blocking: false
-    depends_on: [T6.1]
+    order_after: [T6.1]
     description: Verify P6 — the full suite still collects and passes.
     output_path: verdicts/p6.json
     postconditions:
@@ -243,7 +262,7 @@ task_graph:
     assigned_to: verifier
     phase: P7
     blocking: false
-    depends_on: [T7.1]
+    order_after: [T7.1]
     description: Verify P7 acceptance outputs match the spec's command contract.
     output_path: verdicts/p7.json
     postconditions:
@@ -272,12 +291,20 @@ task_graph:
     assigned_to: impl
     phase: P9
     depends_on: [T9.1]
-    description: >
-      Write PROJECT_STATE.md at the project root per
-      docs/integration/project-state-template.md, with this project's facts.
-      Include every mandatory section header and, in the Verification record
-      section, the exact gate commands (python -m pytest -q and the python -m
-      echobot acceptance) verbatim — they are re-run in any future phase 0.
+    description: |
+      Write PROJECT_STATE.md at the project root with this project's facts,
+      using EXACTLY these eight mandatory section headers (verbatim, in order):
+        ## Identity
+        ## Architecture & invariants
+        ## Capability inventory
+        ## Verification record
+        ## File map
+        ## Conventions
+        ## Extension points
+        ## How to run / test
+      Under "## Verification record", list the exact gate commands verbatim —
+      `python -m pytest -q` and the `python -m echobot` acceptance — because they
+      are re-run in any future phase-0 re-validation.
     output_path: PROJECT_STATE.md
     postconditions:
       - name: file_contains
@@ -305,7 +332,7 @@ task_graph:
     assigned_to: verifier
     phase: P9
     blocking: false
-    depends_on: [T9.1, T9.2]
+    order_after: [T9.1, T9.2]
     description: Verify P9 docs + PROJECT_STATE.md against the actual tree.
     output_path: verdicts/p9.json
     postconditions:
