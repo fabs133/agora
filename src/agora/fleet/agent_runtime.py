@@ -288,7 +288,12 @@ class AgentRuntime:
         # filtering the LLM-facing manifest (executor untouched). Empty = no-op.
         if identity.config.allowed_tools:
             allowed = set(identity.config.allowed_tools)
+            _before = len(tools)
             tools = [t for t in tools if t["name"] in allowed]
+            logger.info(
+                "manifest: filtered %d tools (allowlist) task=%s",
+                _before - len(tools), task.id,
+            )
         # Note: write_file auto-hiding is applied per-turn inside _run_loop
         # (so within-stage cycling is caught too), not here.
         executor = get_tool_executor(identity.config.role, self._ctx)
@@ -410,14 +415,16 @@ class AgentRuntime:
             # has content (a prior turn wrote it, or a prior task retry left
             # it behind), drop write_file from this turn's manifest. The
             # 7B otherwise cycles through write_file → ERROR → retry within
-            # the same stage, burning iterations.
+            # the same stage, burning iterations. F13 invariant: the hide is
+            # skipped if it would leave the seat with no file-mutation tool.
             from agora.fleet.stage_runner import _output_path_has_content as _has
 
-            turn_tools = (
-                [t for t in tools if t["name"] != "write_file"]
-                if _has(self._ctx)
-                else tools
-            )
+            turn_tools, _hid_write = _apply_overwrite_guard(tools, _has(self._ctx))
+            if _hid_write:
+                logger.info(
+                    "manifest: hid write_file (overwrite guard) task=%s turn=%d",
+                    task_id, iterations,
+                )
             # Authoritative 0-based iteration index for the text-fallback hook;
             # reset the per-turn fallback flag before the call (the hook fires
             # inside complete() and flips it).
@@ -995,7 +1002,8 @@ def _expected_output_missing(ctx: ToolContext) -> str | None:
 
 
 #: File-mutating tool names. A clean call to any of these on the turn after a
-#: completion review is classified as a "revise" action (S6 provenance).
+#: completion review is classified as a "revise" action (S6 provenance). Also
+#: the "file-mutation affordance" set the F13 invariant protects (below).
 _WRITE_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "write_file",
@@ -1008,6 +1016,33 @@ _WRITE_TOOL_NAMES: frozenset[str] = frozenset(
         "fill_test_body",
     }
 )
+
+
+def _apply_overwrite_guard(
+    tools: list[dict[str, Any]], output_has_content: bool
+) -> tuple[list[dict[str, Any]], bool]:
+    """v2.4 write_file-hide guard, with the F13 invariant. Returns
+    ``(turn_tools, hid_write_file)``.
+
+    When the task's output file already has bytes, drop ``write_file`` from the
+    turn's manifest so a weak model doesn't cycle write_file → overwrite-ERROR →
+    retry, and is pushed onto the edit/AST family instead.
+
+    **F13 invariant (run 1.5):** the guard may never reduce a seat to ZERO
+    file-mutation affordances. If hiding ``write_file`` would leave the manifest
+    with no member of :data:`_WRITE_TOOL_NAMES` (e.g. an allowlisted seat with the
+    edit/AST family de-listed), the hide is SKIPPED — ``write_file`` is then the
+    only way to modify an existing output file, and the hide's whole premise
+    (redirect to edit tools) is void. Run 1.4 hit exactly this: the impl-seat
+    allowlist removed the edit family, the guard hid write_file, and the seat had
+    no way to write the drifted core.py.
+    """
+    if not output_has_content:
+        return tools, False
+    post_hide = [t for t in tools if t["name"] != "write_file"]
+    if any(t["name"] in _WRITE_TOOL_NAMES for t in post_hide):
+        return post_hide, True
+    return tools, False
 
 
 def _valid_mark_complete(calls: list[ToolCall], results: list[str]) -> bool:
