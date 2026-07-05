@@ -435,14 +435,25 @@ def test_ollama_adapter_strips_thinking_in_response(monkeypatch) -> None:
     assert resp.content == "actual reply"
 
 
-def test_ollama_adapter_shapes_tool_results_as_role_tool() -> None:
+def test_ollama_adapter_shapes_tool_results_one_message_per_result() -> None:
+    """Probe v6: one tool-role message per result; content is the result string
+    VERBATIM (no [name#id] marker); correlation via tool_name / tool_call_id."""
     adapter = OllamaAdapter()
-    turn = adapter.format_tool_results(
-        calls=[ToolCall(id="0", name="write_file", arguments={})],
-        results=["wrote 3 bytes"],
+    msgs = adapter.format_tool_results(
+        calls=[
+            ToolCall(id="0", name="read_file", arguments={}),
+            ToolCall(id="1", name="write_file", arguments={}),
+        ],
+        results=["apple\napricot\n", "wrote 3 bytes"],
     )
-    assert turn["role"] == "tool"
-    assert "write_file" in turn["content"] or "wrote" in turn["content"]
+    assert isinstance(msgs, list) and len(msgs) == 2
+    assert msgs[0] == {
+        "role": "tool", "content": "apple\napricot\n",
+        "tool_name": "read_file", "tool_call_id": "0",
+    }
+    assert msgs[1]["content"] == "wrote 3 bytes"  # verbatim, nothing prepended
+    # No marker leaks into any content field.
+    assert all("[read_file#" not in m["content"] for m in msgs)
 
 
 def test_anthropic_adapter_shapes_tool_results_as_blocks() -> None:
