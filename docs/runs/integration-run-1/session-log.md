@@ -471,3 +471,278 @@ tests/test_core.py
 verdicts/p3.json
 ```
 PROJECT_STATE.md: NOT PRESENT (P9 not reached).
+
+# RUN 1.2 — continuation (resumed ledger, spec-channel fixes)
+
+## Pre-flight (2026-07-05 17:54:20) @ fe1c57b
+```
+ollama /api/version: {"version":"0.31.1"}; conduit: HTTP 200
+workspace prep: tests/test_core.py DELETED (defective mock artifact); core.py UNTOUCHED (handle_message(self,message) drift intact, F4 experiment preserved)
+ledger: P3/P4 green, P5 red frontier; --next BLOCKED (waivers forbidden)
+conditions delta: T5.1 carries inline functional contract + import gate; T9.2 inline headers; verifiers order_after (run at their phase); F6-L lint active
+```
+### Execution reading
+Per the Part-3 ratification, the fresh P5 execution under fixed conditions is `--rerun-task T5.1 --oracle P5`. With the order_after runner fix, this now ALSO runs V5.1 (ordered after T5.1) — so the P5 verifier produces a verdict regardless of gate colour, satisfying the run-1.2 confirmation requirement.
+
+## P5 (1.2) fresh execution — RED (WORLD (a): spec-faithful red on the P4 drift) (2026-07-05 18:01:50)
+
+### Gate report (verbatim)
+```
+[*] Logging into Conduit as @agora:agora.local
+[*] Auto-inviting @fabs:agora.local to every created room
+=== phase P5 gate: RED ===
+  blockers: T5.1
+  nudge accounting: 1 fired (budget 1 - v3.2 erratum: stall-recovery)
+  [FAIL] T5.1 (block)
+      ok  tests_test_core.py_has_from_echobot_core_import_handle_messa
+      ok  tests_test_core.py_has_def_test_ping
+      ok  tests_test_core.py_has_def_test_echo_preserves_spacing
+      ok  tests_test_core.py_has_def_test_roll_deterministic
+      ok  tests_test_core.py_has_def_test_roll_malformed
+      ok  tests_test_core.py_has_def_test_help_lists_all_commands
+      ok  tests_test_core.py_has_def_test_unknown_command
+      ok  tests_test_core.py_has_def_test_non_command_returns_none
+      ok  run_check_python_-m_pytest_--collect-only_-q_f483ad
+      FAIL run_check_python_-m_pytest_-q_949dde
+      ok  mark_complete_called
+      run_check: python -m pytest --collect-only -q -> exit=0 passed=True
+        stdout: ....py::test_echo_preserves_spacing
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_roll_deterministic
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_roll_malformed
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_help_lists_all_commands
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_unknown_command
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_non_command_returns_none
+
+8 tests collected in 0.02s
+
+      run_check: python -m pytest -q -> exit=1 passed=False
+        stdout [stdout truncated]: ...sertionError
+=========================== short test summary info ===========================
+FAILED tests\test_core.py::test_ping - AssertionError: assert None == 'pong'
+FAILED tests\test_core.py::test_echo - AssertionError: assert None == 'Hello ...
+FAILED tests\test_core.py::test_echo_preserves_spacing - AssertionError: asse...
+FAILED tests\test_core.py::test_roll_deterministic - AssertionError: assert N...
+FAILED tests\test_core.py::test_roll_malformed - TypeError: argument of type ...
+FAILED
+  [FAIL] V5.1 (nonblock)
+      FAIL run_check_python_-c_import_json,sys;_d=json_load(open_0710ea
+      ok  mark_complete_called
+      run_check: python -c import json,sys; d=json.load(open('verdicts/p5.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail') -> exit=1 passed=False
+        stderr: Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json,sys; d=json.load(open('verdicts/p5.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail')
+                                 ~~~~^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'verdicts/p5.json'
+
+```
+### Which world: (a) SPEC-FAITHFUL RED — the pre-registered original experiment
+The F6/F7 fixes (inline contract + import gate) worked: the tester wrote spec-faithful tests that IMPORT and exercise the real implementation. Evidence (test signatures):
+```python
+from echobot.core import handle_message      # line 3 — REAL import (vs run-1.1 mock)
+def test_ping():
+    result = handle_message(message, rng)     # spec signature (text, rng)
+    assert result == "pong"
+```
+pytest reds on the P4 DRIFT: core.py is `def handle_message(self, message)`, so `handle_message("!ping", rng)` binds text->self, rng->message and returns None (or TypeError on roll):
+```
+FAILED test_ping - AssertionError: assert None == "pong"
+FAILED test_echo - AssertionError: assert None == "Hello ..."
+FAILED test_roll_malformed - TypeError: argument of type ...
+```
+### V5.1 — RAN THIS TIME (F5/order_after fix verified)
+V5.1 executed even though its blocking predecessor T5.1 failed (run 1.1: it was DAG-skipped; now order_after makes it run at gate time). tools=['mark_complete','post_note','read_file','recall_knowledge'], nudges=1. BUT it used post_note instead of write_file, so verdicts/p5.json never landed and its verdict-parse gate failed (FileNotFoundError). Structural F5 fix CONFIRMED (verifier runs regardless of gate colour); verifier-tool-fidelity finding: instruct posted a note instead of writing the verdict artifact.
+### Observations
+- nudges_used: T5.1=0, V5.1=1.
+- F3 (run.log tool results): present (22 tool-call result lines this run).
+- Truncation flags: pytest -q stdout truncated (stdout_truncated=true) — the long-output channel stressed and flagged correctly (first truncation event in the program).
+### Repair (Part 3 world (a)): designated cross-phase repair
+`--rerun-task T4.1 --oracle P5` — the implementer receives the verbatim TypeError/None oracle and should refactor handle_message(self,message) -> handle_message(text,rng); then P5's gate is re-evaluated mechanically over the workspace. (One attempt; second red on P5 => STOP.)
+
+### Delivered T4.1 repair prompt (verbatim — carries the P5 pytest oracle)
+```
+Implement the router in echobot/core.py: handle_message dispatches !ping->"pong", !echo <text>->text verbatim (everything after the first space), !help->one line per command, unknown !cmd->"unknown command: cmd (try !help)", and returns None for non-command input.
+
+The following gate failed.
+
+Oracle output (verbatim):
+  $ python -m pytest -q   (exit=1, timed_out=False)
+  stdout [truncated]:
+FFFFFFF.                                                                 [100%]
+================================== FAILURES ===================================
+__________________________________ test_ping __________________________________
+
+    def test_ping():
+        """Tests the !ping command returns 'pong'."""
+        message = "!ping"
+        result = run_test(message)
+>       assert result == "pong"
+E       AssertionError: assert None == 'pong'
+
+tests\test_core.py:15: AssertionError
+__________________________________ test_echo __________________________________
+
+    def test_echo():
+        """Tests basic !echo functionality."""
+        content = "Hello World"
+        message = f"!echo {content}"
+        result = run_test(message)
+>       assert result == content
+E       AssertionError: assert None == 'Hello World'
+
+tests\test_core.py:22: AssertionError
+_________________________ test_echo_preserves_spacing _________________________
+
+    def test_echo_preserves_spacing():
+        """Tests that echo preserves spacing (e.g., multiple spaces)."""
+        # The input message must start with !echo and be followed by the content,
+        # including leading/internal/trailing spaces to test preservation.
+        content = "  multiple   spaces  "
+        message = f"!echo {content}"
+        rng = random.Random(42) # Use a fixed seed for determinism
+        result = handle_message(message, rng)
+>       assert result == content
+E       AssertionError: assert None == '  multiple   spaces  '
+
+tests\test_core.py:32: AssertionError
+___________________________ test_roll_deterministic ___________________________
+
+    def test_roll_deterministic():
+        """Tests !roll NdM with deterministic output using a seeded random.Random."""
+        # Test 2d6 roll (Expected: 3+5=8 if seed is 42 and rolls are sequential)
+        message = "!roll 2d6"
+        rng = random.Random(42) # Fixed seed for determinism
+        result = handle_message(message, rng)
+        # The expected format is "rolled NdM: a+b+...=total"
+>       assert result == "rolled 2d6: 3+5=8"
+E       AssertionError: assert None == 'rolled 2d6: 3+5=8'
+
+tests\test_core.py:41: AssertionError
+_____________________________ test_roll_malformed _____________________________
+
+    def test_roll_malformed():
+        """Tests !roll with malformed specification."""
+        message = "!roll notadrive"
+        result = run_test(message)
+        # Expecting a usage message for malformed spec
+>       assert "Usage: !roll NdM" in result
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: argument of type 'NoneType' is not a container or iterable
+
+tests\test_core.py:48: TypeError
+________________________ test_help_lists_all_commands _________________________
+
+    def test_help_lists_all_commands():
+        """Tests that !help lists all available commands."""
+        message = "!help"
+        result = run_test(message)
+        # Check if the output contains expected command names (ping, echo, roll, help, unknown)
+>       assert "ping" in result
+               ^^^^^^^^^^^^^^^^
+E       TypeError: argument of type 'NoneType' is not a container or iterable
+
+tests\test_core.py:55: TypeError
+____________________________ test_unknown_command _____________________________
+
+    def test_unknown_command():
+        """Tests handling of an unknown command."""
+        message = "!fakecommand arg1"
+        result = run_test(message)
+>       assert result == "unknown command: fakecommand (try !help)"
+E       AssertionError: assert None == 'unknown command: fakecommand (try !help)'
+
+tests\test_core.py:64: AssertionError
+=========================== short test summary info ===========================
+FAILED tests\test_core.py::test_ping - AssertionError: assert None == 'pong'
+FAILED tests\test_core.py::test_echo - AssertionError: assert None == 'Hello ...
+FAILED tests\test_core.py::test_echo_preserves_spacing - AssertionError: asse...
+FAILED tests\test_core.py::test_roll_deterministic - AssertionError: assert N...
+FAILED tests\test_core.py::test_roll_malformed - TypeError: argument of type ...
+FAILED
+
+Re-satisfy exactly this gate. Change only what the oracle points at.
+```
+
+## P5 (1.2) repair cell — designated T4.1 cross-phase → MECHANICAL RED → RUN STOPPED (2026-07-05 18:06:23) [P5 repair budget 1/1]
+
+### Gate report after repair (verbatim)
+```
+[*] Logging into Conduit as @agora:agora.local
+[*] Auto-inviting @fabs:agora.local to every created room
+=== phase P5 gate: RED ===
+  blockers: T5.1
+  nudge accounting: 0 fired (budget 1 - v3.2 erratum: stall-recovery)
+  [FAIL] T5.1 (block)
+      ok  tests_test_core.py_has_from_echobot_core_import_handle_messa
+      ok  tests_test_core.py_has_def_test_ping
+      ok  tests_test_core.py_has_def_test_echo_preserves_spacing
+      ok  tests_test_core.py_has_def_test_roll_deterministic
+      ok  tests_test_core.py_has_def_test_roll_malformed
+      ok  tests_test_core.py_has_def_test_help_lists_all_commands
+      ok  tests_test_core.py_has_def_test_unknown_command
+      ok  tests_test_core.py_has_def_test_non_command_returns_none
+      ok  run_check_python_-m_pytest_--collect-only_-q_f483ad
+      FAIL run_check_python_-m_pytest_-q_949dde
+      ok  mark_complete_called
+      run_check: python -m pytest --collect-only -q -> exit=0 passed=True
+        stdout: ....py::test_echo_preserves_spacing
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_roll_deterministic
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_roll_malformed
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_help_lists_all_commands
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_unknown_command
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_non_command_returns_none
+
+8 tests collected in 0.01s
+
+      run_check: python -m pytest -q -> exit=1 passed=False
+        stdout [stdout truncated]: ...sertionError
+=========================== short test summary info ===========================
+FAILED tests\test_core.py::test_ping - AssertionError: assert None == 'pong'
+FAILED tests\test_core.py::test_echo - AssertionError: assert None == 'Hello ...
+FAILED tests\test_core.py::test_echo_preserves_spacing - AssertionError: asse...
+FAILED tests\test_core.py::test_roll_deterministic - AssertionError: assert N...
+FAILED tests\test_core.py::test_roll_malformed - TypeError: argument of type ...
+FAILED
+  [FAIL] V5.1 (nonblock)
+      FAIL run_check_python_-c_import_json,sys;_d=json_load(open_0710ea
+      ok  mark_complete_called
+      run_check: python -c import json,sys; d=json.load(open('verdicts/p5.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail') -> exit=1 passed=False
+        stderr: Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json,sys; d=json.load(open('verdicts/p5.json')); assert {'phase','verdict','reasons'} <= set(d) and d['verdict'] in ('pass','fail')
+                                 ~~~~^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'verdicts/p5.json'
+
+```
+### Repair outcome: FAILED — world-(a) prediction FALSIFIED
+- The designated cross-phase repair `--rerun-task T4.1 --oracle P5` delivered the verbatim pytest oracle (None/TypeError on the drift) to the implementer.
+- T4.1 response: tools_used=['read_file'], nudges=0, status=passed(own gate) — it READ core.py and called mark_complete WITHOUT editing. core.py is UNCHANGED: still `def handle_message(self, message)` with `self.rng` (the drift).
+- The mechanical P5 re-eval (ledger #8, correctly flagged MECHANICAL — item-0 flag verified) re-ran pytest against the unfixed core.py -> identical failures -> RED.
+- Prediction 'the implementer refactors class->function under the TypeError oracle; mechanical re-eval green' is FALSIFIED. Repair-doctrine finding: the oracle was expressive (F7 satisfied — verbatim TypeError), but T4.1's OWN gate (import + file_contains 'def handle_message') was already green, so the implementer had no local signal of a defect and no-op'd. Oracle expressiveness is necessary but not sufficient — the repaired task needs a gate that reds on the same defect, or a prompt that names the required change (signature refactor).
+
+### F-fix verifications this run
+- F6/F7 (inline contract + import gate): VERIFIED — tester wrote spec-faithful tests importing echobot.core (world a), vs run-1.1 mock-only.
+- F5 (order_after verifiers): VERIFIED — V5.1 RAN on a red T5.1 (run 1.1 skipped it). Caveat: instruct used post_note, no verdict file landed (verifier-tool-fidelity finding).
+- F3 (run.log): VERIFIED — 22 tool-result lines this run.
+- Item-0 mechanical flag: VERIFIED — #8 P5 record marked mechanical; --status renders '(mechanical re-eval)'.
+- Truncation channel: pytest -q stdout truncated + flagged (first truncation event in the program) — F3 channel-length watchlist item exercised.
+
+### Phase gate ledger (P5 rows)
+```
+#3 #4 P5 RED  [run 1]        #5 #6 P5 RED [run 1.1]
+#7 P5 RED (world-a fresh)    #8 P5 RED MECHANICAL (T4.1 designated repair) -> STOP
+```
+
+**RUN 1.2 STOPPED at P5 (second red on the same gate; designated repair failed). P6/P7/P9 not reached. No PROJECT_STATE.md. No waiver. Drift (F4) intact — the repair did not fix it.**
+
+### Final workspace tree (runs_out/integration-run-1/echobot/echobot, git/pycache elided)
+```
+.gitignore
+README.md
+echobot/__init__.py
+echobot/__main__.py
+echobot/core.py
+requirements.txt
+tests/test_core.py
+verdicts/p3.json
+```
+PROJECT_STATE.md: NOT PRESENT (P9 not reached).
