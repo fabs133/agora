@@ -131,8 +131,12 @@ class ToolContext:
     # hint) instead of leaking a raw traceback/KeyError string to the model;
     # "raw" reproduces v2 behaviour byte-identically. ``nudge_budget`` caps the
     # number of in-loop completion nudges (0 = off, byte-identical to v2).
+    # ``review_budget`` caps in-loop completion REVIEWS (S6): on a valid
+    # mark_complete the framework reads the written output back to the model
+    # once and asks it to confirm or revise (0 = off, byte-identical to v3.2).
     tool_errors: str = "raw"
     nudge_budget: int = 0
+    review_budget: int = 0
 
 
 # ============================ Tool descriptions ============================

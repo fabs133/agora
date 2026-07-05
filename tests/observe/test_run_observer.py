@@ -273,6 +273,38 @@ def test_record_task_from_result_skipped(tmp_path: Path) -> None:
     assert rec.iterations is None
 
 
+def test_review_provenance_round_trips(tmp_path: Path) -> None:
+    """S6 review fields flow from TaskResult → TaskRecord → tasks.jsonl → parse."""
+    obs = _observer(tmp_path)
+    obs.task_started("build")
+    rec = obs.record_task_from_result(
+        task=_fake_task("build", output_path="out/x.txt"),
+        result=_fake_result(reviews_used=1, post_review_action="revise"),
+        role="implementer",
+        task_index=0,
+    )
+    assert rec.reviews_used == 1
+    assert rec.post_review_action == "revise"
+    obs.close()
+    parsed = TaskRecord.model_validate(_read_jsonl(tmp_path / "out" / "tasks.jsonl")[0])
+    assert parsed.reviews_used == 1
+    assert parsed.post_review_action == "revise"
+
+
+def test_review_provenance_defaults_when_absent(tmp_path: Path) -> None:
+    """A result lacking the S6 fields (pre-v8) records reviews_used=0, action=None."""
+    obs = _observer(tmp_path)
+    obs.task_started("build")
+    rec = obs.record_task_from_result(
+        task=_fake_task("build", output_path="out/x.txt"),
+        result=_fake_result(),  # no reviews_used / post_review_action attrs
+        role="implementer",
+        task_index=0,
+    )
+    assert rec.reviews_used == 0
+    assert rec.post_review_action is None
+
+
 def test_skipped_rows_emit_null_and_aggregation_ignores_them(tmp_path: Path) -> None:
     """A skipped-heavy run: null fields on skip rows; tasks_first_pass ignores them."""
     obs = _observer(tmp_path)

@@ -442,18 +442,20 @@ class StageRunner:
 
             reinforced_ids = [l.id for l in filter_active(list(identity.learned_patterns))]
 
-        return self._runtime.tool_stats.apply_to(
-            TaskResult(
-                task_id=task.id,
-                success=success,
-                output=last_final_text,
-                artifacts=artifacts,
-                postcondition_results=postcondition_results,
-                reinforced_ids=reinforced_ids,
-                token_usage=total_usage,
-                iterations=total_iterations,
-                stop_reason=last_stop,
-                artifact_capture=artifact_capture,
+        return self._runtime.review_stats.apply_to(
+            self._runtime.tool_stats.apply_to(
+                TaskResult(
+                    task_id=task.id,
+                    success=success,
+                    output=last_final_text,
+                    artifacts=artifacts,
+                    postcondition_results=postcondition_results,
+                    reinforced_ids=reinforced_ids,
+                    token_usage=total_usage,
+                    iterations=total_iterations,
+                    stop_reason=last_stop,
+                    artifact_capture=artifact_capture,
+                )
             )
         )
 

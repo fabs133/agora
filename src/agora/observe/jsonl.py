@@ -195,6 +195,11 @@ class TaskRecord(BaseModel):
     # the bytes actually written when a task failed with its output present (the
     # gemma equality near-miss). Additive optional; schema_version stays 1.
     artifact_capture: dict[str, Any] | None = None
+    # v8 completion-review provenance (S6). ``reviews_used`` is how many times
+    # the in-loop read-back fired this task; ``post_review_action`` is what the
+    # model did on the turn after the last review. Additive; schema stays 1.
+    reviews_used: int = 0
+    post_review_action: Literal["confirm", "revise", "other"] | None = None
 
 
 class RunRecord(BaseModel):
@@ -601,6 +606,8 @@ class RunObserver:
             failure_detail=failure_detail,
             duration_s=float(getattr(result, "duration_s", 0.0) or 0.0),
             artifact_capture=getattr(result, "artifact_capture", None),
+            reviews_used=int(getattr(result, "reviews_used", 0) or 0),
+            post_review_action=getattr(result, "post_review_action", None),
         )
 
     def close(self) -> None:

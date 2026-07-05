@@ -68,8 +68,12 @@ class HarnessConfig:
     # tool validation/handler failures as a CorrectiveError (schema + hint)
     # instead of leaking a raw crash string; "raw" is v2 behaviour byte-for-byte.
     # ``nudge_budget`` caps in-loop completion nudges (0 = off = v2 behaviour).
+    # ``review_budget`` caps in-loop completion reviews (S6, v8): on a valid
+    # mark_complete the harness reads the written output back to the model and
+    # asks it to confirm or revise (0 = off, byte-identical to v3.2).
     tool_errors: str = "raw"
     nudge_budget: int = 0
+    review_budget: int = 0
 
     @classmethod
     def from_env(cls, work_dir: str | Path = "workspace") -> HarnessConfig:
@@ -92,6 +96,7 @@ class HarnessConfig:
             routed_retry_budget=int(os.getenv("AGORA_ROUTED_RETRY_BUDGET", "2")),
             tool_errors=tool_errors,
             nudge_budget=int(os.getenv("AGORA_HARNESS_NUDGE_BUDGET", "0")),
+            review_budget=int(os.getenv("AGORA_HARNESS_REVIEW_BUDGET", "0")),
             work_dir=work_dir_path,
             knowledge_cache_dir=work_dir_path / ".knowledge",
         )
@@ -256,6 +261,7 @@ def build_orchestrator(
         routed_retry_budget=cfg.routed_retry_budget,
         tool_errors=cfg.tool_errors,
         nudge_budget=cfg.nudge_budget,
+        review_budget=cfg.review_budget,
         observer=observer,
     )
 

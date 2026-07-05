@@ -81,6 +81,38 @@ class TaskResult:
     # output file WAS written (equality near-miss), the first 2KB of the actual
     # bytes, so a wrong-bytes failure is diagnosable from JSONL alone.
     artifact_capture: dict[str, Any] | None = None
+    # v8 completion-review provenance (S6). ``reviews_used`` counts how many
+    # times the in-loop read-back fired this task; ``post_review_action`` is
+    # what the model did on the turn after the LAST review — "confirm" (called
+    # mark_complete again), "revise" (edited/rewrote a file), or "other". None
+    # ⇒ no review fired (review_budget=0 or no valid mark_complete reached).
+    reviews_used: int = 0
+    post_review_action: str | None = None
+
+
+@dataclass
+class _ReviewStats:
+    """Per-task-attempt record of S6 completion-review fires.
+
+    Like :class:`_ToolCallStats`, this lives on one :class:`AgentRuntime`
+    instance (constructed fresh per task attempt) so it aggregates across a
+    staged task's stages yet stays scoped to a single attempt.
+    ``post_review_action`` classifies the model's action on the turn
+    immediately after the LAST review fired; None means no review fired.
+    """
+
+    reviews_used: int = 0
+    post_review_action: str | None = None
+
+    def apply_to(self, result: "TaskResult") -> "TaskResult":
+        """Return ``result`` with the accumulated review fields populated."""
+        from dataclasses import replace as _replace
+
+        return _replace(
+            result,
+            reviews_used=self.reviews_used,
+            post_review_action=self.post_review_action,
+        )
 
 
 @dataclass
@@ -189,6 +221,9 @@ class AgentRuntime:
         # runtime is constructed fresh per task attempt, so this scopes to one
         # attempt yet aggregates across a staged task's stages.
         self.tool_stats = _ToolCallStats()
+        # Per-attempt S6 completion-review accumulator (v8). Scoped to one task
+        # attempt like ``tool_stats``; aggregates across a staged task's stages.
+        self.review_stats = _ReviewStats()
         # Authoritative 0-based iteration index for the active tool loop turn,
         # set in ``_run_loop``. ``_fallback_this_turn`` is flipped by the
         # adapter hook when the current turn's calls came from text fallback;
@@ -295,19 +330,21 @@ class AgentRuntime:
 
             reinforced_ids = [l.id for l in filter_active(list(identity.learned_patterns))]
 
-        return self.tool_stats.apply_to(
-            TaskResult(
-                task_id=task.id,
-                success=success,
-                output=final_text,
-                artifacts=artifacts,
-                postcondition_results=postcondition_results,
-                learnings=learnings,
-                reinforced_ids=reinforced_ids,
-                token_usage=total_usage,
-                iterations=iterations,
-                stop_reason=last_stop,
-                artifact_capture=artifact_capture,
+        return self.review_stats.apply_to(
+            self.tool_stats.apply_to(
+                TaskResult(
+                    task_id=task.id,
+                    success=success,
+                    output=final_text,
+                    artifacts=artifacts,
+                    postcondition_results=postcondition_results,
+                    learnings=learnings,
+                    reinforced_ids=reinforced_ids,
+                    token_usage=total_usage,
+                    iterations=iterations,
+                    stop_reason=last_stop,
+                    artifact_capture=artifact_capture,
+                )
             )
         )
 
@@ -335,6 +372,11 @@ class AgentRuntime:
         final_text = ""
         last_stop = ""
         nudges_used = 0
+        # S6 completion-review loop state (v8). ``reviews_used`` caps fires at
+        # ``ctx.review_budget``; ``awaiting_post_review`` is set the turn a review
+        # fires so the NEXT turn's action is classified (confirm/revise/other).
+        reviews_used = 0
+        awaiting_post_review = False
         # Per-tool JSON schemas for the v3 tool-boundary contract (S1). Stable
         # across turns; used to validate calls and to render CorrectiveErrors.
         schemas = {
@@ -379,6 +421,12 @@ class AgentRuntime:
             final_text = resp.content or final_text
 
             if not resp.tool_calls:
+                # A silent turn after a completion review is an "other" action
+                # (neither a confirm nor a revise) — record it before the loop
+                # may break or nudge.
+                if awaiting_post_review:
+                    self.review_stats.post_review_action = "other"
+                    awaiting_post_review = False
                 # v3 completion nudge (S2). A dead loop (0 tool calls) with the
                 # expected output still unwritten and budget remaining gets ONE
                 # corrective user turn and continues; otherwise terminate exactly
@@ -472,6 +520,44 @@ class AgentRuntime:
                         messages,
                         _tool_results_turn(self._llm, hook_calls, hook_results),
                     )
+
+            # S6 completion review (v8). First classify the action on the turn
+            # after the LAST review fired (this turn); then, if a fresh valid
+            # mark_complete arrived and budget remains, read the written output
+            # back to the model VERBATIM (through the v7 rendering path) and ask
+            # it to confirm or revise, continuing the loop. review_budget=0
+            # (default) ⇒ neither branch is entered ⇒ byte-identical to v3.2:
+            # nothing is constructed, no message injected.
+            if awaiting_post_review:
+                self.review_stats.post_review_action = _classify_post_review(
+                    call_list, results
+                )
+                awaiting_post_review = False
+            if (
+                self._ctx.review_budget
+                and reviews_used < self._ctx.review_budget
+                and _valid_mark_complete(call_list, results)
+            ):
+                reviews_used += 1
+                self.review_stats.reviews_used = reviews_used
+                readback = _render_completion_readback(self._ctx)
+                logger.info(
+                    "completion review %d/%d: task=%s reading back %d file(s)",
+                    reviews_used, self._ctx.review_budget, task_id,
+                    len(self._ctx.written_files),
+                )
+                review_call = ToolCall(
+                    id=f"{task_id}-review-{reviews_used}",
+                    name="completion_review",
+                    arguments={},
+                )
+                review_resp = LLMResponse(content="", tool_calls=(review_call,))
+                messages.append(_assistant_turn(self._llm, review_resp))
+                _append_turn(
+                    messages,
+                    _tool_results_turn(self._llm, [review_call], [readback]),
+                )
+                awaiting_post_review = True
         else:
             logger.warning(
                 "agent_runtime: max_iterations (%d) reached for task %s", max_iterations, task_id
@@ -888,6 +974,76 @@ def _expected_output_missing(ctx: ToolContext) -> str | None:
     if path.is_file() and path.stat().st_size > 0:
         return None
     return rel
+
+
+#: File-mutating tool names. A clean call to any of these on the turn after a
+#: completion review is classified as a "revise" action (S6 provenance).
+_WRITE_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "write_file",
+        "edit_file_replace",
+        "edit_file_insert_before",
+        "edit_file_append",
+        "add_function",
+        "add_class",
+        "add_class_method",
+        "fill_test_body",
+    }
+)
+
+
+def _valid_mark_complete(calls: list[ToolCall], results: list[str]) -> bool:
+    """True iff this turn contains a ``mark_complete`` that dispatched cleanly.
+
+    The S6 review trigger: a mark_complete whose result is neither a corrective
+    rejection nor a raw crash string (both begin ``ERROR:``). Mirrors the
+    "valid completion" the postcondition layer observes, without re-validating
+    the schema here.
+    """
+    for call, res in zip(calls, results, strict=True):
+        if call.name == "mark_complete" and not (res or "").startswith("ERROR:"):
+            return True
+    return False
+
+
+def _classify_post_review(calls: list[ToolCall], results: list[str]) -> str:
+    """Classify the model's action on the turn after a completion review.
+
+    - ``"confirm"``: re-called ``mark_complete`` cleanly (accepted the output).
+    - ``"revise"``: made a clean file-mutating call (edited/rewrote first).
+    - ``"other"``: only non-mutating / errored calls this turn.
+    """
+    if _valid_mark_complete(calls, results):
+        return "confirm"
+    for call, res in zip(calls, results, strict=True):
+        if call.name in _WRITE_TOOL_NAMES and not (res or "").startswith("ERROR:"):
+            return "revise"
+    return "other"
+
+
+def _render_completion_readback(ctx: ToolContext) -> str:
+    """Render the written output files verbatim for the S6 review read-back.
+
+    Each file this task wrote is rendered as ``<path> (<N> bytes):`` — N being
+    the on-disk BYTE count — followed by its exact bytes decoded as UTF-8; the
+    block ends with the single confirm-or-revise instruction line. The string
+    is handed to the adapter's tool-result formatter unchanged, so on the v7
+    (form-B bare tool message) path the bytes reach the model with real
+    newlines and no re-escaping — no new formatting is invented here.
+    """
+    parts: list[str] = []
+    for rel in ctx.written_files:
+        path = Path(ctx.work_dir) / rel
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        parts.append(f"{rel} ({len(raw)} bytes):\n{raw.decode('utf-8', errors='replace')}")
+    parts.append(
+        "Review the written content against the task. Confirm completion "
+        "(call mark_complete again) or revise the file first."
+    )
+    return "\n".join(parts)
 
 
 async def _run_tool(call: ToolCall, executor: dict[str, Any]) -> str:

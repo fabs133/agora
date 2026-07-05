@@ -208,12 +208,33 @@ runs:
     camp = tmp_path / "c.yaml"
     camp.write_text(yaml_text, encoding="utf-8")
     plan = expand_plan(load_campaign(str(camp)))
-    assert plan[0]["harness"] == {"tool_errors": "corrective", "nudge_budget": 1}
+    assert plan[0]["harness"] == {
+        "tool_errors": "corrective", "nudge_budget": 1, "review_budget": 0,
+    }
     # per-run overrides only nudge_budget; tool_errors inherited from defaults
-    assert plan[1]["harness"] == {"tool_errors": "corrective", "nudge_budget": 5}
+    assert plan[1]["harness"] == {
+        "tool_errors": "corrective", "nudge_budget": 5, "review_budget": 0,
+    }
     env = build_env(plan[0], "d")
     assert env["AGORA_HARNESS_TOOL_ERRORS"] == "corrective"
     assert env["AGORA_HARNESS_NUDGE_BUDGET"] == "1"
+    assert env["AGORA_HARNESS_REVIEW_BUDGET"] == "0"
+
+
+def test_review_budget_resolves_and_emits_env() -> None:
+    """The committed v8 campaign resolves review_budget=1 (nudge off) and
+    build_env forwards it as AGORA_HARNESS_REVIEW_BUDGET."""
+    plan = expand_plan(load_campaign("campaigns/axis-1-v8.yaml"))
+    assert len(plan) == 15
+    assert all(
+        r["harness"] == {
+            "tool_errors": "corrective", "nudge_budget": 0, "review_budget": 1,
+        }
+        for r in plan
+    )
+    env = build_env(plan[0], "d")
+    assert env["AGORA_HARNESS_REVIEW_BUDGET"] == "1"
+    assert env["AGORA_HARNESS_NUDGE_BUDGET"] == "0"
 
 
 def test_load_campaign_rejects_invalid_tool_errors(tmp_path) -> None:
@@ -238,7 +259,10 @@ def test_v2_campaign_defaults_to_raw_no_nudge() -> None:
     """A campaign with no harness block resolves to raw/0 — v2 behaviour — and
     the committed v2 YAML still loads."""
     plan = expand_plan(load_campaign(COMMITTED))
-    assert all(r["harness"] == {"tool_errors": "raw", "nudge_budget": 0} for r in plan)
+    assert all(
+        r["harness"] == {"tool_errors": "raw", "nudge_budget": 0, "review_budget": 0}
+        for r in plan
+    )
 def test_write_plan_index_merges_disjoint_blocks(tmp_path) -> None:
     """Staged execution writes the index once per block; the second block must
     extend the first, not truncate it (the axis-1 v2 C1 bug)."""

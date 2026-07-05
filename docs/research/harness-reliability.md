@@ -146,3 +146,73 @@ The S2 line is closed. The registered next lever must target the actual
 post-v7 residual (tail-newline / separator byte errors on concat+redirect),
 which is a validation/prompt-shaped intervention — a **new**
 pre-registration, not a continuation of this one.
+
+---
+
+## v8 pre-registration: completion review (S6) — FINAL lever of this phase
+
+*Registered 2026-07-03, before implementation or any run. Stopping rule,
+pre-committed: after v8 the gate is evaluated with whatever pool exists —
+met, or formally renegotiated (gemma + qwen3-ensemble). No v9 lever.*
+
+Mechanism: on a VALID mark_complete with review_budget > 0 (default 0),
+harness injects the written output file(s) as a tool result — verbatim
+bytes through the v7-transparent channel, prefixed `<path> (<N> bytes):`
+— plus one line asking to confirm completion or revise first. One round;
+then completion proceeds regardless. Production-valid (reflection, no
+oracle). Known blind spots, accepted: never fires without mark_complete
+(coder content_robustness omission unreachable); cannot help models that
+never reach a valid completion.
+
+Per-model expectations (v8 = v3.2 config + review_budget 1, 5 blocks x 3):
+- instruct: loop_depth (trailing-newline off-by-one) is the review's
+  center-of-mass target. Prediction: loop_depth >=2/3 -> instruct 9/9 ->
+  GATE MET (two profiles <=12 GB). FALSIFIED for instruct if loop_depth
+  stays 0/3 with the review observed-and-ignored (confirm-without-fix).
+- gemma: MUST stay 9/9 (review fires on its valid completions; safety
+  check = the review does not perturb a passing model). Any regression
+  halts interpretation pending mechanism review.
+- nemo: dropped-operand and off-by-one errors are visible in read-back;
+  directional improvement plausible, no numeric threshold registered
+  (0/9 baseline, weakest protocol discipline in the pool).
+- coder-14b: small_chain stays 3/3; content_robustness stays 0/3 BY
+  CONSTRUCTION (blind spot above) — recorded as the residual
+  completion-signal problem, not a review failure.
+- qwen3: categorical read only (multimodal; repeat_distinct 2/3 at v3.2).
+
+Gate evaluation after v8, pre-committed outcomes:
+- instruct reaches 9/9 -> gate MET -> routing flags to profiles.yaml,
+  integration phase opens with {gemma, instruct}, qwen3 ensemble-optional.
+- instruct does not -> gate NOT met -> renegotiation decision (single
+  profile + ensemble vs. gate revision) goes to the project owner with
+  the full grid; no further levers.
+
+## v8 resolution note (2026-07-05) — S6 observed-and-ignored; gate NOT met
+
+Full report: [`docs/runs/axis-1-v8/findings.md`](../runs/axis-1-v8/findings.md).
+Ran at the pre-registered config (`corrective`, `nudge_budget: 0`,
+`review_budget: 1`) under probe v7, one variable vs the v3.2 baseline.
+
+- **Gate-deciding cell falsified exactly as written.** instruct loop_depth
+  stayed **0/3**: the review fired 3/3 and on all three the model, handed
+  its own 54-byte output (missing the trailing `\n`) verbatim, called
+  mark_complete again unchanged (`post_review_action = confirm`). The
+  reflection surface works; the model cannot self-detect a one-byte tail
+  error even when shown it. instruct 6/9.
+- **Do-no-harm holds.** gemma stayed **9/9**; the review fired on all its
+  valid completions and never perturbed a passing file. `review_budget=0`
+  constructs nothing (byte-identical to v3.2). The mechanism is
+  production-valid.
+- **New structural blind spot.** content_robustness records
+  `post_review_action = None` for ALL five profiles: the redirect stage's
+  max_iterations is 4, models spend all 4 turns before mark_complete, so
+  the review fires on the last turn with no runway to be consumed. A
+  read-back lever needs a spare post-completion turn.
+- **Gate: NOT met.** gemma-e4b remains the only 9/9; instruct 6/9, and
+  qwen3 / nemo / coder all 0/9. S6 lifted no second model.
+
+Per the pre-committed stopping rule, this phase is closed: **no v9 lever.**
+The gate decision — single-profile (gemma) + qwen3 ensemble-optional vs.
+gate revision — goes to the project owner with the full v8 grid. The
+residual is a model byte-level self-perception limit, not a
+harness-recoverable class; no in-loop reflection surface reaches it.

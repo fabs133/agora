@@ -171,11 +171,18 @@ async def main() -> None:
         strategy=strategy_name,
         # v3 provenance: the harness config actually in force + the probe design
         # version carried from the flow file.
-        harness={"tool_errors": cfg.tool_errors, "nudge_budget": cfg.nudge_budget},
+        harness={
+            "tool_errors": cfg.tool_errors,
+            "nudge_budget": cfg.nudge_budget,
+            "review_budget": cfg.review_budget,
+        },
         probe_version=getattr(plan.flow, "probe_version", None),
     )
-    if cfg.tool_errors != "raw" or cfg.nudge_budget:
-        print(f"[*] Harness: tool_errors={cfg.tool_errors} nudge_budget={cfg.nudge_budget}")
+    if cfg.tool_errors != "raw" or cfg.nudge_budget or cfg.review_budget:
+        print(
+            f"[*] Harness: tool_errors={cfg.tool_errors} "
+            f"nudge_budget={cfg.nudge_budget} review_budget={cfg.review_budget}"
+        )
     print(f"[*] Run observer → {output_dir} (run_id={run_id})")
 
     # When a strategy is set, wrap the profile's factory so every adapter the

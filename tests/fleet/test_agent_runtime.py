@@ -245,6 +245,107 @@ async def test_nudge_skipped_when_output_present(tmp_path, fake_matrix_client) -
     assert result.iterations == 1  # output present → no nudge
 
 
+_REVIEW_LINE = "Review the written content against the task."
+
+
+def _count_readbacks(messages) -> int:
+    """Count S6 read-back tool-result blocks in one message list."""
+    n = 0
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and _REVIEW_LINE in str(block.get("content", "")):
+                    n += 1
+        elif _REVIEW_LINE in str(content):
+            n += 1
+    return n
+
+
+def _longest_history(llm) -> list:
+    """The message list from the loop turn with the most accumulated history."""
+    return max(llm.calls, key=lambda c: len(c["messages"]))["messages"]
+
+
+async def test_review_budget_zero_constructs_nothing(tmp_path, fake_matrix_client) -> None:
+    """budget=0 ⇒ a valid mark_complete injects no read-back — v3.2 behaviour."""
+    llm = FakeLLM([
+        LLMResponse(content="", tool_calls=(
+            tool_call("write_file", {"path": "out/x.txt", "content": "hi\n"}),)),
+        LLMResponse(content="", tool_calls=(tool_call("mark_complete", {"summary": "done"}),)),
+        LLMResponse(content="wrapping up", tool_calls=()),
+        LLMResponse(content="[]"),
+    ])
+    runtime, identity, ctx = await _prepare(tmp_path, fake_matrix_client, llm)
+    ctx.review_budget = 0
+    result = await runtime.execute_task(_task_out(), identity)
+    assert all(_count_readbacks(c["messages"]) == 0 for c in llm.calls)
+    assert result.reviews_used == 0
+    assert result.post_review_action is None
+
+
+async def test_review_fires_once_then_finalizes(tmp_path, fake_matrix_client) -> None:
+    """budget=1 ⇒ review fires on the first valid mark_complete; the next valid
+    mark_complete finalizes with NO second read-back (budget exhausted)."""
+    llm = FakeLLM([
+        LLMResponse(content="", tool_calls=(
+            tool_call("write_file", {"path": "out/x.txt", "content": "hi\n"}),)),
+        LLMResponse(content="", tool_calls=(tool_call("mark_complete", {"summary": "done"}),)),
+        LLMResponse(content="", tool_calls=(tool_call("mark_complete", {"summary": "confirmed"}),)),
+        LLMResponse(content="bye", tool_calls=()),
+        LLMResponse(content="[]"),
+    ])
+    runtime, identity, ctx = await _prepare(tmp_path, fake_matrix_client, llm)
+    ctx.review_budget = 1
+    result = await runtime.execute_task(_task_out(), identity)
+    assert result.reviews_used == 1
+    assert result.post_review_action == "confirm"
+    # Exactly one read-back reached the model, despite two valid mark_completes.
+    assert _count_readbacks(_longest_history(llm)) == 1
+
+
+async def test_review_readback_is_verbatim_with_byte_count(tmp_path, fake_matrix_client) -> None:
+    """The injected read-back names the byte count and carries the file bytes
+    verbatim (real newlines, no re-escaping)."""
+    from agora.fleet.agent_runtime import _render_completion_readback
+
+    (tmp_path / "out").mkdir()
+    content = "line1\nline2\n"  # 12 bytes
+    (tmp_path / "out" / "x.txt").write_bytes(content.encode("utf-8"))
+    ctx = ToolContext(
+        work_dir=str(tmp_path),
+        matrix_client=fake_matrix_client,
+        agent_room_id="!a:agora.local",
+        project_room_id="!p:agora.local",
+    )
+    ctx.written_files.append("out/x.txt")
+    out = _render_completion_readback(ctx)
+    assert "out/x.txt (12 bytes):" in out
+    assert content in out  # verbatim, real 0x0a newlines
+    assert out.rstrip().endswith("or revise the file first.")
+
+
+async def test_review_revise_action_and_no_refire(tmp_path, fake_matrix_client) -> None:
+    """A file edit after the review classifies as 'revise'; a subsequent valid
+    mark_complete does NOT fire a second review (budget exhausted)."""
+    llm = FakeLLM([
+        LLMResponse(content="", tool_calls=(
+            tool_call("write_file", {"path": "out/x.txt", "content": "bad\n"}),)),
+        LLMResponse(content="", tool_calls=(tool_call("mark_complete", {"summary": "done"}),)),
+        LLMResponse(content="", tool_calls=(
+            tool_call("write_file", {"path": "out/x.txt", "content": "good\n", "force": True}),)),
+        LLMResponse(content="", tool_calls=(tool_call("mark_complete", {"summary": "fixed"}),)),
+        LLMResponse(content="done", tool_calls=()),
+        LLMResponse(content="[]"),
+    ])
+    runtime, identity, ctx = await _prepare(tmp_path, fake_matrix_client, llm)
+    ctx.review_budget = 1
+    result = await runtime.execute_task(_task_out(), identity)
+    assert result.reviews_used == 1
+    assert result.post_review_action == "revise"
+    assert _count_readbacks(_longest_history(llm)) == 1
+
+
 async def test_artifact_capture_on_postcondition_failure(tmp_path, fake_matrix_client) -> None:
     """A task that writes its output but fails a postcondition captures the bytes."""
     def _always_fail(_ctx):

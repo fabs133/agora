@@ -1,0 +1,79 @@
+# axis-1 v8 — completion review (S6) under probe v7. Five-model grid.
+#
+# WHY NOW: v3.2 closed the S2 nudge line (mis-targeted post-v7 — the nudge keys
+# on a 0-tool-call turn, but v7 turned the dominant failure into *confident
+# wrong-byte completion*, not silent termination). The gate is unmet: gemma-e4b
+# is the only 9/9. v8 is the FINAL registered lever of this phase
+# (harness-reliability.md §"v8 pre-registration"): on a VALID mark_complete the
+# harness reads the written output back to the model VERBATIM (through the v7
+# form-B channel) and asks it to confirm completion or revise first. One round,
+# then completion proceeds. Production-valid reflection — no oracle.
+#
+# ONE variable changed vs the v3.2 baseline: review_budget 0->1. Note nudge is
+# OFF (nudge_budget: 0) — S2 is closed, so v8 tests S6 against v3.2's
+# corrective-errors baseline with exactly one moving part. tool_errors stays
+# corrective; strategies are the v2 winners (coder->qwen2_5_coder,
+# nemo->mistral_nemo); gemma is the do-no-harm anchor (must stay 9/9); qwen3 is
+# categorical, bistable, gate-exempt.
+#
+# GATE-DECIDING CELL: instruct loop_depth (trailing-newline off-by-one is the
+# review's center-of-mass target). loop_depth >=2/3 -> instruct 9/9 -> GATE MET.
+# DO-NO-HARM CHECK: gemma. If gemma regresses, STOP — that's a mechanism leak
+# and interpretation is chat-side.
+#
+# Staged (one model-load at a time), per-block reports. Params identical to v3.2.
+schema_version: 1
+name: axis-1-v8
+description: "Axis-1 v8: review_budget=1 (S6) under probe v7. 5 models x 3 repeats\
+  \ = 15 runs; corrective errors + completion review, nudge OFF; v2-winning\
+  \ strategies; gemma do-no-harm anchor. ONE variable vs v3.2 (review 0->1).\
+  \ instruct loop_depth is the gate-deciding cell."
+defaults:
+  params:
+    temperature: 0.0
+    seed: 42
+    num_ctx: 8192
+    max_tokens: 2048
+  output_dir: runs_out/axis-1-v8
+  resume: true
+  review_timeout_seconds: 5
+  harness:
+    tool_errors: corrective
+    nudge_budget: 0
+    review_budget: 1
+runs:
+# --- qwen2.5:7b-instruct (gate-deciding: does review fix loop_depth?) - 3 runs
+- {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r003, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
+# --- qwen3:30b (categorical, bistable, gate-exempt) --------------- 3 runs
+- {id: r004, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r005, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r006, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
+# --- mistral-nemo:12b (strategy: mistral_nemo; read-back may catch drops) 3 runs
+- {id: r007, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: mistral_nemo}
+- {id: r008, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: mistral_nemo}
+- {id: r009, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: mistral_nemo}
+# --- qwen2.5-coder:14b (strategy: qwen2_5_coder; content_robustness blind) 3 runs
+- {id: r010, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: qwen2_5_coder}
+- {id: r011, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: qwen2_5_coder}
+- {id: r012, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: qwen2_5_coder}
+# --- gemma4:e4b (v7 anchor at 9/9; review must NOT perturb it) ---- 3 runs
+- {id: r013, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r014, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r015, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}

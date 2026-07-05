@@ -132,6 +132,7 @@ class Orchestrator:
         routed_retry_budget: int = 2,
         tool_errors: str = "raw",
         nudge_budget: int = 0,
+        review_budget: int = 0,
         observer: Any = None,
     ) -> None:
         self._matrix = matrix_client
@@ -157,6 +158,8 @@ class Orchestrator:
         # v3 harness-reliability knobs, threaded into each task's ToolContext.
         self._tool_errors = tool_errors
         self._nudge_budget = nudge_budget
+        # v8 S6 completion-review budget (0 = off, byte-identical to v3.2).
+        self._review_budget = review_budget
         # Gates the plan-authoring tool category (plan_upsert_agent,
         # plan_add_task_spec, plan_finalize). The plan-builder runner opts in;
         # every other runner leaves it False so emitted plans don't expose
@@ -988,6 +991,7 @@ class Orchestrator:
             plan_authoring_enabled=self._plan_authoring_enabled,
             tool_errors=self._tool_errors,
             nudge_budget=self._nudge_budget,
+            review_budget=self._review_budget,
             distill_fn=distill_fn,
         )
         return AgentRuntime(llm=llm, matrix_client=self._matrix, tool_context=ctx)

@@ -64,13 +64,15 @@ class Harness(BaseModel):
 
     ``tool_errors`` routes tool failures through CorrectiveError ("corrective")
     or leaves the v2 crash-as-string ("raw"). ``nudge_budget`` caps in-loop
-    completion nudges (0 = off). Both defaults are byte-identical to v2.
+    completion nudges (0 = off). ``review_budget`` caps in-loop completion
+    reviews (S6, v8). All defaults are byte-identical to v2/v3.2.
     """
 
     model_config = {"extra": "forbid"}
 
     tool_errors: Literal["raw", "corrective"] = "raw"
     nudge_budget: int = Field(default=0, ge=0)
+    review_budget: int = Field(default=0, ge=0)
 
 
 class CampaignDefaults(BaseModel):
@@ -236,6 +238,7 @@ def build_env(run: dict[str, Any], run_dir: str | Path) -> dict[str, str]:
     if harness:
         env["AGORA_HARNESS_TOOL_ERRORS"] = str(harness.get("tool_errors", "raw"))
         env["AGORA_HARNESS_NUDGE_BUDGET"] = str(harness.get("nudge_budget", 0))
+        env["AGORA_HARNESS_REVIEW_BUDGET"] = str(harness.get("review_budget", 0))
     # Short review timeout so the REVIEW phase doesn't idle the runner for the
     # full default (300s) waiting on a human poll that never comes in a sweep.
     rts = run.get("review_timeout_seconds")
