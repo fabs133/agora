@@ -114,7 +114,12 @@ profiles:
     description: Gemma 4 e4b — axis-1 sweep.
     model: ollama/gemma4:e4b
     num_ctx: 8192
-    max_tokens: 2048
+    # Integration run 2.3 (F18'): raised 2048 -> 4096. The 2048 cap was inherited
+    # from the axis-1 3-line-probe era; a single write_file carrying the 8-section
+    # PROJECT_STATE.md overran it (mid-JSON cut -> empty turn). This profile is the
+    # EFFECTIVE output-envelope knob for the cast-bound implementer/tester seats —
+    # run_phased does NOT read campaign.params.max_tokens (that field is inert).
+    max_tokens: 4096
     temperature: 0.0
     seed: 42
     keep_alive: 30m

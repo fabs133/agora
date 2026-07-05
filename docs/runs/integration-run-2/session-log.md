@@ -401,3 +401,23 @@ tests/test_core.py         (8 tests incl. F15-predicate roll_malformed)
 verdicts/p4.json (valid) p5.json (malformed) p6.json (empty) p7.json (valid) p9.json (valid)
 ```
 PROJECT_STATE.md: NOT PRESENT (T9.2 stalled twice — F18; P9 not passed).
+
+---
+
+# RUN 2.3 — F18' test: output envelope 2048 -> 4096 (single variable)
+
+## Pre-flight (2026-07-05) @ run-2.3 prep (suite green 1450, ruff clean)
+```
+ollama /api/version: {"version":"0.31.1"}; gemma4:e4b + qwen2.5:7b-instruct resident
+conditions delta (single variable): gemma-e4b max_tokens 2048 -> 4096.
+  CONFIG-PROVENANCE NOTE: the addendum named campaigns/integration-run-2.yaml, but
+  run_phased does NOT read campaign.params.max_tokens — it resolves inference params
+  from the CAST-bound PROFILE (profiles.yaml gemma-e4b). So the campaign field was
+  INERT; the effective change was made on the gemma-e4b profile (max_tokens 4096),
+  with the campaign param kept in sync as documentation. This inertness is itself a
+  latent finding (config knob that silently does nothing). num_ctx unchanged (8192);
+  max_tokens=num_predict is per-request, so no model reload needed.
+ledger: P3/P4/P5/P6/P7 green, P9 red (run-2.2 second red, T9.2 F18/F18' stall).
+action: re-establish P9 -> `--rerun-task T9.2 --oracle P9` (no budget pending world (a));
+  then --next to close the run if green.
+```

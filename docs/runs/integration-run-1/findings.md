@@ -722,3 +722,33 @@ F14's incremental-build mitigation); on completion the (now
 incrementally-built) PROJECT_STATE.md finally reaches the human
 fact-check. Standard protocol; the P3-P7 gates stand as a regression
 suite. Waivers forbidden.
+
+**Part 10 addendum — chat-side ruling (2026-07-05).**
+
+**F18 provisionally reclassified F18' — output-envelope starvation.**
+Forensic basis: T9.2's empty turns took 23.6s and 35.7s of generation
+(run.log timestamps) — the truncation-death signature, not a fast
+stall. max_tokens=2048 is inherited unchanged from axis-1 v1 (sized for
+3-line probe artifacts) and a single write_file call carrying the full
+8-section PROJECT_STATE.md plausibly exceeds it; a mid-JSON cut yields
+zero parseable tool calls -> empty turn, nudge-immune. README fit the
+envelope; the handoff doc did not. Confirmation pending run 2.3.
+
+**Run 2.3 (single variable):** campaign max_tokens 2048 -> 4096; only
+P9 executes (P3-P7 stand as the regression suite). Worlds: (a) T9.2
+lands -> F18' confirmed; conditions-defect rule applies retroactively;
+PROJECT_STATE.md to the human fact-check; doctrine adopted: OUTPUT
+ENVELOPE SCALES WITH ARTIFACT CLASS (per-task-kind budget, matrix-
+derivable). (b) still empty at 4096 -> ONE OLLAMA_DEBUG diagnostic
+capture of the raw generation (malformed-at-scale vs true stall), then
+run 2.4 = decomposed per-section tasks (the F14 lesson, held in
+reserve to preserve attribution). (c) partial artifact -> standard
+protocol; the oracle finally has content. Waivers forbidden.
+
+**Scheduled regardless of 2.3's colour:** the agora-handoff mechanical
+extractor graduates from deferred to justified — run 2's evidence:
+FACT sections (file map, signatures, verification record) are
+mechanically derivable and should not be model-emitted (hallucination
+risk even within envelope); models write PROSE sections at README
+scale. Build after run 2 closes; required quality bar for the
+brownfield probe's phase-0 anyway.
