@@ -752,3 +752,77 @@ mechanically derivable and should not be model-emitted (hallucination
 risk even within envelope); models write PROSE sections at README
 scale. Build after run 2 closes; required quality bar for the
 brownfield probe's phase-0 anyway.
+
+---
+
+## Part 11 — run 2.3 findings (2026-07-05)
+
+**Run 2.3:** single variable (gemma-e4b output envelope 2048 -> 4096).
+P9 re-established -> RED (world (b)); STOP; one OLLAMA_DEBUG diagnostic.
+Outcome: **F18' FALSIFIED and F18 reclassified — the P9 blocker is neither
+a model floor nor envelope starvation, but a reasoning-vs-action emission
+gap (F18'').**
+
+**Config-provenance finding (F19).** The addendum's "campaign max_tokens
+2048 -> 4096" could not have worked as written: ``run_phased`` never reads
+``campaign.params`` — inference params resolve from the CAST-bound PROFILE
+(``profiles.yaml`` gemma-e4b, max_tokens 2048). The campaign field is a
+silent no-op. The effective change was made on the profile instead (2048
+-> 4096), campaign param synced as documentation. A config knob that
+silently does nothing is a live trap; the campaign ``params`` block should
+either be wired through or removed. (Recorded; not fixed this run.)
+
+**F18' (envelope starvation) FALSIFIED.** At 4096 the stall persisted; the
+discriminator killed the truncation hypothesis: turn 1 generated for 41.0s
+(vs 23.6s at 2048) and still returned content_len=0 — a LONGER generation
+yielding zero parseable output, the opposite of a truncation the higher
+cap would relieve.
+
+**F18'' — reasoning-vs-action emission gap at doc scale (the real
+blocker; a FRAMEWORK/reliability finding, not a model floor).** The
+OLLAMA_DEBUG capture (direct /api/chat, T9.2's exact manifest + brief,
+num_predict 4096, seed 42) is decisive: gemma returns **done_reason=stop**
+(natural termination, not "length"), a **1610-char ``thinking`` trace that
+fully drafts the correct document** (all eight headers + both gate
+commands — would have PASSED the gate), and — in the successful call — a
+**valid structured ``write_file`` tool call** carrying that content. So the
+model is CAPABLE. But it is UNRELIABLE at this scale: a second call
+(terser prompt, same seed) emitted the reasoning and NO structured call.
+Mechanism (``llm_adapter.py`` ~401-423): the adapter strips ``<think>``
+from content, reads structured ``msg["tool_calls"]``, and runs the
+text-fallback tool parser ONLY when the stripped content is non-empty.
+When gemma spends the turn reasoning and does not emit a structured call,
+the stripped content is empty -> no call -> content_len=0/tool_calls=0
+(exactly the real run), and the S2 nudge re-triggers the same derailment
+(nudge-immune). This retires F18 (the "can't describe its own project"
+reading was wrong — it CAN; it inconsistently fails to EMIT) and F18'
+(envelope). The largest, most open-ended task in the flow is where the
+model's reasoning-vs-action reliability floor shows.
+
+**Disposition — no decomposition (sign-off pending).** Per the addendum,
+world (b) forbids decomposition without chat-side sign-off, and the
+diagnostic vindicates that hold: decomposition would have "fixed" a
+mislabelled defect and buried F18''. The real fix is a DESIGN choice, none
+made this run:
+- (a) **emission reliability** — request gemma with tool-forcing / a
+  greedy structured-call setting, or a two-step "reason then emit" turn so
+  the drafted artifact in the thinking trace is actually written;
+- (b) **recover the drafted artifact** — when a turn yields only a
+  thinking trace that contains a fenced artifact for the expected output
+  path, the adapter could surface it as a write (bounded, opt-in);
+- (c) **the scheduled mechanical FACT-section extractor** — the
+  file-map/verification-record/signature sections are mechanically
+  derivable and should not be model-emitted at all; this both dodges F18''
+  for the FACT sections and raises handoff quality (required for the
+  brownfield phase-0 anyway).
+Recommendation: (a)+(c). Run 2.4 pre-registration waits on the owner's
+pick. P3-P7 stand as the regression suite; PROJECT_STATE.md still unwritten
+(now known to be an emission-reliability gap, not an inability).
+
+**Program status.** Every framework finding F1-F17b is closed or verified
+live; F19 (config provenance) and F18'' (emission reliability) are the two
+open threads, both framework-side. The model-capability question the
+program kept circling is answered in gemma's favour: it wrote a correct
+core, a working adapter, spec-faithful tests (via the tester seat), and —
+shown here — a correct PROJECT_STATE draft; the remaining gap is getting
+that draft reliably EMITTED through the tool channel at scale.

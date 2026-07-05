@@ -421,3 +421,70 @@ ledger: P3/P4/P5/P6/P7 green, P9 red (run-2.2 second red, T9.2 F18/F18' stall).
 action: re-establish P9 -> `--rerun-task T9.2 --oracle P9` (no budget pending world (a));
   then --next to close the run if green.
 ```
+
+## P9 re-establishment at max_tokens=4096 — RED (world (b): still empty) (2026-07-05)
+```
+=== phase P9 gate: RED ===  blockers: T9.2
+  [FAIL] T9.2 (block)  PROJECT_STATE.md -> all 10 checks fail; tools_used=[], nudges=1, artifact_capture=None
+  [PASS] V9.1 (nonblock) -> verdicts/p9.json VALID
+```
+### Discriminator (item-3) — durations + content_len at 4096
+```
+turn 1:  41.0s generation -> tool_calls=0, content_len=0    (vs 23.6s at 2048)
+  nudge 1/1 fired (PROJECT_STATE.md not written)
+turn 2:  17.8s generation -> tool_calls=0, content_len=0
+```
+**F18' (output-envelope starvation) is NOT confirmed by the 4096 bump — the opposite.**
+Doubling the cap did not land the artifact; turn 1 generated LONGER (41s vs 23.6s) and
+still returned content_len=0. This is a long generation yielding zero PARSEABLE output,
+not a fast stall and not a simple truncation the higher cap would relieve. World (b):
+STOP, then a single OLLAMA_DEBUG diagnostic of the raw generation (below). No
+decomposition without chat-side sign-off.
+
+**RUN 2.3 STOPPED at P9 (world (b), F18' not confirmed). Ledger unchanged: P3-P7 green,
+P9 red. Diagnostic follows as a separate step.**
+
+## OLLAMA_DEBUG diagnostic — T9.2 raw generation (world (b), separate step) (2026-07-05)
+Direct /api/chat to gemma4:e4b with T9.2's EXACT manifest (implementer allowlist:
+read_file/write_file/list_directory/mark_complete) + the 8-header brief; num_ctx 8192,
+num_predict 4096, temp 0, seed 42. Raw response (before Agora's <think>-stripping):
+```
+done_reason: stop            <- NATURAL termination, NOT "length" => F18' (truncation/envelope) FALSIFIED
+eval_count: 502 tokens
+message.tool_calls: [write_file(content="## Identity\n\n## Architecture & invariants\n
+                     ## Capability inventory\n## Verification record\n- ... `python -m pytest -q` ...")]
+message.thinking len: 1610   |   message.content len: 0
+```
+The tool_call content carried ALL 8 headers + both gate commands — i.e. it WOULD HAVE
+PASSED the P9 gate had it landed. Raw generation TAIL (verbatim, from message.thinking):
+```
+ -m pytest -q`
+    *   The `python -m echobot` acceptance (I will list this as a command/test).
+Since no other content is specified for the sections, I will just ensure the headers
+are present and the specific requirement for "## Verification record" is met.
+**Drafting the Markdown Content:**
+```markdown
+## Identity
+
+## Architecture & invariants
+... (all 8 headers) ...
+## How to run / test
+```
+I will use the `write_file` tool.
+```
+### Reframing — F18'' (reasoning-emission reliability at doc scale), NOT a model floor
+gemma is CAPABLE: it drafts the exact correct document inside a ~1600-char reasoning
+trace and, in the successful raw call, emits a valid structured write_file
+(done_reason=stop). But the behaviour is UNRELIABLE — a second raw call (terser prompt,
+same seed) produced the reasoning and NO structured tool_call (tool_calls=0),
+reproducing the empty turn. Mechanism (llm_adapter.py:401-423): the adapter strips
+<think> from content, reads structured msg["tool_calls"], and only runs the text-fallback
+parser when the stripped content is non-empty. When gemma spends the turn REASONING and
+does not emit a structured call, the stripped content is empty -> no call parsed ->
+content_len=0, tool_calls=0 (exactly the real run), and the S2 nudge re-triggers the same
+derailment. So the P9 blocker is NOT F18 (model can't) nor F18' (envelope) — it is a
+reasoning-vs-action emission gap on the largest, most open-ended task in the flow.
+NO decomposition applied (chat-side sign-off required per the addendum). No code change
+this step — the diagnostic is the deliverable; the fix is a design question (options:
+force/greedy tool emission, recover a drafted artifact from the thinking trace, or the
+scheduled mechanical FACT-section extractor). Ledger unchanged: P3-P7 green, P9 red.
