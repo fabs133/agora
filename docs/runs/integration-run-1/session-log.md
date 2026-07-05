@@ -259,3 +259,215 @@ verdicts/p3.json
 ```
 PROJECT_STATE.md: NOT PRESENT (P9/T9.2 never reached — run stopped at P5).
 Provenance: runs_out/integration-run-1/{phases.jsonl, tasks.jsonl}; no waivers.jsonl (none recorded).
+
+# RUN 1.1 — continuation (resumed ledger)
+
+## Pre-flight (2026-07-05 17:12:31) @ eecdc91
+```
+ollama /api/version: {"version":"0.31.1"}
+conduit /versions: HTTP 200 (Up 6h)
+cast resident models present: gemma4:e4b, qwen2.5:7b-instruct, nomic-embed-text:latest
+resumed ledger: P3 green, P4 green, P5 RED, P6/P7/P9 pending (workspace NOT reset; drifted core.py intact)
+--next: BLOCKED (P5 red, unwaived; waivers forbidden)
+```
+### Execution reading (binding pre-registration, Part 2)
+The resumed P5-red is the run-1 framework-bug red (T5.1 was an implementer, scope-rejected, wrote NO tests). Run 1.1 re-establishes P5 under the fixed conditions (T5.1 now the tester seat). Since --next refuses on a red frontier and no tests exist yet, the fresh P5 phase-execution is `--rerun-task T5.1 --oracle P5` (T5.1 as tester). This re-establishes the phase; the designated cross-phase repair `--rerun-task T4.1 --oracle P5` is reserved for a subsequent signature-mismatch (world-a) red, per the pre-registration. Repair budget for P5: 1 (reset under new conditions).
+
+## P5 (1.1) fresh tester attempt — RED (world (c), unregistered) (2026-07-05 17:19:06)
+
+### Gate report (verbatim)
+```
+[*] Logging into Conduit as @agora:agora.local
+[*] Auto-inviting @fabs:agora.local to every created room
+=== phase P5 gate: RED ===
+  blockers: T5.1
+  nudge accounting: 0 fired (budget 1 - v3.2 erratum: stall-recovery)
+  [FAIL] T5.1 (block)
+      ok  tests_test_core.py_has_def_test_ping
+      ok  tests_test_core.py_has_def_test_echo_preserves_spacing
+      ok  tests_test_core.py_has_def_test_roll_deterministic
+      ok  tests_test_core.py_has_def_test_roll_malformed
+      ok  tests_test_core.py_has_def_test_help_lists_all_commands
+      ok  tests_test_core.py_has_def_test_unknown_command
+      ok  tests_test_core.py_has_def_test_non_command_returns_none
+      ok  run_check_python_-m_pytest_--collect-only_-q_f483ad
+      FAIL run_check_python_-m_pytest_-q_949dde
+      ok  mark_complete_called
+      run_check: python -m pytest --collect-only -q -> exit=0 passed=True
+        stdout: ....py::test_echo_preserves_spacing
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_roll_deterministic
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_roll_malformed
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_help_lists_all_commands
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_unknown_command
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_non_command_returns_none
+
+8 tests collected in 0.02s
+
+      run_check: python -m pytest -q -> exit=1 passed=False
+        stdout: ...oll", seed=seed)` exists or similar.
+            result = run_command("random") # Placeholder for roll command execution
+>           assert result is not None
+E           assert None is not None
+
+tests\test_core.py:62: AssertionError
+=========================== short test summary info ===========================
+FAILED tests\test_core.py::test_echo_preserves_spacing - AssertionError: asse...
+FAILED tests\test_core.py::test_roll_deterministic - assert None is not None
+2 failed, 6 passed in 0.11s
+
+```
+### F3 fix VERIFIED — run.log now carries per-turn tool-result strings, e.g.:
+```
+2026-07-05 17:14:11,181 INFO  agora.fleet.agent_runtime: tool call: task=T5.1 turn=1 name=write_file args={'content': 'import pytest\nfrom unittest.mock import patch, MagicMock\nimport random\nimport sys\n\n# Assuming the modu result=wrote 3459 bytes to tests/test_core.py
+```
+### Which world occurred: NEITHER (a) nor (b) — a third, unregistered outcome
+The tester (gemma, role=tester) DID write tests/test_core.py this time (8 named tests, all collected — scope bug is dead). But it wrote a SELF-CONTAINED MOCK FILE that never imports echobot / never calls handle_message. It defines its own mock at the top and tests THAT:
+```python
+# "Since we do not have the source code, we will mock necessary dependencies"
+def run_command(command: str):
+    if command == "ping": return {"status": "pong"}
+    elif command == "echo": return {"output": "echoed"}
+    ...
+def test_ping(): assert run_command("ping") == {"status": "pong"}   # tests the MOCK
+def test_echo_preserves_spacing():
+    result = run_command("echo")                 # returns {"output":"echoed"}
+    assert result["output"] == "  multiple   spaces  "   # FAILS on the mock's own inconsistency
+def test_roll_deterministic():
+    result = run_command("random")               # returns None
+    assert result is not None                    # FAILS on the mock's own inconsistency
+```
+Evidence the tests are decoupled from the implementation: `grep -E 'import echobot|handle_message' tests/test_core.py` → NO matches. The P4 signature drift (handle_message(self,message)) is UNTOUCHED by these tests.
+- pytest: 2 failed (test_echo_preserves_spacing, test_roll_deterministic), 6 passed — the failures are the tester's OWN mock inconsistencies, NOT a test-vs-implementation signature mismatch.
+- Tester-fidelity finding: reading src is permitted but the tester declined ('we do not have the source code'), fabricated an API, and tested its own mocks. Tests followed neither spec nor code.
+### Observations
+- nudges_used: T5.1=0 (wrote on turn 1, no stall).
+- run.log tool results present (F3): scope-rejection class is gone (write succeeded); write_file result recorded.
+- Truncation flags: none (pytest capture short).
+### Repair branch (protocol item 2)
+This red is NOT a test-vs-implementation signature mismatch (tests never reference the implementation), so the designated T4.1 cross-phase repair does NOT apply. Per 'Any other red gate: repair the first failing blocking task in that phase, once' → repair T5.1: `--rerun-task T5.1 --oracle P5` (one attempt; second red on P5 => STOP).
+
+### Delivered P5 repair prompt (verbatim — carries pytest failure output)
+```
+Write tests/test_core.py implementing EXACTLY the named cases from the spec: test_ping, test_echo, test_echo_preserves_spacing, test_roll_deterministic (seeded random.Random), test_roll_malformed, test_help_lists_all_commands, test_unknown_command, test_non_command_returns_none.
+
+The following gate failed.
+
+Oracle output (verbatim):
+  $ python -m pytest -q   (exit=1, timed_out=False)
+  stdout:
+..FF....                                                                 [100%]
+================================== FAILURES ===================================
+_________________________ test_echo_preserves_spacing _________________________
+
+    def test_echo_preserves_spacing():
+        """Tests that echo preserves spacing (e.g., multiple spaces)."""
+        # Assuming the underlying system handles this, we mock a specific behavior check.
+        # If 'echo' takes arguments, we simulate passing them and checking preservation.
+        mock_output = "  multiple   spaces  "
+        result = run_command("echo") # Simplified call for mocking context
+>       assert result["output"] == mock_output
+E       AssertionError: assert 'echoed' == '  multiple   spaces  '
+E         
+E         -   multiple   spaces  
+E         + echoed
+
+tests\test_core.py:49: AssertionError
+___________________________ test_roll_deterministic ___________________________
+
+    def test_roll_deterministic():
+        """Tests roll functionality with a seeded random number generator."""
+        # We need to patch the random module usage within the system under test.
+        with patch('random.Random', side_effect=lambda seed: random.Random(seed)):
+            # Assuming 'roll' uses the seeded Random instance
+            mock_rng = MagicMock()
+            mock_rng.randint.return_value = 42 # Deterministic value
+    
+            # Since we cannot know the exact implementation, we mock the call structure.
+            # We assume a function `run_command("roll", seed=seed)` exists or similar.
+            result = run_command("random") # Placeholder for roll command execution
+>           assert result is not None
+E           assert None is not None
+
+tests\test_core.py:62: AssertionError
+=========================== short test summary info ===========================
+FAILED tests\test_core.py::test_echo_preserves_spacing - AssertionError: asse...
+FAILED tests\test_core.py::test_roll_deterministic - assert None is not None
+2 failed, 6 passed in 0.11s
+
+
+Re-satisfy exactly this gate. Change only what the oracle points at.
+```
+
+## P5 (1.1) repair cell — T5.1 rerun → RED AGAIN → RUN STOPPED (2026-07-05 17:28:08) [P5 repair budget 1/1 used]
+
+### Gate report after repair (verbatim)
+```
+[*] Logging into Conduit as @agora:agora.local
+[*] Auto-inviting @fabs:agora.local to every created room
+=== phase P5 gate: RED ===
+  blockers: T5.1
+  nudge accounting: 0 fired (budget 1 - v3.2 erratum: stall-recovery)
+  [FAIL] T5.1 (block)
+      ok  tests_test_core.py_has_def_test_ping
+      ok  tests_test_core.py_has_def_test_echo_preserves_spacing
+      ok  tests_test_core.py_has_def_test_roll_deterministic
+      ok  tests_test_core.py_has_def_test_roll_malformed
+      ok  tests_test_core.py_has_def_test_help_lists_all_commands
+      ok  tests_test_core.py_has_def_test_unknown_command
+      ok  tests_test_core.py_has_def_test_non_command_returns_none
+      ok  run_check_python_-m_pytest_--collect-only_-q_f483ad
+      FAIL run_check_python_-m_pytest_-q_949dde
+      ok  mark_complete_called
+      run_check: python -m pytest --collect-only -q -> exit=0 passed=True
+        stdout: ....py::test_echo_preserves_spacing
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_roll_deterministic
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_roll_malformed
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_help_lists_all_commands
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_unknown_command
+runs_out/integration-run-1/echobot/echobot/tests/test_core.py::test_non_command_returns_none
+
+8 tests collected in 0.02s
+
+      run_check: python -m pytest -q -> exit=1 passed=False
+        stdout: ...ltiple   spaces  "
+        result = run_command("echo") # Simplified call for mocking context
+>       assert result["output"] == mock_output
+E       AssertionError: assert 'echoed' == '  multiple   spaces  '
+E         
+E         -   multiple   spaces  
+E         + echoed
+
+tests\test_core.py:50: AssertionError
+=========================== short test summary info ===========================
+FAILED tests\test_core.py::test_echo_preserves_spacing - AssertionError: asse...
+1 failed, 7 passed in 0.10s
+
+```
+### Model response to the oracle
+- Repair T5.1 (run-1.1 attempt 2): tools_used=['edit_file_replace','read_file'] — the tester READ the oracle + file and EDITED it, fixing test_roll_deterministic's mock (run_command('random') now returns a value). 2 failed -> 1 failed.
+- BUT it stayed MOCK-ONLY: still 0 imports of echobot, still defines its own run_command; test_echo_preserves_spacing still asserts the mock returns '  multiple   spaces  ' while the mock returns 'echoed' -> RED.
+- The oracle was delivered VERBATIM (the full pytest AssertionError block, logged above) and the model responded to the SPECIFIC failure it named (roll) but not the structural defect (tests decoupled from the implementation).
+
+### Phase gate ledger (phases.jsonl, run 1 + run 1.1)
+```
+#0 P3 GREEN
+#1 P4 RED (T4.2)   #2 P4 GREEN [run 1: repair]
+#3 P5 RED  #4 P5 RED         [run 1: attempt + repair -> stop]
+#5 P5 RED  #6 P5 RED         [run 1.1: fresh tester attempt + repair -> STOP]
+(no mechanical re-eval records: the designated cross-phase T4.1 repair never applied — the P5 red was never a signature mismatch.)
+```
+
+**RUN 1.1 STOPPED at P5 (second red on the same gate). Phases not reached: P6, P7, P9. No PROJECT_STATE.md. No waiver used. T4.1 not invoked.**
+
+### Final workspace tree (runs_out/integration-run-1/echobot/echobot, git/pycache elided)
+```
+.gitignore
+README.md
+echobot/__init__.py
+echobot/__main__.py
+echobot/core.py
+requirements.txt
+tests/test_core.py
+verdicts/p3.json
+```
+PROJECT_STATE.md: NOT PRESENT (P9 not reached).
