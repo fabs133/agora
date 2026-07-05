@@ -492,6 +492,39 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
+def write_plan_index(output_dir: Path, plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge ``plan`` into ``output_dir/plan.jsonl`` by run id, rewrite sorted by id.
+
+    Staged execution invokes :func:`run_campaign` once per model block, so a
+    truncating write would leave the index holding only the last block's runs —
+    the axis-1 v2 incident (findings C1) where plan.jsonl ended up with 10/40
+    lines. Instead: read any existing index, union it with this invocation's
+    ``plan`` (this invocation's entries win on id collision), and write the full
+    set sorted by id. A corrupt existing line fails loudly (``json.loads`` /
+    missing-id ``ValueError``) rather than being silently skipped — a partial or
+    damaged index must be noticed, not quietly healed. A missing file is fine
+    (fresh dir). Returns the merged, ordered records.
+    """
+    path = output_dir / "plan.jsonl"
+    merged: dict[str, dict[str, Any]] = {}
+    for rec in _read_jsonl(path):  # raises on malformed JSON; [] when absent
+        rid = rec.get("id")
+        if rid is None:
+            raise ValueError(
+                f"{path}: existing plan record without an 'id' — refusing to "
+                f"merge a malformed index: {rec!r}"
+            )
+        merged[rid] = rec
+    for rec in plan:
+        merged[rec["id"]] = rec  # this invocation's entries win on collision
+    ordered = [merged[rid] for rid in sorted(merged)]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(r) + "\n" for r in ordered), encoding="utf-8"
+    )
+    return ordered
+
+
 def _popen_kwargs_detached() -> dict[str, Any]:
     """Start the child in its own process group so a SIGINT to the campaign
     does NOT propagate to the running child (we never kill it mid-run)."""
@@ -521,9 +554,9 @@ def run_campaign(path: str | Path, *, dry_run: bool = False) -> int:
         return 0
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "plan.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in plan), encoding="utf-8"
-    )
+    # Merge-by-id (not truncate): staged execution calls run_campaign per block,
+    # so each block must extend the index rather than overwrite it (findings C1).
+    write_plan_index(output_dir, plan)
 
     done_ids = scan_done(output_dir) if campaign.defaults.resume else set()
     pending = resume_filter(plan, done_ids)

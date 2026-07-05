@@ -125,7 +125,21 @@ def _first_of_block(runs_df: pd.DataFrame) -> dict[str, str]:
 
 
 def _steady_tasks(tasks_df: pd.DataFrame, runs_df: pd.DataFrame) -> pd.DataFrame:
-    """tasks_df minus each model's prewarm-contaminated block-first run."""
+    """tasks_df minus each model's prewarm-contaminated block-first run.
+
+    Precondition: every task row must carry a non-null ``campaign_run_id`` (the
+    join key to the run index). A null means plan.jsonl was incomplete when
+    Layer 1 built the frame — the block-first exclusion below would then compare
+    against ``pd.NA`` and pandas raises an opaque KeyError on the object-dtype
+    mask. Fail loudly with the cause instead.
+    """
+    n_na = int(tasks_df["campaign_run_id"].isna().sum())
+    if n_na:
+        raise ValueError(
+            f"{n_na} task row(s) have a null campaign_run_id — plan.jsonl "
+            "incomplete (see axis-1 v2 findings C1). Regenerate the run index "
+            "(run_campaign now merges by id) before steady-state analysis."
+        )
     fob = _first_of_block(runs_df)
     return tasks_df[
         ~tasks_df.apply(lambda r: fob.get(r["model"]) == r["campaign_run_id"], axis=1)
