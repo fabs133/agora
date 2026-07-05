@@ -254,25 +254,36 @@ def build_repair_description(original_description: str, oracle_records: list[dic
     return "\n".join(parts)
 
 
-def oracle_records_for_phase(records: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]:
-    """Collect the run_check captures from the newest record of ``phase``'s
-    failing blocking tasks — the verbatim oracle the repair prompt carries.
+def oracle_records_for_phase(
+    task_records: list[dict[str, Any]], phase: str
+) -> list[dict[str, Any]]:
+    """Resolve the verbatim oracle for ``phase`` from the PERSISTED per-phase
+    TaskRecords (``tasks.jsonl``).
 
-    PhaseGateRecord does not embed run_check output (that lives in tasks.jsonl);
-    when a sibling tasks.jsonl is unavailable this returns the per-task
-    predicate outcomes as a minimal oracle so the prompt still names the gate.
+    For each failing BLOCKING task in the phase's newest records (reruns append,
+    last write wins), returns: its failed run_check captures VERBATIM (cmd, exit,
+    stdout/stderr, truncation flags — the real oracle) plus a synthetic entry per
+    non-run_check failing predicate so the prompt still names it. Each entry is
+    the run_check-record shape :func:`build_repair_description` templates.
     """
-    latest = latest_by_phase(records)
-    if phase not in latest:
-        return []
-    _idx, rec = latest[phase]
+    latest: dict[str, dict[str, Any]] = {}
+    for r in task_records:
+        if (r.get("phase") or None) == phase:
+            latest[r["task_id"]] = r  # last write wins (supersedes a prior attempt)
     oracle: list[dict[str, Any]] = []
-    for t in rec.get("tasks", []):
-        if t.get("blocking") and not t.get("passed"):
-            for name, passed in [(p["name"], p["passed"]) for p in t.get("postconditions", [])]:
-                if not passed:
-                    oracle.append({"cmd": [name], "exit_code": 1, "timed_out": False,
-                                   "stdout": "", "stderr": f"predicate {name} failed"})
+    for _tid, r in latest.items():
+        if not r.get("blocking", True) or r.get("status") == "passed":
+            continue
+        for rc in r.get("run_check_records") or []:
+            if not rc.get("passed"):
+                oracle.append(rc)  # verbatim stdout/stderr + truncation flags
+        for pc in r.get("postconditions") or []:
+            if not pc.get("passed") and not str(pc.get("name", "")).startswith("run_check"):
+                oracle.append({
+                    "cmd": [pc["name"]], "exit_code": 1, "timed_out": False,
+                    "stdout": "", "stderr": f"predicate {pc['name']} failed",
+                    "stdout_truncated": False, "stderr_truncated": False,
+                })
     return oracle
 
 
@@ -303,6 +314,63 @@ def record_waiver(waivers_path: Path, phase: str, record_index: int, reason: str
     """Append one waiver line (provenance, not memory)."""
     with Path(waivers_path).open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({"phase": phase, "record_index": record_index, "reason": reason}) + "\n")
+
+
+def build_task_record(task: Any, result: Any, role: str, task_index: int, run_id: str) -> Any:
+    """Build a :class:`TaskRecord` — the SAME shape campaign runs emit
+    (run_check_records / nudges_used / phase / blocking included) — from an
+    executed task + its TaskResult, using the observer's own classifiers."""
+    from agora.observe.jsonl import (
+        TaskRecord,
+        classify_task_kind,
+        derive_failure,
+        derive_status,
+    )
+
+    output_path = getattr(task, "output_path", "") or ""
+    spec = getattr(task, "spec", None)
+    pc_names = [getattr(p, "name", "") for p in getattr(spec, "postconditions", ())]
+    stage_kinds = [getattr(st, "kind", "llm") for st in getattr(task, "stages", ()) or ()]
+    kind = classify_task_kind(
+        output_path=output_path, postcondition_names=pc_names,
+        stage_kinds=stage_kinds, role=role,
+    )
+    success = bool(getattr(result, "success", False))
+    output = getattr(result, "output", "") or ""
+    pc_results = list(getattr(result, "postcondition_results", []) or [])
+    status = derive_status(success, output)
+    malformed = int(getattr(result, "tool_calls_malformed", 0) or 0)
+    unknown = int(getattr(result, "tool_call_unknown_name", 0) or 0)
+    fc, fd = derive_failure(
+        status=status, output=output, postcondition_results=pc_results,
+        tool_calls_malformed=malformed, tool_call_unknown_name=unknown,
+    )
+    return TaskRecord(
+        run_id=run_id, task_id=getattr(task, "id", ""), task_index=task_index, role=role,
+        task_kind=kind, status=status, first_pass=success, loopback_count=0,
+        iterations=int(getattr(result, "iterations", 0) or 0),
+        postconditions=[{"name": n, "passed": bool(p)} for n, p, _ in pc_results],
+        tool_calls_total=int(getattr(result, "tool_calls_total", 0) or 0),
+        tool_calls_structured=int(getattr(result, "tool_calls_structured", 0) or 0),
+        tool_calls_text_fallback=int(getattr(result, "tool_calls_text_fallback", 0) or 0),
+        tool_calls_malformed=malformed, tool_call_unknown_name=unknown,
+        tools_used=sorted(set(getattr(result, "tools_used", []) or [])),
+        failure_category=fc, failure_detail=fd,
+        artifact_capture=getattr(result, "artifact_capture", None),
+        reviews_used=int(getattr(result, "reviews_used", 0) or 0),
+        post_review_action=getattr(result, "post_review_action", None),
+        nudges_used=int(getattr(result, "nudges_used", 0) or 0),
+        phase=(getattr(task, "phase", "") or None),
+        blocking=bool(getattr(task, "blocking", True)),
+        run_check_records=list(getattr(result, "run_check_records", []) or []),
+    )
+
+
+def append_task_records(tasks_path: Path, records: list[Any]) -> None:
+    """Append per-phase TaskRecords to ``tasks.jsonl`` (create if absent)."""
+    with Path(tasks_path).open("a", encoding="utf-8") as fh:
+        for rec in records:
+            fh.write(rec.model_dump_json() + "\n")
 
 
 # ------------------------------------------------------------------ ollama health
@@ -362,10 +430,14 @@ def _flow_phases(flow_path: str) -> tuple[list[str], list[Any], list[Any]]:
 
 # ------------------------------------------------------------------ orchestration glue
 
-async def run_phase(campaign: dict[str, Any], phase: str, *, rerun_task: str | None = None,
-                    oracle_phase: str | None = None) -> Any:
-    """Execute one phase's tasks via the cast-loaded orchestrator; return the
-    PhaseGateResult. Thin glue — paired-session verified (not run by tests)."""
+async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001",
+                    rerun_task: str | None = None, oracle_phase: str | None = None) -> Any:
+    """Execute one phase's tasks via the cast-loaded orchestrator.
+
+    Returns ``(gate, results_by_id, task_records)`` — the PhaseGateResult, the
+    in-memory TaskResults (for the console report), and the persistable
+    TaskRecords (appended to tasks.jsonl at phase completion). Thin glue —
+    paired-session verified (not run by tests)."""
     from agora.core.flow import instantiate_flow, load_flow
     from agora.fleet.cast import load_cast, resolve_cast
     from agora.fleet.profiles import build_llm_factory, load_profiles
@@ -390,9 +462,14 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, rerun_task: str | N
     if rerun_task:
         phase_tasks = [t for t in phase_tasks if t.id == rerun_task]
         if oracle_phase:
-            records = load_jsonl(Path(campaign["output_dir"]) / "phases.jsonl")
-            oracle = oracle_records_for_phase(records, oracle_phase)
-            phase_tasks = [replace(t, description=build_repair_description(t.description, oracle)) for t in phase_tasks]
+            # Oracle is resolved from the PERSISTED per-phase TaskRecords, so the
+            # repair prompt carries the red gate's run_check stdout/stderr verbatim.
+            task_records = load_jsonl(Path(campaign["output_dir"]) / "tasks.jsonl")
+            oracle = oracle_records_for_phase(task_records, oracle_phase)
+            phase_tasks = [
+                replace(t, description=build_repair_description(t.description, oracle))
+                for t in phase_tasks
+            ]
     phase_ids = {t.id for t in phase_tasks}
     phase_tasks = strip_cross_phase_deps(phase_ids, phase_tasks)
     used_agent_names = {t.agent_id for t in phase_tasks}
@@ -422,9 +499,17 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, rerun_task: str | N
     tasks_by_id = {t.id: t for t in phase_tasks}
     outcomes = outcomes_from_results(tasks_by_id, result.task_results)
     gate = evaluate_phase_gate(phase, outcomes)
-    # attach in-memory results for the report
     gate_results_by_id = {r.task_id: r for r in result.task_results}
-    return gate, gate_results_by_id
+    role_by_agent = {a.name: getattr(a.role, "value", str(a.role)) for a in agents}
+    task_records = [
+        build_task_record(
+            tasks_by_id[res.task_id], res, role_by_agent.get(tasks_by_id[res.task_id].agent_id, ""),
+            i, run_id,
+        )
+        for i, res in enumerate(result.task_results)
+        if res.task_id in tasks_by_id
+    ]
+    return gate, gate_results_by_id, task_records
 
 
 # ------------------------------------------------------------------ CLI
@@ -441,7 +526,7 @@ def _print_status(campaign: dict[str, Any]) -> None:
     if kind == "run":
         print(f"next: run {ph}")
     elif kind == "refuse":
-        print(f"next: BLOCKED — {msg}")
+        print(f"next: BLOCKED - {msg}")
     else:
         print("next: done (all phases green or waived)")
 
@@ -498,9 +583,11 @@ def main(argv: list[str] | None = None) -> int:
         owner = next((t.phase for t in tasks if t.id == args.rerun_task), None)
         if owner is None:
             raise SystemExit(f"unknown task id {args.rerun_task!r}")
-        gate, results_by_id = asyncio.run(
-            run_phase(campaign, owner, rerun_task=args.rerun_task, oracle_phase=args.oracle)
+        gate, results_by_id, task_records = asyncio.run(
+            run_phase(campaign, owner, run_id=run_id, rerun_task=args.rerun_task,
+                      oracle_phase=args.oracle)
         )
+        append_task_records(out_dir / "tasks.jsonl", task_records)
         append_phase_record(out_dir / "phases.jsonl", gate, run_id)
         print(format_gate_report(gate, results_by_id, campaign.get("harness")))
         return 0 if gate.passed else 1
@@ -510,9 +597,10 @@ def main(argv: list[str] | None = None) -> int:
     if kind == "refuse":
         raise SystemExit(f"[refuse] {msg}")
     if kind == "done":
-        print("done — all phases green or waived.")
+        print("done - all phases green or waived.")
         return 0
-    gate, results_by_id = asyncio.run(run_phase(campaign, phase))
+    gate, results_by_id, task_records = asyncio.run(run_phase(campaign, phase, run_id=run_id))
+    append_task_records(out_dir / "tasks.jsonl", task_records)
     append_phase_record(out_dir / "phases.jsonl", gate, run_id)
     print(format_gate_report(gate, results_by_id, campaign.get("harness")))
     return 0 if gate.passed else 1

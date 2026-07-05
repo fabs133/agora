@@ -213,3 +213,93 @@ def test_repair_description_carries_oracle_verbatim() -> None:
     assert "Write tests/test_core.py" in prompt
     assert "The following gate failed." in prompt
     assert "E   assert 1 == 2" in prompt  # oracle verbatim
+
+
+# --------------------------------------------------------------- persistence + oracle
+
+def test_build_and_append_task_record_round_trips(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from agora.observe.jsonl import TaskRecord
+
+    task = SimpleNamespace(id="T5.1", output_path="tests/test_core.py",
+                           spec=SimpleNamespace(postconditions=[]), stages=[],
+                           agent_id="impl", phase="P5", blocking=True)
+    result = SimpleNamespace(
+        success=False, output="", iterations=3,
+        postcondition_results=[("run_check_pytest", False, "1 failed")],
+        run_check_records=[{"cmd": ["python", "-m", "pytest"], "exit_code": 1,
+                            "timed_out": False, "stdout": "boom", "stderr": "",
+                            "stdout_truncated": False, "stderr_truncated": False, "passed": False}],
+        nudges_used=1, reviews_used=0, post_review_action=None, tools_used=["write_file"],
+    )
+    rec = rp.build_task_record(task, result, "implementer", 0, "r001")
+    assert rec.phase == "P5" and rec.blocking is True and rec.nudges_used == 1
+    assert rec.run_check_records[0]["stdout"] == "boom"
+    rp.append_task_records(tmp_path / "tasks.jsonl", [rec])
+    parsed = TaskRecord.model_validate(
+        __import__("json").loads((tmp_path / "tasks.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    )
+    assert parsed.task_id == "T5.1" and parsed.run_check_records[0]["stdout"] == "boom"
+
+
+def test_cross_invocation_oracle_carries_stdout_verbatim(tmp_path) -> None:
+    """Invocation 1 persists a red phase with a distinctive run_check stdout;
+    invocation 2's rerun oracle → repair prompt contains that string verbatim
+    (with its truncation flag), sourced from the PERSISTED tasks.jsonl."""
+    from agora.observe.jsonl import TaskRecord
+
+    marker = "AssertionError: pong != PONG  <<distinctive-oracle-marker-42>>"
+
+    # --- invocation 1: write a red P5 TaskRecord (as run_phase would) ---
+    tr = TaskRecord(
+        run_id="r001", task_id="T5.1", task_index=0, role="implementer",
+        task_kind="test_authoring", status="failed", first_pass=False,
+        loopback_count=0, iterations=3, phase="P5", blocking=True,
+        postconditions=[{"name": "run_check_pytest_ab12", "passed": False}],
+        run_check_records=[{
+            "cmd": ["python", "-m", "pytest", "-q"], "exit_code": 1, "timed_out": False,
+            "stdout": marker, "stderr": "", "stdout_truncated": True,
+            "stderr_truncated": False, "passed": False,
+        }],
+    )
+    (tmp_path / "tasks.jsonl").write_text(tr.model_dump_json() + "\n", encoding="utf-8")
+
+    # --- invocation 2: resolve oracle from persisted records, build repair prompt ---
+    task_records = rp.load_jsonl(tmp_path / "tasks.jsonl")
+    oracle = rp.oracle_records_for_phase(task_records, "P5")
+    prompt = rp.build_repair_description("Write tests/test_core.py", oracle)
+
+    assert marker in prompt                # stdout carried VERBATIM across invocations
+    assert "stdout [truncated]" in prompt  # truncation flag carried
+    assert "The following gate failed." in prompt
+
+
+def test_oracle_skips_passed_and_nonblocking_tasks(tmp_path) -> None:
+    from agora.observe.jsonl import TaskRecord
+
+    def _rec_row(tid, status, blocking, stdout):
+        return TaskRecord(
+            run_id="r", task_id=tid, task_index=0, role="impl", task_kind="code_body",
+            status=status, first_pass=(status == "passed"), loopback_count=0, iterations=1,
+            phase="P4", blocking=blocking,
+            postconditions=[{"name": "run_check_x", "passed": status == "passed"}],
+            run_check_records=[{"cmd": ["c"], "exit_code": 0 if status == "passed" else 1,
+                                "timed_out": False, "stdout": stdout, "stderr": "",
+                                "stdout_truncated": False, "stderr_truncated": False,
+                                "passed": status == "passed"}],
+        ).model_dump_json()
+
+    (tmp_path / "tasks.jsonl").write_text(
+        "\n".join([
+            _rec_row("T4.1", "passed", True, "GREEN_OK"),
+            _rec_row("V4.1", "failed", False, "VERIFIER_FAIL"),  # non-blocking
+            _rec_row("T4.2", "failed", True, "REAL_ORACLE"),
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    oracle = rp.oracle_records_for_phase(rp.load_jsonl(tmp_path / "tasks.jsonl"), "P4")
+    blob = rp.build_repair_description("orig", oracle)
+    assert "REAL_ORACLE" in blob          # failing blocking task's oracle included
+    assert "GREEN_OK" not in blob         # passed task excluded
+    assert "VERIFIER_FAIL" not in blob    # non-blocking task excluded
