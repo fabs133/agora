@@ -1,0 +1,74 @@
+# axis-1 v3.2 — the nudge (S2) under probe v7. Five-model grid.
+#
+# WHY NOW: v3.0 (corrective errors, nudge off) showed instruct's small_chain did
+# NOT flip — the corrective message was delivered but the model SILENT-TERMINATED
+# on the next turn (empty turn, no write). The pre-registered rule routed that to
+# v3.2: nudge_budget:1, the S2 mechanism, is the last registered lever for the
+# silent-terminators (instruct / mistral_nemo / coder-14b). Probe is now v7
+# (form-B tool messages + LF seeds), under which gemma reaches a genuine 9/9 —
+# so equality is finally measuring model behaviour, not rendering/IO artifacts.
+#
+# ONE variable changed vs v3.0: nudge_budget 0→1. tool_errors stays corrective;
+# strategies are the v2 winners (coder→qwen2_5_coder, nemo→mistral_nemo); gemma
+# and qwen3 ride along for the full-grid comparison (gemma = the v7 anchor at 9/9;
+# qwen3 = categorical, bistable, gate-exempt).
+#
+# HEADLINE CELL (pre-registration in harness-reliability.md stands): instruct
+# small_chain. v3.0 = silent-terminate after correction; the nudge injects one
+# corrective user turn on a 0-tool-call turn with the output unwritten. Does
+# instruct then write and pass?
+#
+# Staged (one model-load at a time), per-block reports. Params identical to v3.0.
+schema_version: 1
+name: axis-1-v3.2
+description: "Axis-1 v3.2: nudge_budget=1 (S2) under probe v7. 5 models x 3 repeats\
+  \ = 15 runs; corrective errors + nudge; v2-winning strategies; gemma anchor.\
+  \ ONE variable vs v3.0 (nudge 0->1). instruct small_chain is the headline."
+defaults:
+  params:
+    temperature: 0.0
+    seed: 42
+    num_ctx: 8192
+    max_tokens: 2048
+  output_dir: runs_out/axis-1-v3.2
+  resume: true
+  review_timeout_seconds: 5
+  harness:
+    tool_errors: corrective
+    nudge_budget: 1
+runs:
+# --- qwen2.5:7b-instruct (headline: does the nudge flip small_chain?) - 3 runs
+- {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r003, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
+# --- qwen3:30b (categorical, bistable, gate-exempt) --------------- 3 runs
+- {id: r004, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r005, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r006, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
+# --- mistral-nemo:12b (strategy: mistral_nemo; silent-terminator) - 3 runs
+- {id: r007, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: mistral_nemo}
+- {id: r008, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: mistral_nemo}
+- {id: r009, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: mistral_nemo}
+# --- qwen2.5-coder:14b (strategy: qwen2_5_coder; silent-terminator) 3 runs
+- {id: r010, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: qwen2_5_coder}
+- {id: r011, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: qwen2_5_coder}
+- {id: r012, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: qwen2_5_coder}
+# --- gemma4:e4b (v7 anchor at 9/9; nudge should be inert) --------- 3 runs
+- {id: r013, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r014, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r015, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
