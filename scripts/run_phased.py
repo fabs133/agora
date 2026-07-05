@@ -51,6 +51,18 @@ ROLE_TO_CAST_KEY: dict[AgentRole, str] = {
     AgentRole.ARCHITECT: "planner",
 }
 
+#: Implementer-seat tool ALLOWLIST for the integration flow (run 1.4 / F12).
+#: The seat is held to its MEASURED surface — the tools gemma's 9/9 casting
+#: evidence was earned on. The AST/edit family (add_function, edit_file_*,
+#: add_class*) is de-listed: run 1.3 showed gemma fixate on add_function (a
+#: `path`-requiring, append-one-function tool it could not drive) and never
+#: fall back to write_file, so the correct refactor it AUTHORED never landed.
+#: The seat has no run tools (the `runtime` category is not bound to
+#: IMPLEMENTER; run_check is a postcondition predicate, not an inner tool).
+IMPLEMENTER_ALLOWED_TOOLS: tuple[str, ...] = (
+    "read_file", "write_file", "list_directory", "mark_complete",
+)
+
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     """Read a JSONL file into a list of dicts; missing file → empty list."""
@@ -261,7 +273,14 @@ def resolve_agent_models(agents: list[Any], cast: Any, profiles: Any) -> tuple[l
                 f"{cast.name!r} (looked for key {key!r})"
             )
         profile = profiles.profiles[binding.profile]
-        resolved.append(replace(a, model=profile.model))
+        # Stamp the implementer seat's tool allowlist here (the one place agents
+        # are specialized for this run). Other seats stay unrestricted.
+        extra = (
+            {"allowed_tools": IMPLEMENTER_ALLOWED_TOOLS}
+            if a.role == AgentRole.IMPLEMENTER
+            else {}
+        )
+        resolved.append(replace(a, model=profile.model, **extra))
         model_to_profile[profile.model] = profile
     return resolved, model_to_profile
 
@@ -292,7 +311,11 @@ def build_repair_description(original_description: str, oracle_records: list[dic
         # description consistent with its drifted file and no-op'd; name the
         # tests/spec as authoritative and the artifact as the thing to change.
         "The failing tests/spec below are AUTHORITATIVE. Your artifact violates "
-        "them. Modify your artifact; do not dismiss the failures.", "",
+        "them. Modify your artifact; do not dismiss the failures.",
+        # Affordance line (run 1.4) — the seat now has write_file, not the
+        # add_function/edit family it fixated on; name the exact tool + force.
+        "Rewrite the file with write_file using force=true — the file exists "
+        "and must be replaced.", "",
         "Oracle output (verbatim):",
     ]
     for rc in oracle_records:

@@ -195,6 +195,29 @@ def test_resolve_agent_models_maps_roles_to_cast() -> None:
     assert by["impl"] == "ollama/gemma4:e4b"      # implementer -> cast implementer
     assert by["verifier"] == "ollama/qwen2.5:7b-instruct"  # reviewer -> cast verifier
     assert set(m2p) == {"ollama/gemma4:e4b", "ollama/qwen2.5:7b-instruct"}
+    # Implementer seat is held to its measured tool surface (run 1.4 / F12);
+    # other seats stay unrestricted.
+    by_agent = {a.name: a for a in resolved}
+    assert by_agent["impl"].allowed_tools == rp.IMPLEMENTER_ALLOWED_TOOLS
+    assert "add_function" not in by_agent["impl"].allowed_tools
+    assert by_agent["verifier"].allowed_tools == ()  # unrestricted
+
+
+def test_allowed_tools_filters_the_manifest() -> None:
+    """The seat allowlist filters the LLM-facing manifest down to exactly its
+    tools; the edit/AST family is gone, the four allowed tools remain."""
+    from agora.core.types import AgentRole
+    from agora.fleet.inner_tools import get_tool_definitions
+
+    full = get_tool_definitions(AgentRole.IMPLEMENTER, auto_hooks_enabled=True)
+    names = {t["name"] for t in full}
+    # sanity: the unrestricted implementer manifest DOES carry the edit family
+    assert "add_function" in names and "write_file" in names
+    allowed = set(rp.IMPLEMENTER_ALLOWED_TOOLS)
+    filtered = [t for t in full if t["name"] in allowed]
+    fnames = {t["name"] for t in filtered}
+    assert fnames == allowed                     # exactly the four
+    assert "add_function" not in fnames and "edit_file_replace" not in fnames
 
 
 def test_strip_cross_phase_deps() -> None:
@@ -226,6 +249,18 @@ def test_repair_description_carries_authority_clause() -> None:
     assert clause in prompt
     # placed before the oracle block
     assert prompt.index(clause) < prompt.index("Oracle output (verbatim):")
+
+
+def test_repair_description_carries_write_file_affordance_line() -> None:
+    """Run 1.4: the authority section names the exact tool for the seat that no
+    longer has add_function/edit tools — write_file with force to replace."""
+    oracle = [{"cmd": ["python", "-m", "pytest", "-q"], "exit_code": 1, "timed_out": False,
+               "stdout": "E   assert None == 'pong'", "stderr": "", "stdout_truncated": False}]
+    prompt = rp.build_repair_description("Implement handle_message", oracle)
+    line = ("Rewrite the file with write_file using force=true — the file exists "
+            "and must be replaced.")
+    assert line in prompt
+    assert prompt.index(line) < prompt.index("Oracle output (verbatim):")
 
 
 # --------------------------------------------------------------- persistence + oracle

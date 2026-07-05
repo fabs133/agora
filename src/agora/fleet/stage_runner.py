@@ -387,6 +387,11 @@ class StageRunner:
             if getattr(stage, "hide_tools", ()):
                 _hidden = set(stage.hide_tools)
                 stage_tools = [t for t in stage_tools if t["name"] not in _hidden]
+            # Seat-scoped allowlist (mirror of AgentRuntime.execute_task): hold
+            # this agent to its measured tool surface. Empty = no-op.
+            if identity.config.allowed_tools:
+                _allowed = set(identity.config.allowed_tools)
+                stage_tools = [t for t in stage_tools if t["name"] in _allowed]
 
             final_text, iters, stop, usage = await self._runtime._run_loop(
                 messages=messages,

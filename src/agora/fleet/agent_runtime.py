@@ -284,6 +284,11 @@ class AgentRuntime:
             auto_hooks_enabled=self._ctx.auto_hooks_enabled,
             plan_authoring_enabled=self._ctx.plan_authoring_enabled,
         )
+        # Seat-scoped allowlist: hold this agent to its measured tool surface by
+        # filtering the LLM-facing manifest (executor untouched). Empty = no-op.
+        if identity.config.allowed_tools:
+            allowed = set(identity.config.allowed_tools)
+            tools = [t for t in tools if t["name"] in allowed]
         # Note: write_file auto-hiding is applied per-turn inside _run_loop
         # (so within-stage cycling is caught too), not here.
         executor = get_tool_executor(identity.config.role, self._ctx)

@@ -24,6 +24,8 @@ The following gate failed:
 
 The failing tests/spec below are AUTHORITATIVE. Your artifact violates them.
 Modify your artifact; do not dismiss the failures.
+Rewrite the file with write_file using force=true — the file exists and must
+be replaced.
 
 Oracle output (verbatim):
 
