@@ -55,11 +55,17 @@ def test_commit_all_with_no_changes_raises(repo: RepoManager) -> None:
         repo.commit_all("empty")
 
 
+# TRACKING: these two read git working-tree state and intermittently flaked in a
+# full-suite run (2 failures) under concurrent git activity — index/lock
+# contention, not a logic bug (they pass in isolation). Marked serial so a future
+# xdist setup groups them to one worker; the contention itself is not chased now.
+@pytest.mark.serial
 def test_diff_shows_uncommitted(repo: RepoManager) -> None:
     Path(repo.repo_path, "README.md").write_text("# changed\n", encoding="utf-8")
     assert "changed" in repo.diff()
 
 
+@pytest.mark.serial
 def test_has_uncommitted_changes(repo: RepoManager) -> None:
     assert not repo.has_uncommitted_changes()
     Path(repo.repo_path, "x.txt").write_text("new", encoding="utf-8")
