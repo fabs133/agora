@@ -215,6 +215,19 @@ def test_repair_description_carries_oracle_verbatim() -> None:
     assert "E   assert 1 == 2" in prompt  # oracle verbatim
 
 
+def test_repair_description_carries_authority_clause() -> None:
+    """F9: the repair prompt names the tests/spec as authoritative and the
+    artifact as the thing to change, BEFORE the oracle block."""
+    oracle = [{"cmd": ["python", "-m", "pytest", "-q"], "exit_code": 1, "timed_out": False,
+               "stdout": "E   assert None == 'pong'", "stderr": "", "stdout_truncated": False}]
+    prompt = rp.build_repair_description("Implement handle_message", oracle)
+    clause = ("The failing tests/spec below are AUTHORITATIVE. Your artifact "
+              "violates them. Modify your artifact; do not dismiss the failures.")
+    assert clause in prompt
+    # placed before the oracle block
+    assert prompt.index(clause) < prompt.index("Oracle output (verbatim):")
+
+
 # --------------------------------------------------------------- persistence + oracle
 
 def test_build_and_append_task_record_round_trips(tmp_path) -> None:

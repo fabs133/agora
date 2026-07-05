@@ -72,7 +72,8 @@ task_graph:
     order_after: [T3.1]
     description: >
       Verify the P3 scaffold against the spec's Phase plan (P3). Emit the JSON
-      verdict to verdicts/p3.json.
+      verdict to verdicts/p3.json. Create your verdict file at verdicts/p3.json
+      using write_file.
     output_path: verdicts/p3.json
     postconditions:
       - name: file_exists
@@ -90,7 +91,11 @@ task_graph:
     assigned_to: impl
     phase: P4
     depends_on: [T3.1]
-    description: >
+    description: |
+      Contract (from the spec, verbatim):
+        handle_message(text: str, rng: random.Random) -> str | None
+        — a pure MODULE-LEVEL FUNCTION (not a class or method); rng is injected.
+
       Implement the router in echobot/core.py: handle_message dispatches
       !ping->"pong", !echo <text>->text verbatim (everything after the first
       space), !help->one line per command, unknown !cmd->"unknown command: cmd
@@ -101,12 +106,20 @@ task_graph:
         args: {rel: echobot/core.py, substring: "def handle_message"}
       - name: run_check
         args: {cmd: ["python", "-c", "from echobot.core import handle_message"], expect_exit: 0}
+      # P4 behavioural smoke (F10): the local gate must red on a local contract
+      # violation, so a cross-phase repair against it cannot no-op on a green gate.
+      - name: run_check
+        args: {cmd: ["python", "-c", "import random; from echobot.core import handle_message; assert handle_message('!ping', random.Random(0)) == 'pong'"], expect_exit: 0}
       - name: mark_complete
   - id: T4.2
     assigned_to: impl
     phase: P4
     depends_on: [T4.1]
-    description: >
+    description: |
+      Contract (from the spec, verbatim):
+        handle_message(text: str, rng: random.Random) -> str | None
+        — a pure MODULE-LEVEL FUNCTION (not a class or method); rng is injected.
+
       Add !roll NdM to handle_message using the injected rng
       (rng.randint(1, M) per die): "rolled NdM: a+b+...=total"; a malformed spec
       returns a usage message. Do not break the P4.1 commands.
@@ -116,13 +129,18 @@ task_graph:
         args: {rel: echobot/core.py, substring: "roll"}
       - name: run_check
         args: {cmd: ["python", "-c", "from echobot.core import handle_message"], expect_exit: 0}
+      # P4 behavioural smoke (F10): roll dispatches under a seeded rng.
+      - name: run_check
+        args: {cmd: ["python", "-c", "import random; from echobot.core import handle_message; assert 'rolled 2d6:' in handle_message('!roll 2d6', random.Random(0))"], expect_exit: 0}
       - name: mark_complete
   - id: V4.1
     assigned_to: verifier
     phase: P4
     blocking: false
     order_after: [T4.1, T4.2]
-    description: Verify P4 core against the spec (Functional spec + Phase P4).
+    description: >
+      Verify P4 core against the spec (Functional spec + Phase P4). Create your
+      verdict file at verdicts/p4.json using write_file.
     output_path: verdicts/p4.json
     postconditions:
       - name: run_check
@@ -190,7 +208,9 @@ task_graph:
     phase: P5
     blocking: false
     order_after: [T5.1]
-    description: Verify P5 tests cover the named cases (spec Required tests).
+    description: >
+      Verify P5 tests cover the named cases (spec Required tests). Create your
+      verdict file at verdicts/p5.json using write_file.
     output_path: verdicts/p5.json
     postconditions:
       - name: run_check
@@ -218,7 +238,9 @@ task_graph:
     phase: P6
     blocking: false
     order_after: [T6.1]
-    description: Verify P6 — the full suite still collects and passes.
+    description: >
+      Verify P6 — the full suite still collects and passes. Create your verdict
+      file at verdicts/p6.json using write_file.
     output_path: verdicts/p6.json
     postconditions:
       - name: run_check
@@ -263,7 +285,9 @@ task_graph:
     phase: P7
     blocking: false
     order_after: [T7.1]
-    description: Verify P7 acceptance outputs match the spec's command contract.
+    description: >
+      Verify P7 acceptance outputs match the spec's command contract. Create
+      your verdict file at verdicts/p7.json using write_file.
     output_path: verdicts/p7.json
     postconditions:
       - name: run_check
@@ -333,7 +357,9 @@ task_graph:
     phase: P9
     blocking: false
     order_after: [T9.1, T9.2]
-    description: Verify P9 docs + PROJECT_STATE.md against the actual tree.
+    description: >
+      Verify P9 docs + PROJECT_STATE.md against the actual tree. Create your
+      verdict file at verdicts/p9.json using write_file.
     output_path: verdicts/p9.json
     postconditions:
       - name: run_check

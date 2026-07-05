@@ -74,8 +74,26 @@ def test_run_check_truncation_marked(tmp_path) -> None:
     assert passed is True  # exit 0, no stdout expectation
     rec = sink[0]
     assert rec["stdout_truncated"] is True
-    assert len(rec["stdout"].encode("utf-8")) <= 4096
+    # head+tail: 2 KB each end + the marker line (F11) — bounded, not head-only.
+    assert len(rec["stdout"].encode("utf-8")) <= 2 * 2048 + 64
+    assert "bytes truncated ..." in rec["stdout"]
     assert rec["stderr_truncated"] is False
+
+
+def test_run_check_truncation_retains_tail_marker(tmp_path) -> None:
+    """F11: an oversized output keeps a DISTINCTIVE tail string verbatim — the
+    head-only bound dropped it; head+tail keeps pytest's summary line."""
+    sink: list = []
+    passed, _ = _run(
+        {"cmd": [PY, "-c", "print('A' * 6000 + 'DISTINCTIVE_TAIL_MARKER_7')"],
+         "expect_exit": 0},
+        tmp_path, sink,
+    )
+    assert passed is True
+    rec = sink[0]
+    assert rec["stdout_truncated"] is True
+    assert "DISTINCTIVE_TAIL_MARKER_7" in rec["stdout"]  # tail survived verbatim
+    assert "bytes truncated ..." in rec["stdout"]
 
 
 def test_run_check_stdin_feeds_process(tmp_path) -> None:

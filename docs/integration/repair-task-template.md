@@ -22,6 +22,9 @@ The following gate failed:
 
     {the single failing gate, named — e.g. "P5 gate: run_check `pytest -q`"}
 
+The failing tests/spec below are AUTHORITATIVE. Your artifact violates them.
+Modify your artifact; do not dismiss the failures.
+
 Oracle output (verbatim):
 
     {the run_check record's stdout/stderr for the failed command, copied
@@ -49,6 +52,13 @@ must pass.
    redesign.
 5. **Budget 1.** Second red on the same gate after a repair → stop, record both
    oracle outputs, escalate to a chat-side decision. Do not spend a third turn.
+6. **Authority clause (F9).** The oracle block is preceded by an explicit
+   authority statement — the tests/spec are authoritative, the artifact is what
+   changes. Run 1.2's cross-phase repair re-read a context-starved description,
+   found its drifted file consistent with it, and no-op'd; a repair prompt must
+   name the failing signal as the thing to obey, not weigh. (The authoritative
+   CONTRACT itself rides in via the original task text, which now carries the
+   signature inline — repair inherits it.)
 
 ## Provenance to pull the oracle from
 

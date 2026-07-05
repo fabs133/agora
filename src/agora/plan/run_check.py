@@ -32,16 +32,26 @@ from agora.plan.predicate_registry import register_predicate
 #: Per-stream capture ceiling. Generous on purpose — pytest tracebacks are the
 #: channel's first real length stress (project-phases watchlist).
 _CAPTURE_LIMIT_BYTES = 4096
+#: When over the ceiling, keep this many bytes from EACH end (head + tail).
+_HEAD_TAIL_BYTES = 2048
 
 
 def _bound(text: str) -> tuple[str, bool]:
-    """Return ``text`` truncated to :data:`_CAPTURE_LIMIT_BYTES` bytes + a
-    truncated flag. Bounds by encoded bytes (the stated 4 KB), decoding back
-    with ``replace`` so a split multibyte char can't raise."""
+    """Return ``text`` head+tail truncated with a marked gap + a truncated flag.
+
+    When the encoded length exceeds :data:`_CAPTURE_LIMIT_BYTES`, keep the first
+    and last :data:`_HEAD_TAIL_BYTES` bytes joined by a
+    ``\\n[... N bytes truncated ...]\\n`` marker (F11): pytest's most diagnostic
+    lines are the TAIL summary, which the old head-only bound dropped first.
+    Bounds by encoded bytes, decoding back with ``replace`` so a split multibyte
+    char can't raise."""
     raw = text.encode("utf-8", "replace")
     if len(raw) <= _CAPTURE_LIMIT_BYTES:
         return text, False
-    return raw[:_CAPTURE_LIMIT_BYTES].decode("utf-8", "replace"), True
+    dropped = len(raw) - 2 * _HEAD_TAIL_BYTES
+    head = raw[:_HEAD_TAIL_BYTES].decode("utf-8", "replace")
+    tail = raw[-_HEAD_TAIL_BYTES:].decode("utf-8", "replace")
+    return f"{head}\n[... {dropped} bytes truncated ...]\n{tail}", True
 
 
 @register_predicate("run_check")

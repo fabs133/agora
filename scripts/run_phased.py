@@ -285,7 +285,16 @@ def build_repair_description(original_description: str, oracle_records: list[dic
     """Wrap a task's original prompt with the repair template shape: original
     text + the failed gate's oracle output VERBATIM (docs/integration/
     repair-task-template.md). Oracle = the run_check captures of the red gate."""
-    parts = [original_description.strip(), "", "The following gate failed.", "", "Oracle output (verbatim):"]
+    parts = [
+        original_description.strip(), "",
+        "The following gate failed.", "",
+        # F9 authority clause — the context-starved implementer re-read a
+        # description consistent with its drifted file and no-op'd; name the
+        # tests/spec as authoritative and the artifact as the thing to change.
+        "The failing tests/spec below are AUTHORITATIVE. Your artifact violates "
+        "them. Modify your artifact; do not dismiss the failures.", "",
+        "Oracle output (verbatim):",
+    ]
     for rc in oracle_records:
         cmd = " ".join(rc.get("cmd", []))
         parts.append(f"  $ {cmd}   (exit={rc.get('exit_code')}, timed_out={rc.get('timed_out')})")
