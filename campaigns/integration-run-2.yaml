@@ -1,0 +1,43 @@
+# Integration run 2.0 — echobot clean greenfield. Single cast-loaded, phase-staged run.
+#
+# Run 1.x is CLOSED (findings Parts 1-7, F1-F14). Run 2.0 is the pre-committed
+# clean greenfield run under ALL accumulated fixes, on a FRESH workspace / output
+# dir — the run-1 workspace is retired untouched as forensic evidence. See
+# docs/runs/integration-run-2/pre-registration.md.
+#
+# Identical to integration-run-1.yaml except output_dir (fresh ledger + fresh
+# workspace at runs_out/integration-run-2/echobot). Same flow file (amended
+# through run 1.5: inline contracts, F10 smoke gates, F7 import gate, F5
+# order_after verifiers, F6 inline headers, F9 authority template, F11 head+tail
+# oracle, F12 allowlisted implementer seat, F13 guard invariant, manifest-delta
+# logging). Same harness (evidence-corrected production config) and cast.
+#   {tool_errors: corrective, nudge_budget: 1, review_budget: 0}
+schema_version: 1
+name: integration-run-2
+description: >
+  echobot integration run 2.0 (clean greenfield): cast-loaded
+  (casts/p40-24gb.yaml), phase-gated execution of
+  flows/integration-run-1-echobot.flow.yaml on a fresh workspace. One run,
+  per-phase reports at every gate.
+cast: casts/p40-24gb.yaml
+flow: flows/integration-run-1-echobot.flow.yaml
+harness:
+  tool_errors: corrective
+  nudge_budget: 1
+  review_budget: 0
+params:
+  temperature: 0.0
+  seed: 42
+  num_ctx: 8192
+  max_tokens: 2048
+output_dir: runs_out/integration-run-2
+# Execution discipline: the phase-staged runner executes phases in the flow's
+# declared order (P3, P4, P5, P6, P7, P9), evaluates each phase gate (all BLOCKING
+# tasks green; verifier tasks non-blocking), writes a PhaseGateRecord to
+# phases.jsonl, and PAUSES. Repair budget = 1 per red gate
+# (docs/integration/repair-task-template.md). Second red on the same gate stops;
+# waivers forbidden.
+run:
+  id: r002
+  repeat: 1
+  review_timeout_seconds: 5
