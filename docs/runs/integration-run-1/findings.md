@@ -332,3 +332,64 @@ occurs because T4.1 now carries its contract from turn 1. Run 1.x has
 already paid: five permanent framework upgrades and one casting-doctrine
 dimension from a bot that does not exist yet. Run 2.0 is where it gets
 to exist.
+
+---
+
+## Part 6 — run 1.4 findings (2026-07-05)
+
+**Run 1.4 outcome:** P5 red -> designated repair -> red -> stop, **world
+(b)** as pre-registered — in a sharper form than predicted. The two prep
+items (implementer-seat allowlist; write_file affordance line) both
+landed, but their interaction with a latent v2.4 guard left the seat
+UNABLE TO WRITE, so the repair could not act. Not a model finding; a
+framework-collision finding.
+
+**F13 — the write_file-hide overwrite guard and a seat allowlist are
+mutually exclusive as written.** `_run_loop` (agent_runtime.py:408-420)
+drops `write_file` from the manifest every turn when the task's output
+file already has bytes (`_output_path_has_content`, condition 1). Its
+purpose (v2.4) is to push the model off re-writing and onto the edit
+family (add_function / edit_file_*). Run 1.4's allowlist removed that
+edit family. Net manifest on the pre-existing (drifted) core.py =
+{read_file, list_directory, mark_complete} — no write tool at all. gemma
+read the file, found nothing to modify it with, and produced an empty
+turn -> auto-mark-complete -> core.py never written -> mechanical P5 red.
+The guard assumes the edit family is the fallback; the allowlist assumes
+write_file is; neither is true simultaneously. **Which tool wrote
+core.py: none. Did the guard misdirect: yes — structurally.** The
+repair prompt's item-2 line ("Rewrite the file with write_file using
+force=true") named a tool the guard had hidden — a prompt↔manifest
+contradiction that made correct guidance inert.
+
+**F13 fix (run 1.5, single variable):** make the write_file-hide guard
+ALLOWLIST-AWARE. When the seat exposes no edit-family tool, do NOT hide
+write_file — it is then the seat's only write affordance, and the whole
+premise of the hide (redirect to edit tools) is void. Smallest form: in
+the `_run_loop` per-turn filter, skip the write_file drop when the
+manifest contains none of the edit-family names (or, equivalently, when
+`identity.config.allowed_tools` is set and excludes them). The item-2
+affordance line becomes effective the moment this lands. (Deferred, still
+registered from Part 5: rejection-stall detector; add_function audit;
+guard-message toolset-awareness — F13 subsumes the last of these for the
+hide path.)
+
+**Item verifications.** Allowlist mechanism (item 1): VERIFIED — T4.1
+emitted no add_function/edit call; the 1.3 fixation is gone; the restricted
+manifest is what exposed F13. write_file affordance line (item 2):
+DELIVERED (unit-tested) but inert under the F13 collision. F10 local
+smoke gate: red again on the drift, as designed. Verifier seat left
+unrestricted (allowed_tools=()): confirmed.
+
+**Exit criterion note.** Part 5 pre-committed run 1.4 as the LAST repair
+iteration on this workspace, next execution = run 2.0 (clean greenfield).
+F13 is a REPAIR-path bug (it bites only when re-editing an existing file);
+a greenfield run 2.0 writes core.py the first time (empty output -> write_file
+available) and never hits it, so 2.0 stands unblocked. But F13 must land
+before ANY future repair-on-existing-file, and the accumulated-fixes claim
+for 2.0 now includes an allowlisted seat whose guard interaction is only
+safe post-F13. Recommendation (owner's call): apply the one-line F13 fix
+and re-run the single T4.1 repair ONCE as a clean confirmation of the
+end-to-end repair path (contract + authority + local gate + write_file
+affordance + a manifest that actually offers write_file) before declaring
+run 1.x closed and moving to 2.0. This would be the first repair cell in
+program history to have every provision simultaneously in channel.

@@ -839,3 +839,83 @@ verdicts/p3.json
 verdicts/p4.json           (NEW this run — V4.1 write_file, item-5 fix)
 ```
 PROJECT_STATE.md: NOT PRESENT (P9 not reached).
+
+---
+
+# RUN 1.4 — continuation (resumed ledger, implementer-seat allowlist + write_file affordance line)
+
+## Pre-flight (2026-07-05 19:01) @ aed21dd (run-1.4 prep committed; suite green 1443, ruff clean)
+```
+ollama /api/version: {"version":"0.31.1"}; gemma4:e4b + qwen2.5:7b-instruct resident
+workspace prep: NOTHING TOUCHED — tests/test_core.py + core.py (handle_message(self,message) drift) both intact
+ledger: P3/P4 green, P5 red frontier (run 1.3 #9 mechanical); --next BLOCKED
+conditions delta (2 items, one package, one variable = affordance provisioning):
+  (1) implementer seat ALLOWLIST = {read_file, write_file, list_directory, mark_complete} (its MEASURED surface);
+      AST/edit family (add_function, edit_file_*, add_class*) DE-LISTED. Mechanism: AgentConfig.allowed_tools
+      (new field) filters the LLM manifest at both build sites; run_phased stamps the impl seat in resolve_agent_models.
+  (2) repair authority section gains "Rewrite the file with write_file using force=true — the file exists and must be replaced."
+```
+### Execution reading
+Same shape as 1.3: the single `--rerun-task T4.1 --oracle P5`; T4.1 (P4) + its order_after V4.1 run, oracle drives a mechanical P5 re-eval. Prediction (world a): with add_function gone and write_file named, gemma rewrites core.py via write_file(force) -> local smoke green -> mechanical P5 green -> --next.
+
+## P5 (1.4) designated repair — RED (WORLD (b): overwrite-guard × allowlist collision — the seat had NO write affordance) (2026-07-05 19:03)
+
+### Gate report (verbatim — mechanical P5 re-eval)
+```
+=== phase P5 gate: RED ===
+  blockers: T5.1
+  [FAIL] T5.1 (block)
+      ... 8 name/collect checks ok ...
+      FAIL run_check_python_-m_pytest_-q_949dde
+      run_check: python -m pytest -q -> exit=1 passed=False
+        stdout [stdout truncated]: ...
+FAILED tests\test_core.py::test_echo - AssertionError: assert None == 'Hello ...
+FAILED tests\test_core.py::test_echo_preserves_spacing - AssertionError: ...
+FAILED tests\test_core.py::test_roll_deterministic - AssertionError: assert N...
+FAILED tests\test_core.py::test_roll_malformed - TypeError: argument of type ...
+FAILED tests\test_core.py::test_help_lists_all_commands - TypeError: argument...
+FAILED tests\test_core.py::test_unknown_command - AssertionError: assert None...
+7 failed, 1 passed in 0.12s
+  [FAIL] V5.1 (nonblock)  -> verdicts/p5.json still absent (V5.1 not re-run in a P4-task rerun)
+```
+
+### Which tool wrote core.py, and did the guard misdirect (item-4 question, answered)
+**No tool wrote core.py.** T4.1 record: status=failed, tools_used=['read_file'], iterations=2, nudges=0. run.log, both turns:
+```
+turn 1: read_file echobot/core.py -> "def handle_message(self, message):"   (saw the drift)
+turn 2: tool_calls=0 content_len=0 -> auto-mark-complete synthesized -> core.py never written
+```
+T4.1's local smoke gate (F10) FAILED as designed (`assert handle_message('!ping', Random(0)) == 'pong'` -> exit 1); mechanical P5 re-ran pytest against the unchanged drift -> 7 failed -> RED. **Second P5 red -> STOP.**
+
+**The guard misdirected — and it was the FRAMEWORK, not a message. Root cause (F13, verified in code):** the v2.4 overwrite guard in `_run_loop` (`agent_runtime.py:408-420`) drops `write_file` from the manifest EVERY TURN when the task's output file already has bytes (`stage_runner._output_path_has_content` condition 1) — its explicit purpose is to force the model onto the edit family (add_function/edit_file_*). Run 1.4's allowlist REMOVED that edit family. Net manifest on the pre-existing core.py = {read_file, list_directory, mark_complete} — **the seat had no way to modify an existing file.** gemma read the file, found no applicable write tool, and produced an empty turn (the read-only no-op returns — but now framework-forced, not a model choice). Worse, the repair prompt's item-2 line explicitly instructed "Rewrite the file with write_file using force=true" — pointing at a tool the guard had HIDDEN: a direct prompt↔manifest contradiction. (The empty turn did not trigger the S2 nudge — the output file exists, so the empty-turn trigger is false; the [[repair-oracle-needs-local-gate]] corollary again.)
+
+### Interpretation
+World (b) as pre-registered, in a sharper form: not the guard's error TEXT recommending absent tools, but the guard's silent write_file-HIDING colliding with an allowlist that removed the edit alternatives — leaving the seat unable to write at all. The allowlist fix (1.4) and the overwrite guard (v2.4) are individually sound but mutually exclusive as written: the guard assumes the edit family is the fallback; the allowlist assumes write_file is. **F13 fix (1.5, single variable): make the write_file-hide guard allowlist-aware — do NOT hide write_file when the seat exposes no edit-family tool (write_file is then the only write affordance).** The item-2 prompt line was correct guidance rendered inert by the manifest; it becomes effective the moment F13 lands.
+
+### F-fix verifications this run
+- Item 1 (allowlist mechanism): VERIFIED live — T4.1 never emitted an add_function/edit call (its 1.3 fixation is gone); the manifest was restricted. Side effect exposed F13 (below).
+- Item 2 (write_file affordance line): DELIVERED in the repair prompt (unit-tested), but rendered inert by the F13 guard collision — write_file was hidden from the manifest it named.
+- F10 local smoke gate: VERIFIED again — T4.1's own gate red on the drift.
+- Verifier seat unrestricted (allowed_tools=()): confirmed — V4.1 ran (passed on the pre-existing p4.json; tools_used=[] this run since p4.json already on disk).
+
+### Phase gate ledger (P5 rows)
+```
+#3 #4 P5 RED [run 1]     #5 #6 P5 RED [run 1.1]     #7 P5 RED (world-a fresh)
+#8 P5 RED MECHANICAL [1.2 repair]   #9 P5 RED MECHANICAL [1.3 repair — add_function wall]
+#10 P5 RED MECHANICAL [1.4 repair — overwrite-guard × allowlist collision, F13] -> STOP
+```
+
+**RUN 1.4 STOPPED at P5 (second red on the same gate; the restricted seat had no write affordance on the existing file — F13 guard/allowlist collision). P6/P7/P9 not reached. No PROJECT_STATE.md. No waiver. Drift (F4) intact.**
+
+### Final workspace tree (runs_out/integration-run-1/echobot/echobot, git/pycache elided)
+```
+README.md
+echobot/__init__.py
+echobot/__main__.py
+echobot/core.py            (still handle_message(self, message) — unchanged; no write tool reached the model)
+requirements.txt
+tests/test_core.py
+verdicts/p3.json
+verdicts/p4.json
+```
+PROJECT_STATE.md: NOT PRESENT (P9 not reached).
