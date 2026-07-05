@@ -8,7 +8,7 @@ roles:
     contract: >
       Agentic tool loop. Reads inputs, writes outputs via write_file, declares
       completion via mark_complete(summary). Outputs verifiable by postcondition.
-    harness: {tool_errors: corrective, nudge_budget: 0, review_budget: 1}
+    harness: {tool_errors: corrective, nudge_budget: 1, review_budget: 0}  # evidence-corrected post-v8: nudge earns stall recoveries (v3.2 erratum); review falsified (v8)
     requires:
       probe: tool-call-fidelity
       min:

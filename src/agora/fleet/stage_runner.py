@@ -455,6 +455,7 @@ class StageRunner:
                     iterations=total_iterations,
                     stop_reason=last_stop,
                     artifact_capture=artifact_capture,
+                    run_check_records=list(self._ctx.run_check_records),
                 )
             )
         )

@@ -88,6 +88,10 @@ class TaskResult:
     # ⇒ no review fired (review_budget=0 or no valid mark_complete reached).
     reviews_used: int = 0
     post_review_action: str | None = None
+    # Integration run 1: one capture dict per run_check command executed during
+    # postcondition evaluation (cmd, exit_code, timed_out, stdout/stderr bounded
+    # 4 KB with truncation flags, passed). Additive; default empty.
+    run_check_records: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -344,6 +348,7 @@ class AgentRuntime:
                     iterations=iterations,
                     stop_reason=last_stop,
                     artifact_capture=artifact_capture,
+                    run_check_records=list(self._ctx.run_check_records),
                 )
             )
         )
@@ -1130,6 +1135,9 @@ def _evaluate_postconditions(
             if ctx.control is not None
             else ctx.plan_draft
         ) or ctx.plan_draft,
+        # Integration run 1: run_check appends its command captures here so the
+        # runtime can drain them into the TaskResult after evaluation.
+        "run_check_sink": ctx.run_check_records,
     }
     failures = dict(evaluate_postconditions(task.spec, postcondition_context))
     results: list[tuple[str, bool, str]] = []

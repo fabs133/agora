@@ -1,0 +1,44 @@
+# Integration run 1 — echobot. Single cast-loaded, phase-staged run.
+#
+# This is NOT an axis-1 single-profile probe campaign: it is a ONE-run
+# integration descriptor consumed by the phase-staged runner (paired, chat-side
+# first execution — see run-1-echobot-spec.md "pause at every boundary"). Models
+# are resolved from the CAST by role (implementer=gemma, verifier=instruct),
+# not from a single AGORA_PROFILE.
+#
+# Harness (evidence-corrected production config; v3.2 erratum + roles.yaml):
+#   {tool_errors: corrective, nudge_budget: 1, review_budget: 0}
+#   - corrective: malformed-call recovery (S1, works).
+#   - nudge_budget 1: empty-turn stall recovery (S2, rehabilitated post-v8 —
+#     it was the load-bearing mechanism behind coder small_chain, v3.2 erratum).
+#   - review_budget 0: the S6 completion review was falsified at v8
+#     (observed-and-ignored, perception floor) — OFF in production.
+schema_version: 1
+name: integration-run-1
+description: >
+  echobot integration run 1: cast-loaded (casts/p40-24gb.yaml), phase-gated
+  execution of flows/integration-run-1-echobot.flow.yaml. One run, paired
+  first execution, per-phase reports at every gate.
+cast: casts/p40-24gb.yaml
+flow: flows/integration-run-1-echobot.flow.yaml
+# Carried into run.jsonl provenance as usual (flow design version = probe_version
+# on the flow; harness config as recorded by the runner).
+harness:
+  tool_errors: corrective
+  nudge_budget: 1
+  review_budget: 0
+params:
+  temperature: 0.0
+  seed: 42
+  num_ctx: 8192
+  max_tokens: 2048
+output_dir: runs_out/integration-run-1
+# Execution discipline (do NOT auto-run): the phase-staged runner executes phases
+# in the flow's declared order (P3, P4, P5, P6, P7, P9), evaluates each phase gate
+# (all BLOCKING tasks green; verifier tasks non-blocking), writes a PhaseGateRecord
+# to phases.jsonl, and PAUSES. Repair budget = 1 per red gate
+# (docs/integration/repair-task-template.md). First execution is paired.
+run:
+  id: r001
+  repeat: 1
+  review_timeout_seconds: 5

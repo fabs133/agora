@@ -137,6 +137,12 @@ class ToolContext:
     tool_errors: str = "raw"
     nudge_budget: int = 0
     review_budget: int = 0
+    # Integration run 1: sink for ``run_check`` postcondition captures. The
+    # run_check predicate appends one record per command it executes (cmd,
+    # exit, stdout/stderr bounded 4 KB each, truncation marked); the runtime
+    # drains it into the TaskResult after postcondition evaluation so the
+    # pytest-output channel lands in provenance.
+    run_check_records: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ============================ Tool descriptions ============================

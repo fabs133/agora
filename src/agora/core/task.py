@@ -54,6 +54,14 @@ class Task:
     #: logs a warning if called with a different path. Empty string means
     #: "no single canonical output".
     output_path: str = ""
+    #: Integration run 1: the phase this task belongs to (e.g. ``"P3"``). The
+    #: phase-staged runner groups tasks by this and gates at each boundary.
+    #: Empty string means "no phase" (pre-run-1 flows).
+    phase: str = ""
+    #: Integration run 1: whether this task's postconditions gate its phase.
+    #: Verifier tasks are ``blocking=False`` — their verdict is recorded but
+    #: never blocks the next phase.
+    blocking: bool = True
 
 
 def transition_task(task: Task, new_status: TaskStatus) -> Task:

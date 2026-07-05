@@ -1,0 +1,286 @@
+version: "2.0"
+name: integration-run-1-echobot
+# Flow (design) version, carried into run.jsonl provenance alongside the
+# harness config. 1 = the first phase-gated integration flow.
+probe_version: 1
+description: >
+  Integration run 1 — echobot: a pure command-router core (handle_message) plus
+  a thin stdin/stdout adapter (python -m echobot), headless and network-free.
+  Tasks carry a ``phase`` and execute under phase gates (docs/design/
+  project-phases.md); the phase-staged runner pauses at each boundary. Verifier
+  tasks are ``blocking: false`` — their JSON verdict is recorded for the axis-2
+  casting decision but never gates. Human-authored planner artifact:
+  docs/integration/run-1-echobot-spec.md. Cast: casts/p40-24gb.yaml.
+
+agents:
+  # Implementer seat — gemma via the cast (model resolved by the cast-loaded
+  # runner; empty model = profile/cast-driven).
+  - name: impl
+    role: implementer
+    model: ""
+    instructions: |
+      You implement one small, fully-specified task at a time. Read only the
+      files the task names, write only its declared output path, and finish by
+      calling mark_complete. Reproduce required byte sequences verbatim.
+  # Verifier seat — instruct via the cast (role reviewer = read-only verdict).
+  # Non-blocking: records a verdict, gates nothing.
+  - name: verifier
+    role: reviewer
+    model: ""
+    instructions: |
+      You verify a phase's artifacts against the spec section you are given.
+      You do not write code. Emit ONLY a JSON object to your output path:
+      {"phase": "<Pn>", "verdict": "pass"|"fail", "reasons": ["..."]}.
+
+task_graph:
+  # ===================== P3 scaffold =====================
+  - id: T3.1
+    assigned_to: impl
+    phase: P3
+    description: >
+      Scaffold the echobot package: echobot/__init__.py, echobot/core.py with
+      stub `def handle_message(text, rng): ...`, echobot/__main__.py stub, a
+      tests/ directory, and requirements.txt listing only pytest.
+    output_path: echobot/core.py
+    postconditions:
+      - name: file_exists
+        args: {rel: echobot/__init__.py}
+      - name: file_exists
+        args: {rel: echobot/core.py}
+      - name: file_exists
+        args: {rel: echobot/__main__.py}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import echobot"], expect_exit: 0}
+      - name: mark_complete
+  - id: V3.1
+    assigned_to: verifier
+    phase: P3
+    blocking: false
+    depends_on: [T3.1]
+    description: >
+      Verify the P3 scaffold against the spec's Phase plan (P3). Emit the JSON
+      verdict to verdicts/p3.json.
+    output_path: verdicts/p3.json
+    postconditions:
+      - name: file_exists
+        args: {rel: verdicts/p3.json}
+      - name: file_contains
+        args: {rel: verdicts/p3.json, substring: '"verdict"'}
+      - name: mark_complete
+
+  # ===================== P4 implement core =====================
+  - id: T4.1
+    assigned_to: impl
+    phase: P4
+    depends_on: [T3.1]
+    description: >
+      Implement the router in echobot/core.py: handle_message dispatches
+      !ping->"pong", !echo <text>->text verbatim (everything after the first
+      space), !help->one line per command, unknown !cmd->"unknown command: cmd
+      (try !help)", and returns None for non-command input.
+    output_path: echobot/core.py
+    postconditions:
+      - name: file_contains
+        args: {rel: echobot/core.py, substring: "def handle_message"}
+      - name: run_check
+        args: {cmd: ["python", "-c", "from echobot.core import handle_message"], expect_exit: 0}
+      - name: mark_complete
+  - id: T4.2
+    assigned_to: impl
+    phase: P4
+    depends_on: [T4.1]
+    description: >
+      Add !roll NdM to handle_message using the injected rng
+      (rng.randint(1, M) per die): "rolled NdM: a+b+...=total"; a malformed spec
+      returns a usage message. Do not break the P4.1 commands.
+    output_path: echobot/core.py
+    postconditions:
+      - name: file_contains
+        args: {rel: echobot/core.py, substring: "roll"}
+      - name: run_check
+        args: {cmd: ["python", "-c", "from echobot.core import handle_message"], expect_exit: 0}
+      - name: mark_complete
+  - id: V4.1
+    assigned_to: verifier
+    phase: P4
+    blocking: false
+    depends_on: [T4.1, T4.2]
+    description: Verify P4 core against the spec (Functional spec + Phase P4).
+    output_path: verdicts/p4.json
+    postconditions:
+      - name: file_contains
+        args: {rel: verdicts/p4.json, substring: '"verdict"'}
+      - name: mark_complete
+
+  # ===================== P5 tests =====================
+  - id: T5.1
+    assigned_to: impl
+    phase: P5
+    depends_on: [T4.2]
+    description: >
+      Write tests/test_core.py implementing EXACTLY the named cases from the
+      spec: test_ping, test_echo, test_echo_preserves_spacing,
+      test_roll_deterministic (seeded random.Random), test_roll_malformed,
+      test_help_lists_all_commands, test_unknown_command,
+      test_non_command_returns_none.
+    output_path: tests/test_core.py
+    postconditions:
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_ping"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_echo_preserves_spacing"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_roll_deterministic"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_roll_malformed"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_help_lists_all_commands"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_unknown_command"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_non_command_returns_none"}
+      - name: run_check
+        args: {cmd: ["python", "-m", "pytest", "--collect-only", "-q"], expect_exit: 0, timeout_s: 60}
+      - name: run_check
+        args: {cmd: ["python", "-m", "pytest", "-q"], expect_exit: 0, timeout_s: 60}
+      - name: mark_complete
+  - id: V5.1
+    assigned_to: verifier
+    phase: P5
+    blocking: false
+    depends_on: [T5.1]
+    description: Verify P5 tests cover the named cases (spec Required tests).
+    output_path: verdicts/p5.json
+    postconditions:
+      - name: file_contains
+        args: {rel: verdicts/p5.json, substring: '"verdict"'}
+      - name: mark_complete
+
+  # ===================== P6 integration =====================
+  - id: T6.1
+    assigned_to: impl
+    phase: P6
+    depends_on: [T5.1]
+    description: >
+      Implement echobot/__main__.py: read lines from stdin, pass each to
+      handle_message (with a default random.Random), write non-None responses to
+      stdout, ignore None. No other IO.
+    output_path: echobot/__main__.py
+    postconditions:
+      - name: run_check
+        args: {cmd: ["python", "-m", "pytest", "-q"], expect_exit: 0, timeout_s: 60}
+      - name: mark_complete
+  - id: V6.1
+    assigned_to: verifier
+    phase: P6
+    blocking: false
+    depends_on: [T6.1]
+    description: Verify P6 — the full suite still collects and passes.
+    output_path: verdicts/p6.json
+    postconditions:
+      - name: file_contains
+        args: {rel: verdicts/p6.json, substring: '"verdict"'}
+      - name: mark_complete
+
+  # ===================== P7 acceptance (gate only) =====================
+  # No new artifact — the assembled bot is driven headlessly via stdin (no shell
+  # pipe: run_check feeds stdin directly). The task just declares completion; the
+  # run_check acceptance postconditions are the phase gate.
+  - id: T7.1
+    assigned_to: impl
+    phase: P7
+    depends_on: [T6.1]
+    description: >
+      Acceptance: the bot is already assembled. Confirm it end-to-end, then call
+      mark_complete. Do not modify any files.
+    postconditions:
+      - name: run_check
+        args:
+          cmd: ["python", "-m", "echobot"]
+          stdin: "!ping\n"
+          expect_stdout_contains: "pong"
+          timeout_s: 30
+      - name: run_check
+        args:
+          cmd: ["python", "-m", "echobot"]
+          stdin: "!echo hello world\n"
+          expect_stdout_contains: "hello world"
+          timeout_s: 30
+      - name: run_check
+        args:
+          cmd: ["python", "-m", "echobot"]
+          stdin: "!roll 2d6\n"
+          expect_stdout_contains: "rolled 2d6:"
+          timeout_s: 30
+      - name: mark_complete
+  - id: V7.1
+    assigned_to: verifier
+    phase: P7
+    blocking: false
+    depends_on: [T7.1]
+    description: Verify P7 acceptance outputs match the spec's command contract.
+    output_path: verdicts/p7.json
+    postconditions:
+      - name: file_contains
+        args: {rel: verdicts/p7.json, substring: '"verdict"'}
+      - name: mark_complete
+
+  # ===================== P9 docs + handoff =====================
+  - id: T9.1
+    assigned_to: impl
+    phase: P9
+    depends_on: [T6.1]
+    description: >
+      Write README.md: what echobot is, how to run it (python -m echobot), and
+      how to test it (python -m pytest -q).
+    output_path: README.md
+    postconditions:
+      - name: file_contains
+        args: {rel: README.md, substring: "python -m echobot"}
+      - name: file_contains
+        args: {rel: README.md, substring: "pytest"}
+      - name: mark_complete
+  - id: T9.2
+    assigned_to: impl
+    phase: P9
+    depends_on: [T9.1]
+    description: >
+      Write PROJECT_STATE.md at the project root per
+      docs/integration/project-state-template.md, with this project's facts.
+      Include every mandatory section header and, in the Verification record
+      section, the exact gate commands (python -m pytest -q and the python -m
+      echobot acceptance) verbatim — they are re-run in any future phase 0.
+    output_path: PROJECT_STATE.md
+    postconditions:
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Identity"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Architecture & invariants"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Capability inventory"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Verification record"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## File map"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Conventions"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Extension points"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## How to run / test"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "pytest -q"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "python -m echobot"}
+      - name: mark_complete
+  - id: V9.1
+    assigned_to: verifier
+    phase: P9
+    blocking: false
+    depends_on: [T9.1, T9.2]
+    description: Verify P9 docs + PROJECT_STATE.md against the actual tree.
+    output_path: verdicts/p9.json
+    postconditions:
+      - name: file_contains
+        args: {rel: verdicts/p9.json, substring: '"verdict"'}
+      - name: mark_complete

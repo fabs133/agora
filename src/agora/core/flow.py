@@ -88,6 +88,11 @@ class TaskTemplate:
     postconditions: tuple[PostconditionRef, ...] = ()
     output_path: str = ""
     stages: tuple[StageTemplate, ...] = ()
+    # Integration run 1: phase membership + gate participation. ``phase`` groups
+    # tasks for the phase-staged runner; ``blocking=False`` marks a task (e.g. a
+    # verifier) whose postconditions are recorded but do not gate the phase.
+    phase: str = ""
+    blocking: bool = True
 
 
 @dataclass(frozen=True)
@@ -161,6 +166,9 @@ class _TaskSchema(BaseModel):
     postconditions: list[_PostconditionSchema] = Field(default_factory=list)
     output_path: str = ""
     stages: list[_StageSchema] = Field(default_factory=list)
+    # Integration run 1: phase membership + gate participation.
+    phase: str = ""
+    blocking: bool = True
 
 
 class _FlowSchema(BaseModel):
@@ -241,6 +249,8 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
                     postconditions=t.postconditions,
                     output_path=t.output_path,
                     stages=t.stages,
+                    phase=t.phase,
+                    blocking=t.blocking,
                 )
             )
 
@@ -283,6 +293,8 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
                     _validate_and_build_stage(s, t.id)
                     for s in t.stages
                 ),
+                phase=t.phase,
+                blocking=t.blocking,
             )
         )
 
@@ -441,7 +453,8 @@ def save_flow(flow: Flow, path: str | Path) -> None:
     backward compatibility with existing fixtures.
     """
     needs_v2 = any(
-        t.postconditions or t.output_path or t.stages for t in flow.task_graph
+        t.postconditions or t.output_path or t.stages or t.phase or not t.blocking
+        for t in flow.task_graph
     )
     version = "2.0" if needs_v2 else "1.0"
 
@@ -461,6 +474,10 @@ def save_flow(flow: Flow, path: str | Path) -> None:
             ]
         if t.output_path:
             row["output_path"] = t.output_path
+        if t.phase:
+            row["phase"] = t.phase
+        if not t.blocking:
+            row["blocking"] = False
         if t.stages:
             stage_rows: list[dict[str, Any]] = []
             for s in t.stages:
@@ -598,6 +615,8 @@ def instantiate_flow(
                 created_at=now,
                 updated_at=now,
                 output_path=t.output_path,
+                phase=t.phase,
+                blocking=t.blocking,
             )
         )
     return agents, tasks

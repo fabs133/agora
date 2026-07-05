@@ -200,6 +200,13 @@ class TaskRecord(BaseModel):
     # model did on the turn after the last review. Additive; schema stays 1.
     reviews_used: int = 0
     post_review_action: Literal["confirm", "revise", "other"] | None = None
+    # Integration run 1: per-task phase membership + whether the task gates its
+    # phase (verifier tasks are non-blocking). Additive; None phase = pre-run-1.
+    phase: str | None = None
+    blocking: bool = True
+    # Integration run 1: run_check command captures (cmd, exit_code, timed_out,
+    # stdout/stderr bounded 4 KB with truncation flags, passed). Additive.
+    run_check_records: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RunRecord(BaseModel):
@@ -241,6 +248,35 @@ class RunRecord(BaseModel):
     # Probe design version (findings S4). Carried from the flow file so v3 cells
     # are never silently compared against v1/v2. Additive optional; stays 1.
     probe_version: int | None = None
+
+
+class PhaseTaskOutcome(BaseModel):
+    """One task's contribution to a phase gate (provenance)."""
+
+    model_config = {"extra": "forbid"}
+
+    task_id: str
+    blocking: bool
+    passed: bool
+    postconditions: list[PostconditionOutcome] = Field(default_factory=list)
+
+
+class PhaseGateRecord(BaseModel):
+    """One line in ``phases.jsonl`` — a phase gate outcome (integration run 1).
+
+    ``passed`` is the gate verdict (all BLOCKING tasks green); ``blockers`` names
+    the blocking tasks that failed. Per-task per-predicate outcomes are retained
+    so a red gate is diagnosable from provenance alone.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    schema_version: Literal[1] = SCHEMA_VERSION
+    run_id: str
+    phase: str
+    passed: bool
+    blockers: list[str] = Field(default_factory=list)
+    tasks: list[PhaseTaskOutcome] = Field(default_factory=list)
 
 
 # ------------------------------------------------------------------ pure helpers
@@ -445,9 +481,13 @@ class RunObserver:
 
         self._run_path = self.output_dir / "run.jsonl"
         self._tasks_path = self.output_dir / "tasks.jsonl"
-        # Truncate both on run start; records are appended + flushed as they land.
+        self._phases_path = self.output_dir / "phases.jsonl"
+        # Truncate on run start; records are appended + flushed as they land.
         self._tasks_fh = self._tasks_path.open("w", encoding="utf-8")
         self._run_fh = self._run_path.open("w", encoding="utf-8")
+        # Lazily opened on the first phase-gate record so pre-run-1 flows (no
+        # phases) never create an empty phases.jsonl.
+        self._phases_fh: Any = None
         self._closed = False
 
         # Per-task execution counter — drives loopback_count / first_pass.
@@ -488,6 +528,37 @@ class RunObserver:
         fields.setdefault("run_id", self.run_id)
         record = TaskRecord(**fields)
         self._write(self._tasks_fh, record)
+        return record
+
+    def record_phase_gate(
+        self, result: Any, *, run_id: str | None = None
+    ) -> PhaseGateRecord:
+        """Append one phase-gate outcome to ``phases.jsonl`` (integration run 1).
+
+        Accepts a :class:`agora.fleet.phase_gate.PhaseGateResult` (duck-typed:
+        ``phase``, ``passed``, ``blockers``, and ``tasks`` of
+        ``TaskGateOutcome``). Opens ``phases.jsonl`` on first call.
+        """
+        record = PhaseGateRecord(
+            run_id=run_id or self.run_id,
+            phase=result.phase,
+            passed=bool(result.passed),
+            blockers=list(result.blockers),
+            tasks=[
+                PhaseTaskOutcome(
+                    task_id=t.task_id,
+                    blocking=t.blocking,
+                    passed=t.passed,
+                    postconditions=[
+                        {"name": n, "passed": bool(p)} for n, p in t.postconditions
+                    ],
+                )
+                for t in result.tasks
+            ],
+        )
+        if self._phases_fh is None:
+            self._phases_fh = self._phases_path.open("w", encoding="utf-8")
+        self._write(self._phases_fh, record)
         return record
 
     def record_run(self, **fields: Any) -> RunRecord:
@@ -560,6 +631,8 @@ class RunObserver:
                 iterations=None,
                 postconditions=[],
                 duration_s=0.0,
+                phase=(getattr(task, "phase", "") or None),
+                blocking=bool(getattr(task, "blocking", True)),
             )
 
         success = bool(getattr(result, "success", False))
@@ -608,13 +681,18 @@ class RunObserver:
             artifact_capture=getattr(result, "artifact_capture", None),
             reviews_used=int(getattr(result, "reviews_used", 0) or 0),
             post_review_action=getattr(result, "post_review_action", None),
+            phase=(getattr(task, "phase", "") or None),
+            blocking=bool(getattr(task, "blocking", True)),
+            run_check_records=list(getattr(result, "run_check_records", []) or []),
         )
 
     def close(self) -> None:
         """Flush + close both file handles. Idempotent."""
         if self._closed:
             return
-        for fh in (self._tasks_fh, self._run_fh):
+        for fh in (self._tasks_fh, self._run_fh, self._phases_fh):
+            if fh is None:
+                continue
             try:
                 fh.flush()
                 fh.close()
