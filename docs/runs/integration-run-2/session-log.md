@@ -176,3 +176,18 @@ verdicts/p4.json           (V4.1 — valid)
 verdicts/p5.json           (V5.1 — WRITTEN this run, but malformed JSON)
 ```
 PROJECT_STATE.md: NOT PRESENT (P9 not reached — run did not complete).
+
+---
+
+# RUN 2.1 — conditions-defect re-establishment of P5 + first-ever P6/P7/P9 (F15 predicate applied)
+
+## Pre-flight (2026-07-05) @ run-2.1 prep (suite green 1449, ruff clean)
+```
+ollama /api/version: {"version":"0.31.1"}; gemma4:e4b + qwen2.5:7b-instruct resident
+conditions delta (F15): spec malformed-roll line amended chat-side to "usage message that MUST
+  contain the substring 'NdM'"; T5.1 inline contract updated to match verbatim (one line). Nothing
+  else in the flow changes. core.py UNTOUCHED (gemma's live output "... Use format NdM." already conforms).
+ledger: P3/P4 green, P5 red (run-2.0 second red, roll_malformed wording divergence).
+action: conditions-defect re-establishment — `--rerun-task T5.1` (no repair budget consumed per the
+  standing rule; the 2.0 red was a VERIFIED spec defect); then --next through P6/P7/P9.
+```

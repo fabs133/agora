@@ -507,3 +507,54 @@ rather than repairing?) is a run-2.0 measurement, not a run-1.x fix.
 detector; add_function audit (append vs upsert, `path` requirement);
 verdicts/p5.json confirmation on a P5-touching run (V5.1 never re-ran in a
 P4-task rerun). These carry into the run-2.0 backlog.
+
+---
+
+## Part 8 — run 2.0 findings, F15 doctrine, run 2.1 pre-registration (2026-07-05)
+
+**Run 2.0:** P3 green, P4 red->green (repair landed !roll in one pass),
+P5 red->repair->red->stop on ONE test. F13 verified live across a full
+greenfield run (allowlisted seats kept write_file; unrestricted verifier
+correctly guarded — both branches observed). F14-fresh: 6/8 first pass,
+7/8 after one named-oracle repair — incremental build + per-task smoke
+gates beat 1.5's whole-file 4/8, confirming the pre-registered F12xF14
+mitigation.
+
+**F15 — spec self-testability.** The blocker was a contract ambiguity,
+not a defect: the spec said "malformed spec -> a usage message" with no
+acceptance predicate; the tester invented literals; the implementation
+answered correctly in different words. Neither is wrong against the
+human spec; the gate reds on the SPEC AUTHOR'S omission — the first
+planner-side finding of the program (the taxonomy's Phase-1 failure
+surface, missed by its own human review). Doctrine, adopted: every
+behavioural requirement carries its own acceptance predicate — exact
+output, or an explicit tolerance; implicit freedom is delegated
+ambiguity. Applied: the roll-malformed requirement now reads "usage
+message that MUST contain 'NdM'" — gemma's live output already
+conforms; only the test regenerates.
+
+**Standing protocol rule — conditions-defect re-establishment (third
+use, now named):** a trial whose conditions contained a VERIFIED defect
+(framework bug, channel starvation, spec defect) re-establishes without
+consuming repair budget; a trial that reached the model under valid
+conditions consumes budget. Precedents: run 1 scope bug, run 1.4
+affordance void, run 2.0 spec defect.
+
+**Verifier fidelity record (non-gating, axis-2 data):** instruct as
+verifier across the program: verdict "pending" (1.2) -> post_note, no
+artifact (1.2') -> file written, malformed JSON (2.0). Trend: protocol
+adherence improving, artifact fidelity not yet reliable. No fix; the
+record IS the measurement.
+
+**Run 2.1 pre-registration.** Conditions delta: the F15 predicate in the
+spec + T5.1's inline contract (one line each); nothing else changes;
+core.py untouched (already conforms). Action: conditions-defect
+re-establishment of P5 — rerun T5.1; then --next through P6/P7/P9.
+Worlds: (a) tester asserts the stated predicate -> pytest green ->
+proceed; P6/P7 are FIRST exercises (instrument findings likely; standard
+protocol, one repair each, second red stops); completion -> PROJECT_STATE
+human fact-check. (b) tester deviates from a now-stated predicate ->
+red; ONE repair (this time deviation is attributable — the contract
+names the predicate); second red stops with a genuine tester-fidelity
+finding. Waivers forbidden. Budget: fresh per gate for the never-run
+phases; P5's re-establishment consumes none per the standing rule.

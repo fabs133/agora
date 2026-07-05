@@ -168,7 +168,9 @@ task_graph:
           !echo <text>         -> <text> verbatim (everything after the 1st space)
           !roll NdM (e.g. 2d6) -> "rolled NdM: a+b+...=total"; rng injected
                                   (deterministic under a seeded random.Random);
-                                  a malformed spec -> a usage message
+                                  a malformed spec -> a usage message that
+                                  MUST contain the substring "NdM" (acceptance
+                                  predicate per F15; any phrasing otherwise)
           !help                -> one line per command
           unknown !cmd         -> "unknown command: cmd (try !help)"
 
