@@ -113,3 +113,36 @@ twist: artifact_capture worked, but the captured content contradicts
 v3.0's byte-correct attempt at identical prompt+daemon, and repeats were
 non-identical. The determinism investigation gates any v4 capability
 claims and precedes v3.2 execution.
+
+## v3.2 resolution note (2026-07-05) — S2 mis-targeted; gate NOT met
+
+Full report: [`docs/runs/axis-1-v3/v3.2-findings.md`](../runs/axis-1-v3/v3.2-findings.md).
+Ran at the production config (`corrective`, `nudge_budget: 1`) **under
+probe v7** — a substrate this pre-registration predates (v3.0 was probe
+v3). That substrate change is decisive:
+
+- **Headline falsified as an S2 result.** instruct small_chain flipped
+  0/3 → 3/3, but the nudge fired **0 times**. The flip is entirely probe
+  v7's rendering fix (form-B bare tool messages + LF seeds): instruct now
+  writes 62 bytes with real newlines and calls mark_complete on turn 2 —
+  no silent-terminate turn exists for S2 to catch. The registered lever
+  was inert on the cell it was registered for.
+- **S2 earns no pass anywhere.** Nudges fired only on qwen3 (4×) and coder
+  (6×, all loop_depth). Where it fired it re-activated the model
+  (empty turn → nudge → read_file → mark_complete) but the retried bytes
+  were still wrong (coder loop_depth 0/3). Most silent-terminators
+  (instruct loop_depth, nemo) re-call mark_complete every turn and never
+  emit the 0-tool-call turn S2 keys on — structurally inert.
+- **Diagnosis.** v7 converted the dominant failure from *silent
+  termination* into *confident wrong-byte completion* (trailing-newline
+  off-by-one, spurious separator, dropped operand, one literal-escape
+  holdout in nemo). S2 targets the empty turn; the residual is a byte
+  error. Mis-targeted by construction, post-v7.
+- **Gate: NOT met.** gemma-e4b is the only 9/9 (≤12 GB). No second profile
+  reaches 9/9 (instruct 6/9, coder 3/9, qwen3 4/9, nemo 0/9). The nudge
+  did not lift a second model across the line.
+
+The S2 line is closed. The registered next lever must target the actual
+post-v7 residual (tail-newline / separator byte errors on concat+redirect),
+which is a validation/prompt-shaped intervention — a **new**
+pre-registration, not a continuation of this one.
