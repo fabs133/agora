@@ -279,6 +279,9 @@ class PhaseGateRecord(BaseModel):
     passed: bool
     blockers: list[str] = Field(default_factory=list)
     tasks: list[PhaseTaskOutcome] = Field(default_factory=list)
+    # True for a mechanical re-evaluation over the workspace (cross-phase repair)
+    # rather than a live task run. Additive; default False. Read as artifact-state.
+    mechanical: bool = False
 
 
 # ------------------------------------------------------------------ pure helpers

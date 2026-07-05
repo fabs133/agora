@@ -192,7 +192,9 @@ def reevaluate_phase_gate(project_work_dir: Path, phase: str, flow_tasks: list[A
         pcs = [(pred.name, bool(pred.evaluate(ctx)[0])) for pred in t.spec.postconditions]
         outcomes.append(TaskGateOutcome(task_id=t.id, blocking=t.blocking, postconditions=pcs))
         results_by_id[t.id] = SimpleNamespace(task_id=t.id, run_check_records=list(sink), nudges_used=0)
-    return evaluate_phase_gate(phase, outcomes), results_by_id
+    # Flag the gate as mechanical so the ledger and --status distinguish an
+    # artifact-state re-eval from a live task run.
+    return replace(evaluate_phase_gate(phase, outcomes), mechanical=True), results_by_id
 
 
 def _tail(text: str, limit: int = 500) -> str:
@@ -337,6 +339,7 @@ def append_phase_record(phases_path: Path, gate: Any, run_id: str) -> None:
         phase=gate.phase,
         passed=bool(gate.passed),
         blockers=list(gate.blockers),
+        mechanical=bool(getattr(gate, "mechanical", False)),
         tasks=[
             PhaseTaskOutcome(
                 task_id=t.task_id, blocking=t.blocking, passed=t.passed,
@@ -614,9 +617,13 @@ def _print_status(campaign: dict[str, Any]) -> None:
     out_dir = Path(campaign["output_dir"])
     records = load_jsonl(out_dir / "phases.jsonl")
     waivers = load_jsonl(out_dir / "waivers.jsonl")
+    latest = latest_by_phase(records)
     print(f"=== {campaign.get('name', 'run')} — phase status ===")
     for phase, status in phase_states(phases, records, waivers):
-        print(f"  {phase:6} {status}")
+        marker = ""
+        if phase in latest and latest[phase][1].get("mechanical"):
+            marker = "  (mechanical re-eval)"
+        print(f"  {phase:6} {status}{marker}")
     kind, ph, msg = next_action(phase_states(phases, records, waivers))
     if kind == "run":
         print(f"next: run {ph}")

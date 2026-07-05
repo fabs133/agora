@@ -49,6 +49,10 @@ class PhaseGateResult:
     tasks: tuple[TaskGateOutcome, ...]
     passed: bool
     blockers: tuple[str, ...]
+    #: True when produced by a mechanical re-evaluation over the workspace
+    #: (cross-phase repair) rather than a live task run — read as an
+    #: ARTIFACT-STATE check, its genuine signal being run_check re-execution.
+    mechanical: bool = False
 
     @property
     def blocking_tasks(self) -> tuple[TaskGateOutcome, ...]:

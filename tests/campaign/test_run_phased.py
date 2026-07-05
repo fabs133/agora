@@ -390,6 +390,36 @@ def test_reevaluate_phase_gate_over_workspace(tmp_path) -> None:
     assert gate2.blockers == ("TX",)
 
 
+def test_mechanical_flag_round_trips(tmp_path) -> None:
+    """reevaluate_phase_gate marks its gate mechanical; the flag survives to the
+    PhaseGateRecord in phases.jsonl and is distinguishable in --status."""
+    from agora.core.contract import Specification
+    from agora.core.task import Task
+    from agora.observe.jsonl import PhaseGateRecord
+    from agora.plan.predicate_registry import build_predicate
+
+    (tmp_path / "src.txt").write_text("has MARKER", encoding="utf-8")
+    spec = Specification(postconditions=(
+        build_predicate("file_contains", {"rel": "src.txt", "substring": "MARKER"}),
+    ))
+    gate, _ = rp.reevaluate_phase_gate(
+        tmp_path, "P5", [Task(id="TX", spec=spec, phase="P5", blocking=True)]
+    )
+    assert gate.mechanical is True
+
+    phases_path = tmp_path / "phases.jsonl"
+    rp.append_phase_record(phases_path, gate, run_id="r001")
+    parsed = PhaseGateRecord.model_validate(rp.load_jsonl(phases_path)[0])
+    assert parsed.mechanical is True
+
+    # A live (non-mechanical) gate defaults False and stays False through append.
+    from agora.fleet.phase_gate import TaskGateOutcome, evaluate_phase_gate
+    live = evaluate_phase_gate("P4", [TaskGateOutcome("T4.1", True, [("x", True)])])
+    assert live.mechanical is False
+    rp.append_phase_record(phases_path, live, run_id="r001")
+    assert rp.load_jsonl(phases_path)[1]["mechanical"] is False
+
+
 def test_cross_phase_oracle_templated_onto_other_phase_task(tmp_path) -> None:
     """--rerun-task Y --oracle X: oracle sourced from phase X (persisted records)
     is templated onto a task from a DIFFERENT phase Y (verbatim), and phase X's
