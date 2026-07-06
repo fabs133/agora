@@ -608,3 +608,145 @@ def test_cross_phase_oracle_templated_onto_other_phase_task(tmp_path) -> None:
     prompt = rp.build_repair_description("Implement handle_message router in src", oracle)
     assert "Implement handle_message router in src" in prompt   # Y's original task
     assert marker in prompt                                     # X's oracle, verbatim
+
+
+# ------------------------------------------------- C3: verification-record coverage
+
+import json as _json  # noqa: E402
+
+_RUN3_FLOW = Path(__file__).resolve().parents[2] / "flows" / "integration-run-3-brownfield.flow.yaml"
+
+
+def _all_flow_run_checks(flow_path):
+    """Independently parse EVERY run_check spec from a flow YAML (no exclusions) —
+    the raw ground truth the coverage assertion measures ``flow_gate_checks``
+    against, so the test is not circular with the extractor's own filter."""
+    import yaml
+
+    data = yaml.safe_load(Path(flow_path).read_text(encoding="utf-8")) or {}
+    specs = []
+    for t in data.get("task_graph", []) or []:
+        for pc in t.get("postconditions", []) or []:
+            if pc.get("name") != "run_check":
+                continue
+            a = pc.get("args") or {}
+            if not isinstance(a.get("cmd"), list):
+                continue
+            spec = {"cmd": list(a["cmd"])}
+            for k in ("stdin", "expect_stdout_contains", "expect_exit", "timeout_s"):
+                if k in a:
+                    spec[k] = a[k]
+            specs.append(spec)
+    return specs
+
+
+def _keys(specs):
+    return {_json.dumps(s, sort_keys=True) for s in specs}
+
+
+def test_flow_gate_checks_excludes_only_meta_and_scaffolding() -> None:
+    """C3: the gate set is the flow's FULL run_check set minus exactly two
+    categories — pytest --collect-only (meta, subsumed) and handoff-scaffolding
+    checks (prose/ , PROJECT_STATE). Nothing behavioural is dropped."""
+    allc = _keys(_all_flow_run_checks(_RUN3_FLOW))
+    gates = _keys(rp.flow_gate_checks(_RUN3_FLOW))
+    assert gates <= allc
+    dropped = allc - gates
+    assert dropped, "expected collect-only + prose scaffolding to be excluded"
+    for d in dropped:
+        cmd = _json.loads(d)["cmd"]
+        assert "--collect-only" in cmd or any("prose/" in p or "PROJECT_STATE" in p for p in cmd)
+    # and the dropped set is EXACTLY those two categories (no behavioural loss)
+    expected_kept = {
+        k for k in allc
+        if "--collect-only" not in _json.loads(k)["cmd"]
+        and not any("prose/" in p or "PROJECT_STATE" in p for p in _json.loads(k)["cmd"])
+    }
+    assert gates == expected_kept
+
+
+def test_verification_record_covers_full_flow_gate_set() -> None:
+    """C3: the record derived from ``flow_gate_checks`` round-trips through the
+    handoff serializer AND closes the v2 gap — the FakeGateway round-trip and the
+    new-feature !flip / !choose smokes are present (they were absent in v2)."""
+    from agora.plan import handoff
+
+    gates = rp.flow_gate_checks(_RUN3_FLOW)
+    record = handoff._verification_record(gates)
+    recovered = handoff.parse_verification_run_checks(record)
+    assert _keys(recovered) == _keys(gates)          # coverage == flow gate set
+    joined = [" ".join(s["cmd"]) for s in gates]
+    assert any("run_adapter" in j for j in joined), "FakeGateway round-trip missing"
+    assert any("!flip" in j for j in joined), "flip smoke missing"
+    assert any("!choose" in j for j in joined), "choose smoke missing"
+    assert any(j == "python -m pytest -q" for j in joined)
+    assert any(j == "python -m echobot" for j in joined)
+
+
+def test_v2_record_fixture_fails_coverage_but_v21_passes() -> None:
+    """C3: the SHIPPED v2 record (v1's four checks) is a strict, incomplete SUBSET
+    of the flow's gate set — the regression this correction fixes. The freshly
+    extracted set is complete."""
+    v2_record = [
+        {"cmd": ["python", "-m", "pytest", "-q"], "expect_exit": 0, "timeout_s": 60},
+        {"cmd": ["python", "-m", "echobot"], "expect_stdout_contains": "pong",
+         "stdin": "!ping\n", "timeout_s": 30},
+        {"cmd": ["python", "-m", "echobot"], "expect_stdout_contains": "hello world",
+         "stdin": "!echo hello world\n", "timeout_s": 30},
+        {"cmd": ["python", "-m", "echobot"], "expect_stdout_contains": "rolled 2d6:",
+         "stdin": "!roll 2d6\n", "timeout_s": 30},
+    ]
+    gate_keys = _keys(rp.flow_gate_checks(_RUN3_FLOW))
+    assert _keys(v2_record) < gate_keys              # strict subset → v2 incomplete
+    assert not any("run_adapter" in " ".join(s["cmd"]) for s in v2_record)  # the gap
+
+
+# ------------------------------------------------- F23 + closed-ledger guard
+
+def test_repair_gate_is_mechanical_covers_same_and_cross_phase() -> None:
+    assert rp.repair_gate_is_mechanical("T5.1", "P5") is True   # same-phase repair
+    assert rp.repair_gate_is_mechanical("T4.1", "P5") is True   # cross-phase repair
+    assert rp.repair_gate_is_mechanical(None, None) is False    # normal execution
+    assert rp.repair_gate_is_mechanical("T5.1", None) is False  # rerun without oracle
+
+
+def test_same_phase_repair_cannot_green_phase_with_failing_blocker(tmp_path) -> None:
+    """F23: under the full-gate mechanical re-eval a phase stays RED when its
+    BLOCKER still fails, even though the repaired non-blocking task passes — so a
+    same-phase repair of a non-blocker cannot green the phase."""
+    from agora.core.contract import Specification
+    from agora.core.task import Task
+    from agora.plan.predicate_registry import build_predicate
+
+    (tmp_path / "nonblock.txt").write_text("OK", encoding="utf-8")  # repaired task passes
+    # blocker.txt absent → the blocking task's postcondition fails
+    good = Task(id="T_nb", phase="P6", blocking=False, spec=Specification(postconditions=(
+        build_predicate("file_contains", {"rel": "nonblock.txt", "substring": "OK"}),)))
+    blocker = Task(id="T_b", phase="P6", blocking=True, spec=Specification(postconditions=(
+        build_predicate("file_contains", {"rel": "blocker.txt", "substring": "DONE"}),)))
+
+    gate, _ = rp.reevaluate_phase_gate(tmp_path, "P6", [good, blocker])
+    assert gate.passed is False
+    assert "T_b" in gate.blockers
+
+    # once the blocker is satisfied the same full-gate re-eval greens the phase
+    (tmp_path / "blocker.txt").write_text("DONE", encoding="utf-8")
+    gate2, _ = rp.reevaluate_phase_gate(tmp_path, "P6", [good, blocker])
+    assert gate2.passed is True
+
+
+def test_ledger_is_complete_detects_done_vs_open() -> None:
+    assert rp.ledger_is_complete(PHASES, [_rec(p, True) for p in PHASES], []) is True
+    assert rp.ledger_is_complete(PHASES, [], []) is False   # all pending
+    red = [_rec("P3", True), _rec("P4", False, blockers=["T4.1"])]
+    assert rp.ledger_is_complete(PHASES, red, []) is False  # an unwaived red gate
+
+
+def test_ledger_complete_when_red_is_waived(tmp_path) -> None:
+    """A red gate that has been WAIVED still counts as a closed ledger (waived is
+    treated as accepted), so --rerun-task is refused there too."""
+    records = [_rec("P3", True), _rec("P4", False, blockers=["T4.1"])]
+    for p in ("P5", "P6", "P7", "P9"):
+        records.append(_rec(p, True))
+    waivers = [{"phase": "P4", "record_index": 1, "reason": "accepted"}]
+    assert rp.ledger_is_complete(PHASES, records, waivers) is True

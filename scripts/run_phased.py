@@ -139,6 +139,28 @@ def next_action(states: list[tuple[str, str]]) -> tuple[str, str | None, str | N
     return ("done", None, None)
 
 
+def ledger_is_complete(
+    phases: list[str], records: list[dict[str, Any]], waivers: list[dict[str, Any]]
+) -> bool:
+    """True when every phase gate is green or waived — the campaign is FINISHED.
+
+    Used to REFUSE a ``--rerun-task`` against a closed campaign: re-running a task
+    in a completed run auto-commits edits into a shipped / forensic workspace (the
+    run-2 incident where a stray rerun rewrote the echobot-v1 tree). Post-completion
+    corrections belong to a FRESH campaign / output_dir, not the closed ledger."""
+    return next_action(phase_states(phases, records, waivers))[0] == "done"
+
+
+def repair_gate_is_mechanical(rerun_task: str | None, oracle_phase: str | None) -> bool:
+    """F23: ANY repair (``--rerun-task`` with ``--oracle``) re-evaluates its target
+    gate MECHANICALLY over the full workspace — SAME-phase repairs included, not
+    only cross-phase ones. A same-phase repair that evaluated only the re-run task
+    would green a phase whose DIFFERENT blocker still fails (F23 false green); the
+    full-gate re-eval re-checks EVERY task in the phase, so a still-failing blocker
+    keeps the gate red."""
+    return bool(rerun_task and oracle_phase)
+
+
 def newest_red_gate(
     records: list[dict[str, Any]], waivers: list[dict[str, Any]]
 ) -> tuple[int, dict[str, Any]] | None:
@@ -321,12 +343,32 @@ def format_effective_params(
     return lines
 
 
+def _is_scaffolding_check(cmd: list[str]) -> bool:
+    """A run_check that verifies HANDOFF SCAFFOLDING (a prose micro-task file, or
+    the assembled PROJECT_STATE.md itself) rather than the package's behaviour —
+    e.g. the ``prose/extension_points.md`` size gate. These belong to the handoff
+    process, not to echobot's verification record, so they are excluded from it."""
+    return any("prose/" in part or "PROJECT_STATE" in part for part in cmd)
+
+
 def flow_gate_checks(flow_path: str | Path) -> list[dict]:
-    """The distinct BEHAVIOURAL gate CHECKS the flow re-runs, for the handoff
-    Verification record (F20). Full re-runnable run_check specs — cmd + stdin +
-    expectation — not bare argv: ``python -m pytest -q`` and the three
-    ``python -m echobot`` stdin-acceptance checks (ping/echo/roll). The collect-only
-    pytest variant and the verifier json-parse checks are excluded."""
+    """The FULL behavioural run_check gate set the flow re-runs, for the handoff
+    Verification record (V2-2 / C3: derive the record from the PRODUCING flow's
+    full run_check gates, not a prior version's subset — else a phase-0 re-validator
+    verifies new behaviour only indirectly).
+
+    Every distinct ``run_check`` postcondition in the flow (deduped by canonical
+    spec), as a complete re-runnable spec — cmd + stdin + expectation, not bare
+    argv (F20) — EXCEPT two categories that are not package-behaviour gates:
+      * ``pytest --collect-only`` — a meta-check strictly subsumed by the full
+        ``pytest -q`` run already in the set.
+      * handoff-scaffolding checks (:func:`_is_scaffolding_check`) — they verify
+        the prose/PROJECT_STATE artifacts, not echobot.
+    Everything else is kept: import smokes, the inline behavioural asserts (incl.
+    the new-feature ``!flip`` / ``!choose`` smokes), ``pytest -q``, the
+    ``python -m echobot`` stdin acceptances, and the FakeGateway round-trip — the
+    exact checks the v2 record was missing.
+    """
     import yaml
 
     data = yaml.safe_load(Path(flow_path).read_text(encoding="utf-8")) or {}
@@ -340,10 +382,7 @@ def flow_gate_checks(flow_path: str | Path) -> list[dict]:
             cmd = args.get("cmd")
             if not isinstance(cmd, list):
                 continue
-            line = " ".join(cmd)
-            is_pytest_q = line == "python -m pytest -q"
-            is_acceptance = line == "python -m echobot" and bool(args.get("stdin"))
-            if not (is_pytest_q or is_acceptance):
+            if "--collect-only" in cmd or _is_scaffolding_check(cmd):
                 continue
             spec: dict[str, Any] = {"cmd": list(cmd)}
             for k in ("stdin", "expect_stdout_contains", "expect_exit", "timeout_s"):
@@ -773,12 +812,14 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         )
         gate, gate_results_by_id = reevaluate_phase_gate(project_dir, "P9", tasks)
         mechanical_reeval = True
-    # Cross-phase repair: the reran task lives in phase ``phase`` (its owner),
-    # but --oracle names a DIFFERENT phase whose gate must be re-checked. Fixing
-    # a src task (Y) to satisfy the pytest gate (X) → re-evaluate X's gate
-    # mechanically over the now-modified workspace. Same-phase repair keeps the
-    # normal evaluate-over-the-reran-task path.
-    elif bool(rerun_task and oracle_phase and oracle_phase != phase):
+    # Repair re-eval (F23): the reran task lives in phase ``phase`` (its owner);
+    # --oracle names the gate to re-check. Fixing a task to satisfy a gate →
+    # re-evaluate THAT gate mechanically over the now-modified workspace. This
+    # holds for SAME-phase repair too (previously it fell through to the
+    # evaluate-over-the-reran-task path, which could green a phase whose DIFFERENT
+    # blocker still failed — the F23 false green). The full-gate re-eval re-checks
+    # every task in oracle_phase, so a still-failing blocker keeps the gate red.
+    elif repair_gate_is_mechanical(rerun_task, oracle_phase):
         mechanical_reeval = True
         gate, gate_results_by_id = reevaluate_phase_gate(project_dir, oracle_phase, tasks)
     else:
@@ -926,6 +967,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.rerun_task:
         if not args.oracle:
             raise SystemExit("--rerun-task requires --oracle <phase>")
+        # Closed-ledger guard: a repair against a completed campaign would mutate a
+        # shipped / forensic workspace (the run-2 incident). Corrections go to a
+        # fresh campaign, not the closed run.
+        if ledger_is_complete(phases, records, waivers):
+            raise SystemExit(
+                "[refuse] campaign ledger reads complete (all gates green or "
+                "waived); --rerun-task on a closed run would mutate a shipped "
+                "workspace. Start a fresh campaign / output_dir for "
+                "post-completion corrections."
+            )
         # The rerun's phase is the one that owns the task.
         _phases, _ag, tasks = _flow_phases(campaign["flow"])
         owner = next((t.phase for t in tasks if t.id == args.rerun_task), None)

@@ -244,3 +244,103 @@ python -m echobot # Reads stdin and writes responses to stdout.
 To run tests:
 python -m pytest -q # Runs the full test suite quietly.
 ```
+
+---
+
+# CORRECTIONS — PROJECT_STATE.md v2.1 (2026-07-06)
+
+Binding: findings.md Part 15 (v2 fact-check PASS-with-corrections). Branch
+feat/integration-run-3. Applied C1/C2 (re-anchored prose), C3 (verification-record
+completeness + regression test), and the two backlog runner fixes (F23, closed-ledger
+guard). Suite 1474 passed / 8 skipped, ruff clean.
+
+## Code changes (no model)
+- **C3 — `flow_gate_checks` now returns the flow's FULL run_check gate set**
+  (scripts/run_phased.py). Was a 4-check whitelist (`pytest -q` + 3 `echobot`
+  acceptances) → now every distinct run_check in the producing flow, EXCEPT two
+  non-behavioural categories: `pytest --collect-only` (meta, subsumed) and
+  handoff-scaffolding checks (`prose/`, `PROJECT_STATE` — `_is_scaffolding_check`).
+  Run-3 brownfield flow → **13 checks** (was 4). Closes the v2 gap: the `!flip` /
+  `!choose` behavioural smokes AND the FakeGateway round-trip are now recorded.
+- **Serializer bug surfaced by C3 (handoff.py `_human_command_line`)**: the round-trip
+  check's `python -c` command contains embedded newlines; its `# `-comment line spanned
+  multiple physical lines, so the continuation lines were NOT `#`-prefixed and leaked
+  into the JSON body — the parser then dropped the spec (round-trip absent from the
+  recovered set). Fix: collapse `\n`→`\n` in the comment so it is exactly one line.
+  This check was never in the old 4-check record, so the bug was latent until C3.
+- **F23 — same-phase repair now does the full-gate mechanical re-eval**
+  (`repair_gate_is_mechanical`; the branch condition dropped `and oracle_phase != phase`).
+  A same-phase repair used to evaluate only the re-run task → could green a phase whose
+  DIFFERENT blocker still failed. Now ANY `--rerun-task`+`--oracle` re-checks every task
+  in the target phase over the workspace.
+- **Closed-ledger guard** (`ledger_is_complete`): `main()` REFUSES `--rerun-task` when
+  the campaign ledger reads complete (all gates green/waived) — a repair against a
+  finished run would mutate a shipped/forensic workspace (the run-2 incident). Corrections
+  go to a fresh campaign/output_dir.
+
+New tests (tests/campaign/test_run_phased.py): `test_flow_gate_checks_excludes_only_meta_and_scaffolding`,
+`test_verification_record_covers_full_flow_gate_set`, `test_v2_record_fixture_fails_coverage_but_v21_passes`,
+`test_repair_gate_is_mechanical_covers_same_and_cross_phase`,
+`test_same_phase_repair_cannot_green_phase_with_failing_blocker`,
+`test_ledger_is_complete_detects_done_vs_open`, `test_ledger_complete_when_red_is_waived`.
+
+## C1/C2 — model re-authored architecture + conventions
+Fresh-ledger corrections campaign (campaigns/integration-run-3-corrections.yaml,
+flows/integration-run-3-corrections.flow.yaml) over a COPY of the completed run-3
+workspace, single phase P9c, impl seat only. `turns_reasoning_only=0` on every
+authoring turn — the emission floor did NOT recur; the concrete re-anchored asks held.
+
+**First pass** — P9c gate RED (blocker Tc1):
+```
+=== phase P9c gate: RED ===
+  blockers: Tc1
+  [FAIL] Tc1 (block)  FAIL artifact_contains_prose_architecture.md  ok run_check(size>=120)  ok mark_complete
+  [PASS] Tc2 (block)  ok  (conventions re-authored, first_pass=True)
+```
+Tc2 (conventions) succeeded first pass. Tc1 (architecture) FAILED — but NOT a model
+no-op and NOT the emission floor: run.log shows Tc1 turn 2 DID emit `write_file` with the
+correct anchored content, and the harness overwrite-guard REJECTED it —
+`ERROR: 'prose/architecture.md' already exists with 450 bytes ... write_file disabled`.
+The seeded stale file blocked the intended overwrite; `write_file` was then disabled for
+the rest of the task and the turn auto-mark-completed with no artifact. The disk `size>=120`
+gate was fooled by the seeded stale file; the **artifact-tracking `file_exists` predicate
+correctly caught** that Tc1 produced no artifact (finding F25).
+
+**Repair** — removed the stale `prose/architecture.md` (forcing a fresh write; kept the
+already-correct conventions.md), then `--rerun-task Tc1 --oracle P9c` (same-phase → exercises
+the new F23 full-gate re-eval LIVE):
+```
+=== phase P9c gate: GREEN ===
+  [PASS] Tc1 (block)  ok artifact_contains_prose_architecture.md  ok run_check(size>=120)  ok mark_complete
+  [PASS] Tc2 (block)  ok  (re-checked over the workspace — NOT re-run by the model)
+```
+Only Tc1 was re-run by the model; the gate nonetheless re-checked BOTH Tc1 and Tc2
+mechanically over the workspace — the F23 fix demonstrated end-to-end (Tc2 PASS from its
+still-on-disk artifact).
+
+Corrected bodies (copied into the canonical run-3 prose/ and re-assembled):
+- architecture.md: "... All input/output operations are confined to adapter modules: the
+  CLI uses `echobot/__main__.py`, while Discord integration utilizes
+  `echobot/discord_adapter.py` ..." (C1 fixed — no longer "confined to __main__").
+- conventions.md: "... Core logic tests live in tests/test_core.py, while adapter contract
+  tests use dedicated files like tests/test_discord_adapter.py ..." (C2 fixed).
+
+## Re-assembly + validation
+Re-assembled PROJECT_STATE.md v2.1 (write_project_state over the canonical workspace,
+gate_checks from the run-3 brownfield flow). Byte-confirmed UTF-8 at the absolute path
+`D:\Projekte\agora\runs_out\integration-run-3\echobot\echobot\PROJECT_STATE.md`:
+6769 bytes, em-dash = E2 80 94, no BOM, no cp1252 0x97, 13 run_check fences.
+Out-of-band re-runnability check (parse record → run each via the run_check predicate over
+the workspace): **13/13 PASS**, including the FakeGateway round-trip (proves the multi-line
+serializer fix round-trips).
+
+Verification record (v2.1) — 13 checks: import smoke; 6 core behavioural asserts
+(ping/roll regressions + `!flip`/`!choose`/`!choose`-noarg/`!help` smokes); `pytest -q`;
+`import echobot.discord_adapter`; 3 `echobot` stdin acceptances (ping/echo/roll); FakeGateway
+round-trip. (The human's Part-15 "~7-8" estimate under-counted the inline behavioural asserts;
+policy chosen: FULL set minus collect-only + scaffolding — pinned by the coverage regression test.)
+
+Corrected sections + full v2.1 verbatim: see runs_out/integration-run-3/echobot/echobot/PROJECT_STATE.md
+(reproduced above under the run-3 handoff; only Architecture/Conventions/Verification-record changed).
+
+Baseline tag: **echobot-v2** on the corrections commit.
