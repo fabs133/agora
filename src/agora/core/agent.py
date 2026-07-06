@@ -22,6 +22,12 @@ class AgentConfig:
     model: str = DEFAULT_MODEL
     instructions: str = ""
     knowledge_files: tuple[str, ...] = ()
+    #: Seat-scoped tool ALLOWLIST (by LLM-facing tool name). Empty = unrestricted
+    #: (the role's full manifest). When set, the agent's manifest is filtered to
+    #: this set, so the model is offered ONLY these tools (executor is untouched —
+    #: system/auto-hook calls still work). Used to hold a seat to its measured
+    #: tool surface; see scripts/run_phased.py (run 1.4 / F12).
+    allowed_tools: tuple[str, ...] = ()
 
 
 @dataclass

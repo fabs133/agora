@@ -387,6 +387,16 @@ class StageRunner:
             if getattr(stage, "hide_tools", ()):
                 _hidden = set(stage.hide_tools)
                 stage_tools = [t for t in stage_tools if t["name"] not in _hidden]
+            # Seat-scoped allowlist (mirror of AgentRuntime.execute_task): hold
+            # this agent to its measured tool surface. Empty = no-op.
+            if identity.config.allowed_tools:
+                _allowed = set(identity.config.allowed_tools)
+                _before = len(stage_tools)
+                stage_tools = [t for t in stage_tools if t["name"] in _allowed]
+                logger.info(
+                    "manifest: filtered %d tools (allowlist) task=%s",
+                    _before - len(stage_tools), task.id,
+                )
 
             final_text, iters, stop, usage = await self._runtime._run_loop(
                 messages=messages,
@@ -455,6 +465,8 @@ class StageRunner:
                     iterations=total_iterations,
                     stop_reason=last_stop,
                     artifact_capture=artifact_capture,
+                    run_check_records=list(self._ctx.run_check_records),
+                    nudges_used=self._runtime._nudges_used,
                 )
             )
         )

@@ -343,6 +343,121 @@ async def test_stage_keeps_write_file_when_output_path_empty(
     assert "write_file" in tool_names
 
 
+# --------------------------------------------------------------- F13 invariant
+
+def _mk_manifest(names: list[str]) -> list[dict]:
+    return [{"name": n, "input_schema": {}} for n in names]
+
+
+def test_overwrite_guard_hides_write_file_when_edit_family_present() -> None:
+    """(b) unrestricted seat + existing output -> write_file hidden (v2.4)."""
+    from agora.fleet.agent_runtime import _apply_overwrite_guard
+
+    tools = _mk_manifest(["read_file", "write_file", "edit_file_replace",
+                          "add_function", "mark_complete"])
+    out, hid = _apply_overwrite_guard(tools, output_has_content=True)
+    names = {t["name"] for t in out}
+    assert hid is True
+    assert "write_file" not in names
+    assert "edit_file_replace" in names  # edit family remains the write path
+
+
+def test_overwrite_guard_keeps_write_file_when_it_is_the_only_mutation_tool() -> None:
+    """(a) allowlisted seat (no edit/AST family) + existing output -> write_file
+    KEPT: hiding it would leave zero file-mutation affordances (F13)."""
+    from agora.fleet.agent_runtime import _apply_overwrite_guard
+
+    tools = _mk_manifest(["read_file", "write_file", "list_directory", "mark_complete"])
+    out, hid = _apply_overwrite_guard(tools, output_has_content=True)
+    names = {t["name"] for t in out}
+    assert hid is False
+    assert "write_file" in names
+
+
+def test_overwrite_guard_noop_when_output_empty() -> None:
+    from agora.fleet.agent_runtime import _apply_overwrite_guard
+
+    tools = _mk_manifest(["read_file", "write_file", "list_directory", "mark_complete"])
+    out, hid = _apply_overwrite_guard(tools, output_has_content=False)
+    assert hid is False and out is tools
+
+
+def test_overwrite_guard_property_always_leaves_a_mutation_affordance() -> None:
+    """(c) property: a manifest that starts with >=1 mutation tool always keeps
+    >=1 after the guard fires — a task with an output_path is never left unable
+    to modify it."""
+    from agora.fleet.agent_runtime import _WRITE_TOOL_NAMES, _apply_overwrite_guard
+
+    for manifest in (
+        ["read_file", "write_file", "list_directory", "mark_complete"],      # allowlisted seat
+        ["read_file", "write_file", "edit_file_replace", "add_function"],     # unrestricted seat
+        ["read_file", "write_file"],                                          # write_file only
+        ["read_file", "add_function", "mark_complete"],                       # AST-only, no write_file
+    ):
+        out, _ = _apply_overwrite_guard(_mk_manifest(manifest), output_has_content=True)
+        assert any(t["name"] in _WRITE_TOOL_NAMES for t in out), manifest
+
+
+async def test_allowlisted_seat_keeps_write_file_on_existing_output(
+    tmp_path: Path, fake_matrix_client
+) -> None:
+    """F13 end-to-end: the impl-seat allowlist drops the edit/AST family, so on
+    an EXISTING output file the guard must keep write_file — else (run 1.4) the
+    seat has no way to modify it."""
+    from dataclasses import replace
+
+    target = tmp_path / "core.py"
+    target.write_text("def handle_message(self, message): ...", encoding="utf-8")
+    responses = [LLMResponse(content="reading first")]
+    runtime, _ctx, identity = await _make_runtime(tmp_path, fake_matrix_client, responses)
+    identity = AgentIdentity(
+        agent_id=identity.agent_id, room_id=identity.room_id,
+        config=replace(identity.config,
+                       allowed_tools=("read_file", "write_file", "list_directory", "mark_complete")),
+    )
+    staged = StagedTask(
+        task=Task(id="t1", spec=_file_exists_spec("core.py"), description="edit",
+                  agent_id="w", output_path="core.py"),
+        stages=[Stage(instruction="Edit core.py.", max_iterations=1)],
+    )
+    await StageRunner(runtime).execute_staged_task(staged, identity)
+    tool_names = {t["name"] for t in (runtime._llm.calls[0]["tools"] or [])}
+    assert "write_file" in tool_names      # kept — only mutation affordance
+    assert "add_function" not in tool_names  # allowlist dropped the edit family
+
+
+async def test_manifest_delta_logging_emits_both_lines(
+    tmp_path: Path, fake_matrix_client, caplog
+) -> None:
+    """Item 2: the allowlist filter and the write_file hide each log one INFO
+    manifest-delta line. Here an allowlist that KEEPS an edit tool triggers both
+    (filter drops the rest; guard then hides write_file since the edit tool
+    remains as the write path)."""
+    import logging
+    from dataclasses import replace
+
+    target = tmp_path / "core.py"
+    target.write_text("existing", encoding="utf-8")
+    responses = [LLMResponse(content="x")]
+    runtime, _ctx, identity = await _make_runtime(tmp_path, fake_matrix_client, responses)
+    identity = AgentIdentity(
+        agent_id=identity.agent_id, room_id=identity.room_id,
+        config=replace(identity.config,
+                       allowed_tools=("read_file", "write_file", "edit_file_replace",
+                                      "list_directory", "mark_complete")),
+    )
+    staged = StagedTask(
+        task=Task(id="t1", spec=_file_exists_spec("core.py"), description="edit",
+                  agent_id="w", output_path="core.py"),
+        stages=[Stage(instruction="Edit core.py.", max_iterations=1)],
+    )
+    with caplog.at_level(logging.INFO):
+        await StageRunner(runtime).execute_staged_task(staged, identity)
+    text = caplog.text
+    assert "manifest: filtered" in text and "(allowlist)" in text
+    assert "manifest: hid write_file (overwrite guard)" in text
+
+
 async def test_stage_token_usage_aggregates_across_stages(
     tmp_path: Path, fake_matrix_client
 ) -> None:

@@ -1083,3 +1083,7 @@ __all__ = [
 # avoid a circular import (probe_predicates imports register_predicate). Same
 # eager-registration pattern as the built-in factories above.
 from agora.plan import probe_predicates as _probe_predicates  # noqa: E402,F401
+
+# Integration run 1: the run_check execution gate (phases 5/6/7). Same
+# eager-registration pattern; imported after register_predicate is defined.
+from agora.plan import run_check as _run_check  # noqa: E402,F401

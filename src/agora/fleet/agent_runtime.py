@@ -88,6 +88,13 @@ class TaskResult:
     # ⇒ no review fired (review_budget=0 or no valid mark_complete reached).
     reviews_used: int = 0
     post_review_action: str | None = None
+    # Integration run 1 (v3.2 erratum): completion nudges (S2) that fired this
+    # task — the rehabilitated stall-recovery mechanism. Additive; default 0.
+    nudges_used: int = 0
+    # Integration run 1: one capture dict per run_check command executed during
+    # postcondition evaluation (cmd, exit_code, timed_out, stdout/stderr bounded
+    # 4 KB with truncation flags, passed). Additive; default empty.
+    run_check_records: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -224,6 +231,9 @@ class AgentRuntime:
         # Per-attempt S6 completion-review accumulator (v8). Scoped to one task
         # attempt like ``tool_stats``; aggregates across a staged task's stages.
         self.review_stats = _ReviewStats()
+        # Integration run 1: per-attempt completion-nudge counter (S2), surfaced
+        # to TaskResult.nudges_used. Accumulates across a staged task's stages.
+        self._nudges_used = 0
         # Authoritative 0-based iteration index for the active tool loop turn,
         # set in ``_run_loop``. ``_fallback_this_turn`` is flipped by the
         # adapter hook when the current turn's calls came from text fallback;
@@ -274,6 +284,16 @@ class AgentRuntime:
             auto_hooks_enabled=self._ctx.auto_hooks_enabled,
             plan_authoring_enabled=self._ctx.plan_authoring_enabled,
         )
+        # Seat-scoped allowlist: hold this agent to its measured tool surface by
+        # filtering the LLM-facing manifest (executor untouched). Empty = no-op.
+        if identity.config.allowed_tools:
+            allowed = set(identity.config.allowed_tools)
+            _before = len(tools)
+            tools = [t for t in tools if t["name"] in allowed]
+            logger.info(
+                "manifest: filtered %d tools (allowlist) task=%s",
+                _before - len(tools), task.id,
+            )
         # Note: write_file auto-hiding is applied per-turn inside _run_loop
         # (so within-stage cycling is caught too), not here.
         executor = get_tool_executor(identity.config.role, self._ctx)
@@ -344,6 +364,8 @@ class AgentRuntime:
                     iterations=iterations,
                     stop_reason=last_stop,
                     artifact_capture=artifact_capture,
+                    run_check_records=list(self._ctx.run_check_records),
+                    nudges_used=self._nudges_used,
                 )
             )
         )
@@ -393,14 +415,16 @@ class AgentRuntime:
             # has content (a prior turn wrote it, or a prior task retry left
             # it behind), drop write_file from this turn's manifest. The
             # 7B otherwise cycles through write_file → ERROR → retry within
-            # the same stage, burning iterations.
+            # the same stage, burning iterations. F13 invariant: the hide is
+            # skipped if it would leave the seat with no file-mutation tool.
             from agora.fleet.stage_runner import _output_path_has_content as _has
 
-            turn_tools = (
-                [t for t in tools if t["name"] != "write_file"]
-                if _has(self._ctx)
-                else tools
-            )
+            turn_tools, _hid_write = _apply_overwrite_guard(tools, _has(self._ctx))
+            if _hid_write:
+                logger.info(
+                    "manifest: hid write_file (overwrite guard) task=%s turn=%d",
+                    task_id, iterations,
+                )
             # Authoritative 0-based iteration index for the text-fallback hook;
             # reset the per-turn fallback flag before the call (the hook fires
             # inside complete() and flips it).
@@ -435,6 +459,7 @@ class AgentRuntime:
                 missing = _expected_output_missing(self._ctx)
                 if missing is not None and nudges_used < self._ctx.nudge_budget:
                     nudges_used += 1
+                    self._nudges_used += 1  # provenance (accumulates across stages)
                     logger.info(
                         "completion nudge %d/%d: task=%s expected output %r not written",
                         nudges_used, self._ctx.nudge_budget, task_id, missing,
@@ -977,7 +1002,8 @@ def _expected_output_missing(ctx: ToolContext) -> str | None:
 
 
 #: File-mutating tool names. A clean call to any of these on the turn after a
-#: completion review is classified as a "revise" action (S6 provenance).
+#: completion review is classified as a "revise" action (S6 provenance). Also
+#: the "file-mutation affordance" set the F13 invariant protects (below).
 _WRITE_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "write_file",
@@ -990,6 +1016,33 @@ _WRITE_TOOL_NAMES: frozenset[str] = frozenset(
         "fill_test_body",
     }
 )
+
+
+def _apply_overwrite_guard(
+    tools: list[dict[str, Any]], output_has_content: bool
+) -> tuple[list[dict[str, Any]], bool]:
+    """v2.4 write_file-hide guard, with the F13 invariant. Returns
+    ``(turn_tools, hid_write_file)``.
+
+    When the task's output file already has bytes, drop ``write_file`` from the
+    turn's manifest so a weak model doesn't cycle write_file → overwrite-ERROR →
+    retry, and is pushed onto the edit/AST family instead.
+
+    **F13 invariant (run 1.5):** the guard may never reduce a seat to ZERO
+    file-mutation affordances. If hiding ``write_file`` would leave the manifest
+    with no member of :data:`_WRITE_TOOL_NAMES` (e.g. an allowlisted seat with the
+    edit/AST family de-listed), the hide is SKIPPED — ``write_file`` is then the
+    only way to modify an existing output file, and the hide's whole premise
+    (redirect to edit tools) is void. Run 1.4 hit exactly this: the impl-seat
+    allowlist removed the edit family, the guard hid write_file, and the seat had
+    no way to write the drifted core.py.
+    """
+    if not output_has_content:
+        return tools, False
+    post_hide = [t for t in tools if t["name"] != "write_file"]
+    if any(t["name"] in _WRITE_TOOL_NAMES for t in post_hide):
+        return post_hide, True
+    return tools, False
 
 
 def _valid_mark_complete(calls: list[ToolCall], results: list[str]) -> bool:
@@ -1130,6 +1183,9 @@ def _evaluate_postconditions(
             if ctx.control is not None
             else ctx.plan_draft
         ) or ctx.plan_draft,
+        # Integration run 1: run_check appends its command captures here so the
+        # runtime can drain them into the TaskResult after evaluation.
+        "run_check_sink": ctx.run_check_records,
     }
     failures = dict(evaluate_postconditions(task.spec, postcondition_context))
     results: list[tuple[str, bool, str]] = []

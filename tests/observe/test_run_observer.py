@@ -305,6 +305,63 @@ def test_review_provenance_defaults_when_absent(tmp_path: Path) -> None:
     assert rec.post_review_action is None
 
 
+def test_run1_task_provenance_round_trips(tmp_path: Path) -> None:
+    """phase, blocking, and run_check_records land in tasks.jsonl (integration run 1)."""
+    from agora.observe.jsonl import TaskRecord
+
+    obs = _observer(tmp_path)
+    task = SimpleNamespace(
+        id="T5.1", output_path="tests/test_core.py", spec=SimpleNamespace(postconditions=[]),
+        stages=[], agent_id="impl", phase="P5", blocking=True,
+    )
+    rc = [{"cmd": ["python", "-m", "pytest", "-q"], "exit_code": 1, "timed_out": False,
+           "stdout": "1 failed", "stderr": "", "stdout_truncated": False,
+           "stderr_truncated": False, "passed": False}]
+    obs.task_started("T5.1")
+    rec = obs.record_task_from_result(
+        task=task, result=_fake_result(success=False, run_check_records=rc),
+        role="implementer", task_index=0,
+    )
+    assert rec.phase == "P5"
+    assert rec.blocking is True
+    assert rec.run_check_records[0]["exit_code"] == 1
+    obs.close()
+    parsed = TaskRecord.model_validate(_read_jsonl(tmp_path / "out" / "tasks.jsonl")[0])
+    assert parsed.phase == "P5"
+    assert parsed.run_check_records[0]["stdout"] == "1 failed"
+
+
+def test_record_phase_gate_writes_phases_jsonl(tmp_path: Path) -> None:
+    from agora.fleet.phase_gate import TaskGateOutcome, evaluate_phase_gate
+    from agora.observe.jsonl import PhaseGateRecord
+
+    obs = _observer(tmp_path)
+    gate = evaluate_phase_gate(
+        "P4",
+        [
+            TaskGateOutcome("T4.1", True, [("impl", False)]),
+            TaskGateOutcome("V4.1", False, [("parses", True)]),
+        ],
+    )
+    rec = obs.record_phase_gate(gate)
+    assert rec.phase == "P4"
+    assert rec.passed is False
+    assert rec.blockers == ["T4.1"]
+    obs.close()
+    parsed = PhaseGateRecord.model_validate(_read_jsonl(tmp_path / "out" / "phases.jsonl")[0])
+    assert parsed.passed is False
+    assert parsed.blockers == ["T4.1"]
+    # Non-blocking verifier outcome retained but excluded from blockers.
+    assert [t.task_id for t in parsed.tasks if not t.blocking] == ["V4.1"]
+
+
+def test_phases_jsonl_absent_when_no_gate_recorded(tmp_path: Path) -> None:
+    """Pre-run-1 flows never emit an empty phases.jsonl."""
+    obs = _observer(tmp_path)
+    obs.close()
+    assert not (tmp_path / "out" / "phases.jsonl").exists()
+
+
 def test_skipped_rows_emit_null_and_aggregation_ignores_them(tmp_path: Path) -> None:
     """A skipped-heavy run: null fields on skip rows; tasks_first_pass ignores them."""
     obs = _observer(tmp_path)

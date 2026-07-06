@@ -48,7 +48,7 @@ def test_real_cast_loads_and_validates_clean() -> None:
     cast = load_cast("casts/p40-24gb.yaml")
     assert cast.name == "p40-24gb"
     assert set(cast.bindings) == {
-        "implementer", "verifier", "planner", "classifier", "retriever"
+        "implementer", "tester", "verifier", "planner", "classifier", "retriever"
     }
     # World B: the conditional implementer_secondary seat was deleted.
     assert "implementer_secondary" not in cast.bindings
@@ -61,6 +61,9 @@ def test_real_cast_role_table_resolves() -> None:
     assert table["implementer"].model == "ollama/gemma4:e4b"
     assert table["implementer"].resident is True
     assert table["verifier"].model == "ollama/qwen2.5:7b-instruct"
+    # tester shares the implementer's gemma-e4b (turf-separated seat, one load).
+    assert table["tester"].model == "ollama/gemma4:e4b"
+    assert table["tester"].resident is True
     assert table["planner"].is_human is True
     assert table["planner"].profile is None
     # classifier is load-on-demand, not resident.
@@ -85,6 +88,17 @@ def test_rule1_unknown_profile_fails() -> None:
 
 
 # --------------------------------------------------------------- rule 2: residency
+
+
+def test_rule2_shared_resident_model_counts_once() -> None:
+    """Two roles bound to the same resident model share one load (dedup by id)."""
+    cast = _cast(
+        implementer={"profile": "gemma-e4b", "resident": True, "evidence": {"g": 1}},
+        tester={"profile": "gemma-e4b", "resident": True, "evidence": {"g": 1}},
+    )
+    # gemma counted ONCE = 9.6, not 19.2 → within a 12 GB budget.
+    cast = Cast(name="t", hardware=CastHardware(gpu="T", vram_budget_gb=12), bindings=cast.bindings)
+    assert validate_cast(cast, _profiles(), sizes_gb={"ollama/gemma4:e4b": 9.6}) == []
 
 
 def test_rule2_over_budget_fails() -> None:

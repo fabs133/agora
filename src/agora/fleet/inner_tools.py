@@ -137,6 +137,12 @@ class ToolContext:
     tool_errors: str = "raw"
     nudge_budget: int = 0
     review_budget: int = 0
+    # Integration run 1: sink for ``run_check`` postcondition captures. The
+    # run_check predicate appends one record per command it executes (cmd,
+    # exit, stdout/stderr bounded 4 KB each, truncation marked); the runtime
+    # drains it into the TaskResult after postcondition evaluation so the
+    # pytest-output channel lands in provenance.
+    run_check_records: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ============================ Tool descriptions ============================
@@ -1075,23 +1081,24 @@ def _enforce_path_scope(role: AgentRole, rel: str, tool_label: str) -> None:
     Non-owners attempting to write to another role's turf get a clear error
     that tells them what to do instead.
     """
-    # Architect / reviewer / unknown role: no restriction.
-    if role not in (AgentRole.IMPLEMENTER, AgentRole.TESTER):
+    # Scope rules live in agora.core.role_scope (shared with the load-time flow
+    # lint so the two can never drift). Non-owners get a clear, actionable error.
+    from agora.core.role_scope import role_can_write
+
+    if role_can_write(role, rel):
         return
-    rel_norm = rel.replace("\\", "/").lstrip("/")
-    if role is AgentRole.IMPLEMENTER and rel_norm.startswith("tests/"):
+    if role is AgentRole.IMPLEMENTER:
         raise AgoraError(
             f"{tool_label}: implementer role may not write to {rel!r}. "
             "tests/ is owned by the tester. The contract tests are "
             "authoritative — if a test fails, fix your implementation "
             "under src/, not the test."
         )
-    if role is AgentRole.TESTER and rel_norm.startswith("src/"):
-        raise AgoraError(
-            f"{tool_label}: tester role may not write to {rel!r}. "
-            "src/ is owned by the implementer. Adjust your assertions to "
-            "match the real implementation shape; do not rewrite src/."
-        )
+    raise AgoraError(
+        f"{tool_label}: tester role may not write to {rel!r}. "
+        "src/ is owned by the implementer. Adjust your assertions to "
+        "match the real implementation shape; do not rewrite src/."
+    )
 
 
 #: Marker left in every seeded stub file (see

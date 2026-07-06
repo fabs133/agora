@@ -88,6 +88,14 @@ class TaskTemplate:
     postconditions: tuple[PostconditionRef, ...] = ()
     output_path: str = ""
     stages: tuple[StageTemplate, ...] = ()
+    # Integration run 1: phase membership + gate participation. ``phase`` groups
+    # tasks for the phase-staged runner; ``blocking=False`` marks a task (e.g. a
+    # verifier) whose postconditions are recorded but do not gate the phase.
+    phase: str = ""
+    blocking: bool = True
+    # Integration run 1.2 (F5): ordering-only predecessors (run AFTER these reach
+    # a terminal state, regardless of success). depends_on keeps success-gating.
+    order_after: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -161,6 +169,11 @@ class _TaskSchema(BaseModel):
     postconditions: list[_PostconditionSchema] = Field(default_factory=list)
     output_path: str = ""
     stages: list[_StageSchema] = Field(default_factory=list)
+    # Integration run 1: phase membership + gate participation.
+    phase: str = ""
+    blocking: bool = True
+    # Integration run 1.2 (F5): ordering-only predecessors.
+    order_after: list[str] = Field(default_factory=list)
 
 
 class _FlowSchema(BaseModel):
@@ -241,6 +254,9 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
                     postconditions=t.postconditions,
                     output_path=t.output_path,
                     stages=t.stages,
+                    phase=t.phase,
+                    blocking=t.blocking,
+                    order_after=tuple(prefix + o for o in t.order_after),
                 )
             )
 
@@ -283,8 +299,14 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
                     _validate_and_build_stage(s, t.id)
                     for s in t.stages
                 ),
+                phase=t.phase,
+                blocking=t.blocking,
+                order_after=tuple(t.order_after),
             )
         )
+
+    _lint_role_write_scope(own_tasks, {a.name: a.role for a in agents_list}, schema.name)
+    _lint_spec_channel(own_tasks, schema.name)
 
     return Flow(
         name=schema.name,
@@ -295,6 +317,93 @@ def _load_flow_recursive(path: Path, visiting: set[str]) -> Flow:
         agents=tuple(agents_list),
         task_graph=tuple(included_tasks + own_tasks),
     )
+
+
+#: A relative source/doc path (used by the F6-L spec-channel lint to spot a
+#: task that points at a readable file instead of inlining its contract).
+_SRC_PATH_RE = __import__("re").compile(r"\b[\w][\w./-]*\.(?:py|md|txt|json|yaml|toml)\b")
+
+
+def _lint_spec_channel(tasks: list[TaskTemplate], flow_name: str) -> None:
+    """Warn loudly (not fatal) when a task description CITES an external spec/doc
+    but carries neither inline contract content nor a workspace-readable path to
+    it — the F6 spec-channel-starvation class (run 1.1: the tester was asked to
+    transcribe a spec it was never shown, and mocked the system instead).
+
+    Heuristic (loud, not fatal): the trigger is a task asked to AUTHOR from an
+    external source — a ``docs/`` path, or a "from/per (the) spec[ification]"
+    phrase. It escapes the warning only if it carries an inline contract signal
+    (a signature ``->``, a ``def ``, a markdown ``## `` header, or a code fence)
+    OR names a readable workspace path that is NOT under ``docs/`` and is not
+    merely the task's own output_path. (Deliberately narrower than bare "spec":
+    a verifier "verify against the spec" or "a malformed spec" is not an
+    authoring-from-a-document task and does not trip it.)
+    """
+    import re
+    import warnings
+
+    offenders: list[str] = []
+    for t in tasks:
+        desc = t.description or ""
+        low = desc.lower()
+        cites_external = (
+            "docs/" in desc
+            or bool(re.search(r"\b(from|per)\s+(the\s+)?spec(ification)?", low))
+        )
+        if not cites_external:
+            continue
+        inline_contract = any(tok in desc for tok in ("->", "def ", "## ", "```"))
+        readable_path = any(
+            not p.startswith("docs/") and p != (t.output_path or "")
+            for p in _SRC_PATH_RE.findall(desc)
+        )
+        if not (inline_contract or readable_path):
+            offenders.append(t.id)
+    if offenders:
+        warnings.warn(
+            f"flow {flow_name!r}: task(s) {offenders} cite an external spec/doc "
+            f"but carry neither inline contract content nor a workspace-readable "
+            f"path (F6 spec-channel starvation — the model may be asked to "
+            f"transcribe a document it is never shown). Inline the needed content "
+            f"or name a readable path.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+
+def _lint_role_write_scope(
+    tasks: list[TaskTemplate], name_to_role: dict[str, AgentRole], flow_name: str
+) -> None:
+    """Fail loudly if a task is assigned to a role that cannot WRITE its own
+    declared output (``output_path`` or any postcondition ``rel`` path).
+
+    Catches the integration-run-1 T5.1 class of bug at LOAD time: an implementer
+    task whose output is ``tests/test_core.py`` is unrunnable — the runtime
+    write guard rejects every write silently. Better to refuse the flow than to
+    watch a role burn its whole budget writing where it may not.
+    """
+    from agora.core.role_scope import role_can_write, write_scope_reason
+
+    problems: list[str] = []
+    for t in tasks:
+        role = name_to_role.get(t.assigned_to)
+        if role is None:
+            continue  # assigned_to mismatch is caught elsewhere
+        paths = [t.output_path] + [dict(pc.args).get("rel", "") for pc in t.postconditions]
+        for rel in paths:
+            if rel and not role_can_write(role, rel):
+                problems.append(f"task {t.id!r} (assigned_to {t.assigned_to!r}): {write_scope_reason(role, rel)}")
+    if problems:
+        # Dedupe while preserving order (a task often repeats one bad rel across
+        # several postconditions).
+        seen: set[str] = set()
+        unique = [p for p in problems if not (p in seen or seen.add(p))]
+        joined = "\n  - ".join(unique)
+        raise AgoraError(
+            f"flow {flow_name!r} has role-scope violations (a task cannot write "
+            f"its own output):\n  - {joined}\n"
+            "Reassign the task to a role that owns that path (e.g. tests/ → tester)."
+        )
 
 
 def _validate_and_build_stage(
@@ -441,7 +550,9 @@ def save_flow(flow: Flow, path: str | Path) -> None:
     backward compatibility with existing fixtures.
     """
     needs_v2 = any(
-        t.postconditions or t.output_path or t.stages for t in flow.task_graph
+        t.postconditions or t.output_path or t.stages or t.phase
+        or not t.blocking or t.order_after
+        for t in flow.task_graph
     )
     version = "2.0" if needs_v2 else "1.0"
 
@@ -461,6 +572,12 @@ def save_flow(flow: Flow, path: str | Path) -> None:
             ]
         if t.output_path:
             row["output_path"] = t.output_path
+        if t.phase:
+            row["phase"] = t.phase
+        if not t.blocking:
+            row["blocking"] = False
+        if t.order_after:
+            row["order_after"] = list(t.order_after)
         if t.stages:
             stage_rows: list[dict[str, Any]] = []
             for s in t.stages:
@@ -598,6 +715,9 @@ def instantiate_flow(
                 created_at=now,
                 updated_at=now,
                 output_path=t.output_path,
+                phase=t.phase,
+                blocking=t.blocking,
+                order_after=tuple(id_map[o] for o in t.order_after if o in id_map),
             )
         )
     return agents, tasks

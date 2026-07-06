@@ -62,6 +62,113 @@ task_graph:
         load_flow(p)
 
 
+# --- role write-scope lint (integration-run-1 T5.1 bug) ---
+
+_SCOPE_YAML = """
+version: "2.0"
+name: scope-demo
+agents:
+  - name: impl
+    role: implementer
+  - name: t
+    role: tester
+task_graph:
+  - id: write_tests
+    assigned_to: {assignee}
+    description: author the tests
+    output_path: tests/test_core.py
+    postconditions:
+      - name: file_contains
+        args: {{rel: tests/test_core.py, substring: "def test_ping"}}
+"""
+
+
+def test_flow_lint_rejects_implementer_writing_tests(tmp_path: Path) -> None:
+    """A task whose output is under tests/ but assigned to an implementer is
+    refused at LOAD (the runtime write guard would reject every write silently)."""
+    p = tmp_path / "bad_scope.yaml"
+    p.write_text(_SCOPE_YAML.format(assignee="impl"), encoding="utf-8")
+    with pytest.raises(AgoraError, match="role-scope"):
+        load_flow(p)
+
+
+def test_flow_lint_passes_when_tester_writes_tests(tmp_path: Path) -> None:
+    """The same task assigned to a tester (owns tests/) loads clean."""
+    p = tmp_path / "ok_scope.yaml"
+    p.write_text(_SCOPE_YAML.format(assignee="t"), encoding="utf-8")
+    flow = load_flow(p)  # must not raise
+    assert flow.task_graph[0].assigned_to == "t"
+
+
+def test_real_echobot_flow_passes_lint() -> None:
+    """The fixed run-1 flow (T5.1 → tester) loads clean under the lint."""
+    flow = load_flow("flows/integration-run-1-echobot.flow.yaml")
+    roles = {a.name: a.role for a in flow.agents}
+    t51 = next(t for t in flow.task_graph if t.id == "T5.1")
+    assert roles[t51.assigned_to] is AgentRole.TESTER
+
+
+# --- F6-L spec-channel lint (warn loudly, not fatal) ---
+
+def _spec_channel_flow(tmp_path: Path, desc: str) -> Path:
+    import json as _json
+
+    yaml_text = (
+        'version: "2.0"\n'
+        "name: spec-channel-demo\n"
+        "agents:\n"
+        "  - name: t\n"
+        "    role: tester\n"
+        "task_graph:\n"
+        "  - id: T5.1\n"
+        "    assigned_to: t\n"
+        "    phase: P5\n"
+        f"    description: {_json.dumps(desc)}\n"  # JSON string = safe YAML scalar
+        "    output_path: tests/test_core.py\n"
+        "    postconditions:\n"
+        "      - name: file_exists\n"
+        "        args: {rel: tests/test_core.py}\n"
+    )
+    p = tmp_path / "sc.yaml"
+    p.write_text(yaml_text, encoding="utf-8")
+    return p
+
+
+def test_f6l_lint_warns_on_spec_reference_without_content(tmp_path: Path) -> None:
+    """A task told to author 'from the spec' with no inline contract / readable
+    path warns loudly (not fatal) — the F6 spec-channel starvation class."""
+    p = _spec_channel_flow(tmp_path, "Write the named cases from the spec - test_ping, test_echo.")
+    with pytest.warns(UserWarning, match="spec-channel starvation"):
+        flow = load_flow(p)  # WARNS but does not raise (not fatal)
+    assert flow.task_graph[0].id == "T5.1"  # load still succeeded
+
+
+def test_f6l_lint_silent_when_contract_inlined(tmp_path: Path, recwarn) -> None:
+    """Inlining a signature (-> / def / ## / code fence) suppresses the warning."""
+    p = _spec_channel_flow(
+        tmp_path, "Write tests from the spec. Contract: handle_message(text, rng) -> str | None."
+    )
+    load_flow(p)
+    assert not [w for w in recwarn.list if "spec-channel" in str(w.message)]
+
+
+def test_f6l_lint_silent_when_readable_path_named(tmp_path: Path, recwarn) -> None:
+    """Naming a readable, non-docs workspace path (not the output) escapes."""
+    p = _spec_channel_flow(
+        tmp_path, "Write tests per the spec; the implementation is at echobot/core.py."
+    )
+    load_flow(p)
+    assert not [w for w in recwarn.list if "spec-channel" in str(w.message)]
+
+
+def test_f6l_lint_does_not_fire_on_verifier_or_input_spec(tmp_path: Path, recwarn) -> None:
+    """'verify against the spec' and 'a malformed spec' are not authoring-from-a-
+    document and must not trip the lint (narrower than bare 'spec')."""
+    p = _spec_channel_flow(tmp_path, "Verify against the spec; a malformed spec returns usage.")
+    load_flow(p)
+    assert not [w for w in recwarn.list if "spec-channel" in str(w.message)]
+
+
 def test_instantiate_flow_generates_uuids(tmp_path: Path) -> None:
     p = tmp_path / "flow.yaml"
     p.write_text(VALID_YAML, encoding="utf-8")

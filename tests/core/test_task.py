@@ -80,3 +80,49 @@ def test_ready_tasks_with_unmet_deps() -> None:
     c = _task("c", deps=("b",))  # not ready (dep pending)
     out = {t.id for t in ready_tasks([a, b, c])}
     assert out == {"b"}
+
+
+# --- order_after: ordering WITHOUT success-gating (F5 fix) ---
+
+def _oa_task(tid, order_after=(), deps=(), status=TaskStatus.PENDING):
+    return Task(id=tid, spec=Specification(description=tid), depends_on=deps,
+                order_after=order_after, status=status)
+
+
+def test_order_after_runs_after_FAILED_predecessor() -> None:
+    """A verifier ordered after a failed blocking task still becomes ready —
+    the F5 fix (depends_on would have gated it out)."""
+    t = _oa_task("T5.1", status=TaskStatus.FAILED)
+    v = _oa_task("V5.1", order_after=("T5.1",))
+    assert {x.id for x in ready_tasks([t, v])} == {"V5.1"}
+
+
+def test_order_after_respects_ordering_until_terminal() -> None:
+    """order_after does NOT run while its predecessor is still PENDING/RUNNING."""
+    t = _oa_task("T5.1", status=TaskStatus.PENDING)
+    v = _oa_task("V5.1", order_after=("T5.1",))
+    assert {x.id for x in ready_tasks([t, v])} == {"T5.1"}  # V waits
+    t_run = _oa_task("T5.1", status=TaskStatus.RUNNING)
+    assert {x.id for x in ready_tasks([t_run, v])} == set()  # neither ready
+
+
+def test_order_after_runs_after_DONE_predecessor() -> None:
+    t = _oa_task("T5.1", status=TaskStatus.DONE)
+    v = _oa_task("V5.1", order_after=("T5.1",))
+    assert {x.id for x in ready_tasks([t, v])} == {"V5.1"}
+
+
+def test_depends_on_still_gates_on_success() -> None:
+    """depends_on semantics unchanged: a FAILED dependency blocks readiness."""
+    a = _oa_task("a", status=TaskStatus.FAILED)
+    b = _oa_task("b", deps=("a",))
+    assert {x.id for x in ready_tasks([a, b])} == set()  # b NOT ready (dep failed)
+
+
+def test_build_dag_validates_order_after_ids() -> None:
+    from agora.core.task import build_dag
+
+    good = [_oa_task("a", status=TaskStatus.DONE), _oa_task("b", order_after=("a",))]
+    build_dag(good)  # no raise
+    with pytest.raises(AgoraError, match="order_after unknown"):
+        build_dag([_oa_task("b", order_after=("missing",))])

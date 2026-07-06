@@ -155,7 +155,9 @@ def validate_cast(
         if b.resident and b.profile and known:
             resident.append((role, profiles.profiles[b.profile].model))
 
-    # Rule 2: resident sizes sum ≤ budget.
+    # Rule 2: resident sizes sum ≤ budget. Sum DISTINCT model ids — two roles
+    # bound to the same resident model (implementer + tester → gemma-e4b) share
+    # ONE load, so the model's size counts once.
     if resident:
         if sizes_gb is None:
             errors.append(
@@ -164,11 +166,13 @@ def validate_cast(
             )
         else:
             total = 0.0
+            counted: set[str] = set()
             for role, model in resident:
                 sz = sizes_gb.get(model)
                 if sz is None:
                     errors.append(f"{role}: no size for resident model {model!r} in manifest store")
-                else:
+                elif model not in counted:
+                    counted.add(model)
                     total += sz
             if total > cast.hardware.vram_budget_gb:
                 errors.append(
