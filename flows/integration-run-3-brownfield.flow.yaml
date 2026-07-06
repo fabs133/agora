@@ -1,0 +1,282 @@
+version: "2.0"
+name: integration-run-3-brownfield
+probe_version: 3
+description: >
+  Integration run 3 — brownfield probe. The implementer RETURNS to a completed,
+  handed-off echobot (baseline tag echobot-v1; PROJECT_STATE.md v1.1 fact-checked)
+  and EXTENDS it: two new commands (!flip, !choose) and a transport-injected
+  Discord adapter, without breaking the frozen core or the regression suite.
+  Headline measurement: brief-as-index navigation — does the model read
+  PROJECT_STATE.md / the file map before editing (observable in run.log)?
+  P0 is gate-only (runner --phase0 re-validates the brief's F20 run_checks).
+  Delta spec: docs/integration/run-3-brownfield-spec.md. Cast: casts/p40-24gb.yaml.
+
+agents:
+  - name: impl
+    role: implementer
+    model: ""
+    instructions: |
+      You EXTEND an existing, completed project one small task at a time. It ships
+      with a handoff brief, PROJECT_STATE.md, that indexes the code — use it to
+      navigate. Read the brief and the files the task names; write only its
+      declared output path; finish with mark_complete. Do not change frozen
+      contracts. Reproduce required byte sequences verbatim.
+  - name: tester
+    role: tester
+    model: ""
+    instructions: |
+      You author tests under tests/ from the task's named cases, exercising the
+      REAL implementation. You never edit src/. Keep existing tests intact (they
+      are the regression suite). Finish by calling mark_complete.
+
+task_graph:
+  # ===================== P4 — extend core =====================
+  - id: T4.1
+    assigned_to: impl
+    phase: P4
+    description: |
+      NAVIGATE VIA THE BRIEF: read PROJECT_STATE.md first — its "## File map" and
+      "## Capability inventory" index every source file and its public interface.
+      Find your target file there; do not read the old spec. The core signature
+      handle_message(text, rng) -> str | None is frozen ("## Architecture &
+      invariants"): do NOT change it, and do not break existing commands.
+
+      Extend handle_message with two NEW commands (both use the injected rng, both
+      deterministic under a seeded random.Random):
+        - !flip        -> exactly "heads" or "tails" (rng.choice(["heads","tails"])).
+        - !choose a b c -> exactly ONE of the space-separated arguments
+                           (rng.choice over them); NO arguments -> a usage message
+                           that MUST contain the substring "choose".
+        - !help MUST now also list !flip and !choose (keep the existing help style
+          and the existing commands' lines).
+      Follow the project's conventions (see the brief's "## Conventions": commands
+      are !name-prefixed and dispatched in handle_message; usage/error messages are
+      SENTENCE-CASE strings).
+    output_path: echobot/core.py
+    postconditions:
+      - name: file_contains
+        args: {rel: echobot/core.py, substring: "flip"}
+      - name: file_contains
+        args: {rel: echobot/core.py, substring: "choose"}
+      - name: run_check
+        args: {cmd: ["python", "-c", "from echobot.core import handle_message"], expect_exit: 0}
+      # Regression smokes (existing behaviour must still hold):
+      - name: run_check
+        args: {cmd: ["python", "-c", "import random; from echobot.core import handle_message; assert handle_message('!ping', random.Random(0)) == 'pong'"], expect_exit: 0}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import random; from echobot.core import handle_message; assert 'rolled 2d6:' in handle_message('!roll 2d6', random.Random(0))"], expect_exit: 0}
+      # New behavioural smokes (F15 acceptance predicates):
+      - name: run_check
+        args: {cmd: ["python", "-c", "import random; from echobot.core import handle_message; assert handle_message('!flip', random.Random(0)) in ('heads','tails')"], expect_exit: 0}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import random; from echobot.core import handle_message; assert handle_message('!choose a b c', random.Random(0)) in ('a','b','c')"], expect_exit: 0}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import random; from echobot.core import handle_message; assert 'choose' in handle_message('!choose', random.Random(0))"], expect_exit: 0}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import random; from echobot.core import handle_message; h=handle_message('!help', random.Random(0)); assert 'flip' in h and 'choose' in h"], expect_exit: 0}
+      - name: mark_complete
+
+  # ===================== P5 — extend tests =====================
+  - id: T5.1
+    assigned_to: tester
+    phase: P5
+    depends_on: [T4.1]
+    description: |
+      NAVIGATE VIA THE BRIEF: read PROJECT_STATE.md first — its "## Capability
+      inventory" gives the REAL API you must call. The core function is:
+          from echobot.core import handle_message
+          handle_message(text: str, rng: random.Random) -> str | None
+      Call THAT exact function (positional args: the message text, then a
+      random.Random). Do NOT invent other function names or keyword arguments.
+
+      Extend tests/test_core.py with the FOUR new named test functions below,
+      exercising the REAL implementation (import from echobot.core). KEEP the
+      existing 8 tests unchanged — they are the regression suite.
+        test_flip_deterministic  — !flip under a seeded random.Random returns
+                                    "heads" or "tails", same seed -> same result.
+        test_choose              — !choose over space-separated args returns one
+                                    of them (seeded random.Random).
+        test_choose_no_args      — !choose with no args returns a usage message
+                                    containing "choose".
+        test_help_lists_new_commands — !help output contains "flip" and "choose".
+    output_path: tests/test_core.py
+    postconditions:
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_flip_deterministic"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_choose"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_choose_no_args"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_help_lists_new_commands"}
+      # Regression: the original 8 tests must still be present.
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_ping"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_roll_malformed"}
+      - name: file_contains
+        args: {rel: tests/test_core.py, substring: "def test_non_command_returns_none"}
+      - name: run_check
+        args: {cmd: ["python", "-m", "pytest", "--collect-only", "-q"], expect_exit: 0, timeout_s: 60}
+      - name: run_check
+        args: {cmd: ["python", "-m", "pytest", "-q"], expect_exit: 0, timeout_s: 60}
+      - name: mark_complete
+
+  # ===================== P6 — Discord adapter =====================
+  - id: T6.1
+    assigned_to: impl
+    phase: P6
+    depends_on: [T5.1]
+    description: |
+      NAVIGATE VIA THE BRIEF: read PROJECT_STATE.md first — its "## File map" and
+      "## Capability inventory" index every source file and its public interface.
+      Find your target file there; do not read the old spec. The core signature
+      handle_message(text, rng) -> str | None is frozen ("## Architecture &
+      invariants").
+
+      Add a NEW module echobot/discord_adapter.py — a transport-injected adapter
+      (no network, no discord.py, no token). Import the core:
+          from echobot.core import handle_message
+      Define:
+        - a minimal Gateway protocol: receive() yields message events each having a
+          .content string; send(channel, text) delivers a reply.
+        - run_adapter(gateway, rng): for each event from gateway.receive(), pass
+          event.content through handle_message(.., rng); send NON-None responses via
+          gateway.send(channel, response); do NOT send None responses.
+      The event guarantees ONLY .content — it may not have a channel. Derive the
+      channel best-effort as getattr(event, "channel", None) and ALWAYS send the
+      non-None response; a missing channel must NOT suppress the send (the reply
+      text is what matters).
+      Do NOT modify echobot/core.py (a new transport is a new module; see the
+      brief's "## Extension points").
+    output_path: echobot/discord_adapter.py
+    postconditions:
+      - name: file_exists
+        args: {rel: echobot/discord_adapter.py}
+      - name: file_contains
+        args: {rel: echobot/discord_adapter.py, substring: "def run_adapter"}
+      - name: file_contains
+        args: {rel: echobot/discord_adapter.py, substring: "from echobot.core import handle_message"}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import echobot.discord_adapter"], expect_exit: 0}
+      - name: mark_complete
+  - id: T6.2
+    assigned_to: tester
+    phase: P6
+    depends_on: [T6.1]
+    description: |
+      NAVIGATE VIA THE BRIEF: read PROJECT_STATE.md first — its "## Capability
+      inventory" / "## File map" name the real modules and interfaces. Call the
+      REAL API; do not invent function names.
+
+      Write tests/test_discord_adapter.py — contract tests for the new adapter
+      against a FakeGateway (deterministic, headless). Import:
+          from echobot.discord_adapter import run_adapter
+      Define a FakeGateway in the test: it is constructed with a scripted list of
+      events (each a small object exposing a `.content` string); receive() yields
+      those events; send(channel, text) appends text to a captured `sent` list.
+      Required tests (exact names):
+        test_adapter_maps_ping  — a scripted "!ping" event -> "pong" is in the
+                                  captured sends (run_adapter(gateway, random.Random(0))).
+        test_adapter_ignores_none — a scripted non-command event (returns None)
+                                  -> nothing is sent for it.
+    output_path: tests/test_discord_adapter.py
+    postconditions:
+      - name: file_exists
+        args: {rel: tests/test_discord_adapter.py}
+      - name: file_contains
+        args: {rel: tests/test_discord_adapter.py, substring: "def test_adapter_maps_ping"}
+      - name: file_contains
+        args: {rel: tests/test_discord_adapter.py, substring: "def test_adapter_ignores_none"}
+      # Adapter contract tests green AND the full regression suite still green.
+      - name: run_check
+        args: {cmd: ["python", "-m", "pytest", "-q"], expect_exit: 0, timeout_s: 60}
+      - name: mark_complete
+
+  # ===================== P7 — acceptance =====================
+  - id: T7.1
+    assigned_to: impl
+    phase: P7
+    depends_on: [T6.2]
+    description: >
+      Acceptance: the extended bot is already assembled. Confirm it end-to-end,
+      then call mark_complete. Do not modify any files.
+    postconditions:
+      # CLI unchanged — the regression acceptance still holds:
+      - name: run_check
+        args:
+          cmd: ["python", "-m", "echobot"]
+          stdin: "!ping\n"
+          expect_stdout_contains: "pong"
+          timeout_s: 30
+      - name: run_check
+        args:
+          cmd: ["python", "-m", "echobot"]
+          stdin: "!echo hello world\n"
+          expect_stdout_contains: "hello world"
+          timeout_s: 30
+      - name: run_check
+        args:
+          cmd: ["python", "-m", "echobot"]
+          stdin: "!roll 2d6\n"
+          expect_stdout_contains: "rolled 2d6:"
+          timeout_s: 30
+      # FakeGateway round-trip: the adapter maps a scripted !ping event to a "pong"
+      # send (transport-injected, seeded, headless).
+      - name: run_check
+        args:
+          cmd: ["python", "-c", "import random; from echobot.discord_adapter import run_adapter\nsent=[]\nclass E:\n    content='!ping'\nclass G:\n    def receive(self):\n        yield E()\n    def send(self, channel, text):\n        sent.append(text)\nrun_adapter(G(), random.Random(0))\nassert 'pong' in sent, sent"]
+          expect_exit: 0
+          timeout_s: 30
+      - name: mark_complete
+
+  # ===================== P9 — handoff v2 =====================
+  # Re-extract FACT (file map + capability inventory changed) + re-author only the
+  # CHANGED prose section (extension points now cite the concrete flip/choose +
+  # discord_adapter). Architecture/conventions/how-to-run prose reuse the baseline
+  # files. The runner assembles PROJECT_STATE.md (FACT + prose) before this gate.
+  - id: T9.2c
+    assigned_to: impl
+    phase: P9
+    depends_on: [T7.1]
+    description: |
+      NAVIGATE VIA THE BRIEF: read PROJECT_STATE.md first — its "## File map" and
+      "## Capability inventory" now include your new work. Then rewrite
+      prose/extension_points.md (3-8 lines) to reflect what the project ACTUALLY
+      supports now (cite the code; do not invent): new commands attach in
+      handle_message's dispatch plus a named test in tests/test_core.py (e.g. the
+      just-added !flip / !choose); a new TRANSPORT is a new adapter module —
+      echobot/discord_adapter.py is the first, transport-injected via
+      run_adapter(gateway, rng), core untouched; the core signature
+      handle_message(text, rng) is frozen. Write ONLY the body text (no "## "
+      header — the assembler adds it).
+    output_path: prose/extension_points.md
+    postconditions:
+      - name: file_exists
+        args: {rel: prose/extension_points.md}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import os,sys; sys.exit(0 if os.path.getsize('prose/extension_points.md')>=80 else 1)"], expect_exit: 0}
+      # P9 gate: the eight mandatory headers + the two gate commands, evaluated on
+      # the ASSEMBLED PROJECT_STATE.md v2 (FACT re-extracted + prose) the runner
+      # writes before this gate. Also smoke-tests the assembler on the new tree.
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Identity"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Architecture & invariants"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Capability inventory"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Verification record"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## File map"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Conventions"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## Extension points"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "## How to run / test"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "pytest -q"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.md, substring: "python -m echobot"}
+      - name: mark_complete

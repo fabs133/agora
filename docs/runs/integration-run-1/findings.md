@@ -1041,3 +1041,218 @@ pre-registered brownfield probe** (extension spec — new commands + a real
 Discord adapter against a fake gateway; phase-0 opens by re-validating this
 PROJECT_STATE.md's gates, with a deliberate stale-file red-team). That is a
 new program, off this completed baseline.
+
+**Part 13 addendum — chat-side fact-check + RUN 2 CLOSURE (2026-07-05).**
+
+Fact-check performed by re-execution and code inspection. VERDICT: PASS
+with two corrections. FACT: capability inventory + file map verified
+against tree/AST; verification record cmd 1 re-ran green (8/8); cmd 2 is
+F20 — the extractor serialized the P7 run_check as bare argv, dropping
+stdin + expectation; NOT faithfully re-runnable as recorded (phase-0
+blocker class). PROSE: architecture/invariants verified claim-by-claim
+in code; extension points + how-to-run correct; Conventions contains
+ONE false claim ("plain lowercase" vs actual sentence-case strings,
+core.py L38/L47) — F21: the claim was invented by the T9.2b micro-ask,
+not by the model; rule adopted: micro-asks must cite spec/code anchors.
+F20b: assembler write encoding unpinned; verify + pin utf-8.
+Fact-check meta, recorded for honesty: the checker's own probes
+misfired twice (CRLF pipe; relative-path .NET read) and were corrected
+against authoritative methods — instrument discipline applies to the
+fact-checker too.
+
+Corrections directive (artifact stays fully model-authored): fix F20
+(extractor serializes complete run_checks: cmd + stdin + expectation),
+fix the T9.2b ask (anchor its convention claims to code/spec), pin
+utf-8 in assembler; re-run T9.2b + re-extract + re-assemble ->
+PROJECT_STATE.md v1.1; spot-verify the corrected lines. Adapter nit
+for the brownfield backlog (not a run-2 defect): __main__ rstrip('\n')
+keeps '\r' on CRLF input — portability hardening later.
+
+**RUN 2 CLOSED — COMPLETE.** P3-P9 green; bot built, tested,
+acceptance-passed, documented, handed off. The greenfield program ends
+at F1-F21: nineteen framework/planner defects fixed structurally, two
+scoped model boundaries measured (F14 completeness on whole-file
+synthesis; F18''' reflective-emission, dodged by task design), zero
+unresolved blockers. Baseline for the brownfield probe: tag the
+corrected-artifact commit (suggest: echobot-v1).
+
+---
+
+## Part 14 — run 3 (brownfield probe) findings — RUN 3 COMPLETE (2026-07-06)
+
+**Run 3:** the brownfield probe SUCCEEDED (world (a)). The implementer returned
+to the completed echobot-v1, re-validated the brief, navigated via it, extended
+the project (two commands + a transport-injected Discord adapter), broke nothing,
+and handed off PROJECT_STATE.md v2. P0-P9 green; two conditions defects found and
+fixed under the standing rule; one runner backlog item; no model-capability floor.
+
+**Headline measurement — brief-as-index navigation: AFFIRMATIVE (3/3 edit tasks).**
+Every implementer edit task read PROJECT_STATE.md BEFORE touching code (run.log):
+P4 (read brief -> read core.py -> extend), P6 (read brief -> write adapter), P9
+(read brief -> write prose). The returning model used the handoff document as its
+navigation index, did not read the old spec, and never touched the frozen core
+signature. The casting/handoff architecture's reason to exist — a small-context
+model returning to a project and navigating by the brief — is demonstrated.
+
+**F20 verification record is a LIVE protective gate (P0 red-team).** Before task
+one: staling one source byte (removing "NdM" from a usage string) red the P0
+re-validation (pytest caught it via test_roll_malformed); restoring it greened P0.
+A protective claim is only trusted after it is seen failing — it was. The runner's
+--phase0 parses the brief's F20 fenced run_checks and executes them; the round-trip
+built in run 2's corrections is now load-bearing.
+
+**F22 — navigation/map-pointer discipline must cover EVERY editing seat.** The
+flow carried the map-pointer + frozen-signature contract to the IMPL tasks (which
+navigated correctly) but NOT the TESTER tasks. Ungifted the pointer and the real
+API, the tester never read the brief/core and FABRICATED a non-existent
+`echobot.core.execute_command(text, random=...)` (real API: handle_message(text,
+rng)) — run-1's F6/F8 spec-channel starvation, recurring tester-side. Model
+exonerated; verified conditions defect. Fix: T5.1/T6.2 gain the map-pointer +
+inline signature; re-established green (no budget). Doctrine: the brief is the
+navigation contract for ALL seats, not just the implementer.
+
+**P6 send-channel under-specification (F15/F6 class, conditions defect).** The
+delta spec's adapter contract said events have `.content` and `send(channel, text)`
+but never said where the channel comes from. The implementer guessed the event
+twice (`event.channel` -> crash; `event.channel_id` + a guard -> silently dropped
+the send). Fix: T6.1 states the channel is best-effort (getattr(event,"channel",
+None)) and the non-None response must ALWAYS be sent; re-established green
+(adapter 14/14). An acceptance predicate that names a parameter must say where the
+parameter comes from.
+
+**F23 — runner backlog: same-phase repair of a non-blocker task records a FALSE
+phase green.** When a phase's gate blocker (T6.2 pytest) is a DIFFERENT task from
+the one carrying the defect (T6.1 adapter), `--rerun-task <defect-task>` evaluates
+only the reran task's own postconditions (which pass) and records the phase green
+without re-running the blocker. Cross-phase repair already re-evaluates the whole
+gate mechanically (reevaluate_phase_gate); same-phase repair should too. Worked
+around here by re-running the blocker task after the fix; noted for a runner fix.
+
+**Regression discipline held.** The 8 baseline core tests stayed green through
+every phase (the regression suite, free of charge per the phase plan); the frozen
+core signature was never altered; the adapter did not modify core. Convention
+adherence held: new command strings are sentence-case per the brief's (run-2.5-
+corrected) Conventions; new tests follow test_<behaviour> naming.
+
+**PROJECT_STATE.md v2 (FACT re-extracted, prose model-authored).** The mechanical
+FACT sections re-extracted cleanly over the new tree (capability inventory + file
+map now carry discord_adapter.py's Gateway/Event/run_adapter and the four new
+tests + the adapter contract tests); only the CHANGED prose section
+(extension_points) was re-authored (cites the concrete discord_adapter +
+run_adapter); architecture/conventions/how-to-run prose reused from v1.1. The
+handoff-doctrine (mechanical FACT + concrete per-section prose micro-asks) carried
+from greenfield to brownfield unchanged. v2 awaits the chat-side fact-check;
+tag echobot-v2 after it passes.
+
+**Executor note (honesty).** One stray `--rerun-task` ran against the run-2
+campaign mid-P6; the closed run-2 workspace was reset --hard to its echobot-v1
+state (8/8), a stray P6 ledger line left as provenance. Run 3's baseline was copied
+before this, so run 3 is unaffected. Instrument discipline applies to the executor.
+
+**Program status.** Greenfield (runs 1-2) built and handed off echobot-v1;
+brownfield (run 3) returned, extended, and handed off v2 — the full lifecycle the
+casting/handoff architecture was designed for. Findings F1-F23. The measured model
+boundaries (F14 whole-file synthesis; F18''' reflective doc emission) are dodged by
+task design; every framework/planner defect is fixed structurally. Milestone: the
+handoff brief works as a navigation index for a returning small-context model.
+
+**Part 15 — run 3 fact-check + corrections directive (2026-07-05).**
+
+Fact-check of PROJECT_STATE.md v2 by re-execution + inspection.
+Behaviour: 14/14 pytest; flip deterministic/valid; choose valid; help
+lists both new commands. VERDICT: PASS with corrections.
+
+**F24 — reuse is not revalidation.** Two reused v1.1 prose claims went
+stale exactly where the delta touched them: (V2-1) "IO confined
+exclusively to __main__" — false since discord_adapter.py; (V2-3)
+"tests must be placed in tests/test_core.py" — false since
+test_discord_adapter.py. Rule adopted: at re-handoff, every REUSED
+prose section passes a staleness screen against the delta — a section
+is re-asked iff the delta touches its subject nouns (both stale
+sections name "adapter"/"tests"; the screen is near-mechanical).
+
+**V2-2 — verification-record completeness.** The record carries only
+v1's four checks; the P7' FakeGateway round-trip and P4' flip/choose
+smokes are absent — a future phase-0 verifies the extension only
+indirectly via pytest. The extractor must derive the record from the
+PRODUCING flow's full run_check gate set, with a regression test
+asserting record-coverage == flow run_check gates.
+
+Corrections (artifact stays model-authored): C1 re-author architecture
+micro-ask, anchored ("IO lives in adapter modules — __main__ and
+gateway implementations; core has none"); C2 conventions sentence
+(core tests in tests/test_core.py; adapter contract tests in
+tests/test_<adapter>.py); C3 re-extract verification record from the
+run-3 flow (expect ~7-8 checks incl. round-trip + smokes) + the
+coverage regression test; byte-confirm utf-8; re-assemble v2.1; THEN
+tag echobot-v2. Backlog (before any next run): F23 same-phase-repair
+false-green fix; closed-run workspace guard (runner refuses
+--rerun-task on a campaign whose ledger is complete); code nit:
+Optional[any] annotation in discord_adapter (typing, non-behavioural).
+
+Milestone on record: the full lifecycle — greenfield build -> handoff
+-> phase-0 re-validation (red-team proven) -> brownfield extension via
+brief-as-index navigation (3/3) -> re-handoff — is demonstrated. The
+arc document and push milestone unblock upon v2.1 + tag.
+
+---
+
+**Part 16 — run 3 v2.1 corrections applied → echobot-v2 (2026-07-06).**
+
+Executed the Part-15 directive on branch feat/integration-run-3. Suite 1474
+passed / 8 skipped, ruff clean. PROJECT_STATE.md v2.1 assembled, 13/13
+verification-record checks re-run green (out of band). Tag echobot-v2 on the
+corrections commit.
+
+**C1/C2 (re-anchored prose, model-authored).** turns_reasoning_only=0 on every
+authoring turn — the emission floor did not recur (concrete asks hold, as run 2.5
+established). C2 (conventions) passed first-pass. C1 (architecture) surfaced F25.
+
+**F25 — a seeded/pre-existing target file defeats an overwrite via the write-once
+guard, and the disk size-gate can be fooled while the artifact predicate catches
+it.** The corrections workspace was a COPY of the completed tree, so the target
+prose files already existed. Tc1 EMITTED write_file with correct anchored content,
+but the harness overwrite-guard rejected it (`already exists ... write_file
+disabled`) and the turn auto-mark-completed with no artifact. The `os.path.getsize
+>= 120` run_check PASSED anyway (the seeded stale file satisfied it) — a false-green
+had that been the only gate; the artifact-tracking `file_exists` predicate correctly
+FAILED (no artifact produced). Lessons: (a) when re-authoring an existing file, either
+clear the target first or ensure the seat can force-overwrite; (b) a size/existence
+run_check over a pre-seeded workspace is not a proof of authorship — pair it with the
+artifact predicate. Repair: removed the stale target, `--rerun-task Tc1 --oracle P9c`
+→ GREEN.
+
+**F23 fix — demonstrated live.** The Tc1 repair (same-phase, `--oracle P9c`) re-ran only
+Tc1 by the model, yet the gate re-checked BOTH Tc1 and Tc2 mechanically over the workspace
+(Tc2 PASS from its still-on-disk artifact). Previously same-phase repair evaluated only the
+re-run task and could green a phase whose different blocker still failed. Now
+`repair_gate_is_mechanical(rerun_task, oracle_phase)` routes ALL repairs through the
+full-gate re-eval. Unit test: a passing non-blocker cannot green a phase whose blocker still
+fails.
+
+**C3 — verification-record completeness + a latent serializer bug.** `flow_gate_checks`
+now returns the producing flow's FULL run_check gate set (run-3 brownfield: 13, was 4),
+excluding only `pytest --collect-only` (meta) and handoff-scaffolding checks (`prose/`,
+`PROJECT_STATE`). Regression test: record-coverage == flow gate set, and specifically the
+FakeGateway round-trip + `!flip`/`!choose` smokes are present (the v2-record fixture, v1's
+4 checks, is a strict incomplete subset → fails; the v2.1 set passes). Deriving the record
+from the full set exposed a real bug: a run_check whose command has embedded newlines (the
+round-trip `python -c`) produced a multi-line `# `-comment, whose non-`#` continuation lines
+leaked into the JSON body and made the parser DROP the spec. Fixed `_human_command_line`
+to collapse `\n`→`\n` (one physical comment line). This check was absent from the old
+4-check record, so the bug was latent until completeness forced it in — completeness is
+itself a bug-finder.
+
+**Closed-ledger guard.** `run_phased.py` refuses `--rerun-task` when the campaign ledger
+reads complete (all gates green/waived) — the direct fix for the run-2 incident (a stray
+rerun rewrote the shipped echobot-v1 tree). Corrections run on a FRESH campaign/output_dir.
+Test included (complete, incomplete, and waived-red ledgers).
+
+**C3 policy note (scope decision).** The Part-15 "~7-8 checks" estimate under-counted the
+flow's inline behavioural asserts; the implemented policy is the FULL run_check set minus
+collect-only + scaffolding (13), pinned by the coverage test rather than a hand-tuned list —
+so a future flow that adds a behavioural run_check the record misses will fail the test.
+
+Lifecycle now fully closed: greenfield build → handoff (v1.1, echobot-v1) → phase-0
+re-validation (red-team proven) → brownfield extension via brief-as-index navigation →
+re-handoff (v2 → fact-check → v2.1 corrections, echobot-v2). No open framework blocker.

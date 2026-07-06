@@ -1,0 +1,30 @@
+# Integration run 3 — v2.1 CORRECTIONS. A fresh-ledger mini-campaign that re-runs
+# TWO prose micro-asks (C1 architecture, C2 conventions) over a COPY of the
+# completed run-3 workspace, then feeds the corrected prose into an out-of-band
+# re-assembly of PROJECT_STATE.md v2.1. A dedicated campaign / output_dir (NOT the
+# closed run-3 ledger) — post-completion corrections must not mutate the shipped
+# run-3 workspace (closed-ledger guard; run-2 incident).
+schema_version: 1
+name: integration-run-3-corrections
+description: >
+  echobot run 3 v2.1 corrections: cast-loaded (casts/p40-24gb.yaml), single-phase
+  (P9c) re-authoring of prose/architecture.md + prose/conventions.md via
+  flows/integration-run-3-corrections.flow.yaml. Concrete asks: expect
+  turns_reasoning_only=0.
+cast: casts/p40-24gb.yaml
+flow: flows/integration-run-3-corrections.flow.yaml
+harness:
+  tool_errors: corrective
+  nudge_budget: 1
+  review_budget: 0
+  salvage_budget: 1
+params:
+  temperature: 0.0
+  seed: 42
+  num_ctx: 8192
+  max_tokens: 4096
+output_dir: runs_out/integration-run-3-corrections
+run:
+  id: r003c
+  repeat: 1
+  review_timeout_seconds: 5

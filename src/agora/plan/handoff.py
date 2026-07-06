@@ -121,8 +121,12 @@ def _human_command_line(chk: dict) -> str:
     """A ``# ``-prefixed human-readable one-liner for a run_check: the joined
     command + its stdin/expectation. Keeps the raw command STRING (``pytest -q``,
     ``python -m echobot``) present in the doc for readers and substring gates,
-    alongside the machine-parseable JSON below it."""
-    cmd = " ".join(chk.get("cmd", []))
+    alongside the machine-parseable JSON below it. Embedded newlines in the command
+    (a multi-line ``python -c`` snippet, e.g. the FakeGateway round-trip) are
+    collapsed to ``\\n`` so this stays exactly ONE physical line — otherwise the
+    continuation lines would not be ``#``-prefixed and would leak into the JSON body
+    the parser reconstructs."""
+    cmd = " ".join(chk.get("cmd", [])).replace("\n", "\\n")
     bits: list[str] = []
     if chk.get("stdin"):
         bits.append(f"stdin={json.dumps(chk['stdin'])}")

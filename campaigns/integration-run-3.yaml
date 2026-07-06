@@ -1,0 +1,37 @@
+# Integration run 3 — echobot BROWNFIELD probe. Single cast-loaded, phase-staged run.
+#
+# The implementer returns to a completed project (baseline tag echobot-v1;
+# PROJECT_STATE.md v1.1 fact-checked) and extends it: two new commands (!flip,
+# !choose) + a transport-injected Discord adapter, without breaking the frozen
+# core or the regression suite. Fresh ledger / fresh output dir; the workspace at
+# runs_out/integration-run-3/echobot/echobot is a COPY of the echobot-v1 tree.
+# Delta spec + pre-registration: docs/integration/run-3-brownfield-spec.md.
+# P0 (re-validation) is gate-only, run via `run_phased.py --phase0 <artifact>`.
+schema_version: 1
+name: integration-run-3
+description: >
+  echobot integration run 3 (brownfield probe): cast-loaded (casts/p40-24gb.yaml),
+  phase-gated extension of a completed project via
+  flows/integration-run-3-brownfield.flow.yaml. Headline: brief-as-index navigation.
+cast: casts/p40-24gb.yaml
+flow: flows/integration-run-3-brownfield.flow.yaml
+harness:
+  tool_errors: corrective
+  nudge_budget: 1
+  review_budget: 0
+  salvage_budget: 1
+params:
+  temperature: 0.0
+  seed: 42
+  num_ctx: 8192
+  max_tokens: 4096
+output_dir: runs_out/integration-run-3
+# Execution discipline: P0 first (--phase0, gate-only re-validation of the brief's
+# F20 run_checks; RED-TEAM before the real run). Then the runner executes P4, P5,
+# P6, P7, P9 in declared order, evaluates each gate, writes a PhaseGateRecord, and
+# PAUSES. Repair budget = 1 per red gate; second red on the same gate stops;
+# waivers forbidden; conditions-defect re-establishment rule stands.
+run:
+  id: r003
+  repeat: 1
+  review_timeout_seconds: 5

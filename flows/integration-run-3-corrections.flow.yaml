@@ -1,0 +1,83 @@
+version: "2.0"
+name: integration-run-3-corrections
+probe_version: 3
+description: >
+  Integration run 3 — v2.1 CORRECTIONS. Two re-anchored PROSE micro-asks (C1
+  architecture, C2 conventions) that the v2 fact-check flagged as stale-on-reuse
+  (F24: reused v1.1 prose went false exactly where the run-3 delta touched it —
+  the Discord adapter added an IO site outside __main__, and a second test file
+  outside test_core.py). The model re-authors ONLY those two prose bodies over the
+  completed run-3 workspace (navigating by PROJECT_STATE.md); the runner re-assembles
+  PROJECT_STATE.md v2.1 out of band. Concrete asks: expect turns_reasoning_only=0.
+  Cast: casts/p40-24gb.yaml (implementer seat only).
+
+agents:
+  - name: impl
+    role: implementer
+    model: ""
+    instructions: |
+      You correct two prose sections of a completed project's handoff brief. It
+      ships with PROJECT_STATE.md, which indexes the code — read it to navigate and
+      to anchor every claim in what the code ACTUALLY does. Write only the task's
+      declared output path; write ONLY the section body (no "## " header). Cite the
+      code; do not invent rules. Finish with mark_complete.
+
+task_graph:
+  # ===================== C1 — re-author architecture =====================
+  - id: Tc1
+    assigned_to: impl
+    phase: P9c
+    description: |
+      NAVIGATE VIA THE BRIEF: read PROJECT_STATE.md first — its "## File map" and
+      "## Capability inventory" index every source file (echobot/core.py,
+      echobot/__main__.py, echobot/discord_adapter.py) and its public interface.
+
+      Rewrite prose/architecture.md (3-6 lines) stating echobot's architecture
+      invariants, EACH anchored to the code (do not invent):
+        - The core — echobot/core.py, handle_message(text, rng) — is a PURE
+          function: no IO, no side effects; it returns a reply string or None.
+        - IO lives in ADAPTER modules, NOT the core: echobot/__main__.py (the
+          stdin/stdout CLI adapter) AND gateway/adapter implementations such as
+          echobot/discord_adapter.py (run_adapter drives a gateway's send/receive).
+          The core performs no IO. (Do NOT claim IO is confined to __main__ — the
+          Discord adapter is a second IO site.)
+        - Randomness uses an INJECTED random.Random (rng) so behaviour is
+          deterministic under a seed.
+        - The core signature handle_message(text: str, rng: random.Random) ->
+          str | None is FROZEN and must not change.
+      Write ONLY the body text (no "## " header — the assembler adds it).
+    output_path: prose/architecture.md
+    postconditions:
+      - name: file_exists
+        args: {rel: prose/architecture.md}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import os,sys; sys.exit(0 if os.path.getsize('prose/architecture.md')>=120 else 1)"], expect_exit: 0}
+      - name: mark_complete
+
+  # ===================== C2 — re-author conventions =====================
+  - id: Tc2
+    assigned_to: impl
+    phase: P9c
+    description: |
+      NAVIGATE VIA THE BRIEF: read PROJECT_STATE.md first — its "## File map"
+      lists the test files (tests/test_core.py AND tests/test_discord_adapter.py)
+      and the code's message strings.
+
+      Rewrite prose/conventions.md (2-5 lines) stating echobot's conventions, EACH
+      anchored to the code (do not invent):
+        - Commands are !name-prefixed and dispatched inside handle_message.
+        - Tests: CORE behaviour tests live in tests/test_core.py; an ADAPTER's
+          contract tests live in tests/test_<adapter>.py — e.g.
+          tests/test_discord_adapter.py for the Discord adapter. (Do NOT claim all
+          tests live in tests/test_core.py — the adapter has its own test file.)
+        - Usage and error messages are SENTENCE-CASE strings, matching the style of
+          the messages already in echobot/core.py.
+        - The package import name is echobot.
+      Write ONLY the body text (no "## " header — the assembler adds it).
+    output_path: prose/conventions.md
+    postconditions:
+      - name: file_exists
+        args: {rel: prose/conventions.md}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import os,sys; sys.exit(0 if os.path.getsize('prose/conventions.md')>=120 else 1)"], expect_exit: 0}
+      - name: mark_complete
