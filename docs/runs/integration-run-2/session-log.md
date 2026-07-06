@@ -566,3 +566,35 @@ PROJECT_STATE.md exists (FACT correct-by-construction; prose placeholders). Run 
 ```
 P3-P7 GREEN | P9 RED (T9.2 prose emission derail; S7 fired 1x, negative; assembler + FACT verified) -> STOP
 ```
+
+---
+
+# RUN 2.5 — F18''' fix: prose split into four CONCRETE micro-asks (T9.2a-d); run 2 CLOSES here
+
+## Pre-flight (2026-07-06) @ run-2.5 prep (suite green 1464, ruff clean)
+```
+ollama 200; conduit 200; gemma4:e4b + qwen2.5:7b resident
+conditions delta (Part-12 addendum — F18''' scoped to open-ended REFLECTIVE emission; concrete asks
+  are reliable, cf. T9.1's README first-try pass):
+  - T9.2 -> four micro-tasks T9.2a-d, ONE per prose section, each a CONCRETE ask answerable from the
+    project (3-8 lines, own file under prose/). Per-task gate: file_exists + length >=80 bytes.
+  - assembler merges FACT + the four prose files -> PROJECT_STATE.md; a missing prose file (human-
+    fallbacked task) becomes a marked "(human)" placeholder. P9 gate UNCHANGED, on the assembled file.
+  - S7 stays armed (salvage_budget 1); F19 param wiring live (max_tokens 4096 via campaign override).
+protocol: one repair per DERAILED micro-task; second red on the SAME task -> mark that section
+  human-fallback in this log and CONTINUE (a fallback is NOT a stop; run 2 closes at 2.5 either way).
+ledger: P3-P7 green, P9 red (run-2.4). action: re-establish P9 (run T9.2a-d), then confirm the run closes.
+```
+### The four concrete micro-asks (drafted from docs/integration/project-state-template.md — quoted)
+- **T9.2a -> prose/architecture.md**: "the load-bearing architecture decisions and INVARIANTS ... one
+  invariant per line, imperatively ... core `handle_message` is a PURE function (no IO); ALL IO lives in
+  the `__main__` adapter; `rng` is injected (deterministic under a seeded `random.Random`); the core
+  signature `handle_message(text, rng) -> str | None` is frozen."
+- **T9.2b -> prose/conventions.md**: "the conventions a contributor must imitate ... commands are
+  `!name`-prefixed and dispatched inside `handle_message`; tests are named `test_<behaviour>` in
+  `tests/test_core.py`; usage/error strings are plain lowercase text; the package imports as `echobot`."
+- **T9.2c -> prose/extension_points.md**: "where new work attaches ... a new command is added to
+  `handle_message`'s dispatch PLUS one named test in `tests/test_core.py`; a new transport is a NEW
+  adapter module (never the core); the core signature `handle_message(text, rng)` is frozen."
+- **T9.2d -> prose/how_to_run.md**: "the verbatim commands to run and test ... `python -m echobot` runs
+  the bot (reads stdin, writes responses); `python -m pytest -q` runs the test suite."

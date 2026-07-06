@@ -97,20 +97,47 @@ def test_assemble_produces_all_eight_headers_in_order(tmp_path) -> None:
     assert positions == sorted(positions)
 
 
-def test_write_project_state_passes_the_p9_gate(tmp_path) -> None:
-    """End-to-end: assembling from a real workspace + a complete prose file yields
-    a PROJECT_STATE.md satisfying every P9 gate predicate (8 headers + 2 cmds)."""
+def _write_prose_files(prose_dir: Path, present: set[str]) -> None:
+    """Write body files for the prose headers in ``present`` (by short name)."""
+    prose_dir.mkdir(parents=True, exist_ok=True)
+    for header, fname in handoff.PROSE_FILE_MAP.items():
+        short = fname.removesuffix(".md")
+        if short in present:
+            (prose_dir / fname).write_text(
+                f"Concrete body for {header} — at least eighty characters of real "
+                f"project prose here for the length gate.", encoding="utf-8")
+
+
+def test_four_file_merge_uses_all_prose(tmp_path) -> None:
+    """Item 2: a 4-file merge puts each micro-task's body under its header; no
+    fallback placeholder appears."""
     ws = _mk_workspace(tmp_path)
-    prose_path = ws / "PROJECT_STATE.prose.md"
-    prose_path.write_text(
-        "".join(f"{h}\nbody for {h}\n\n" for h in handoff.PROSE_HEADERS),
-        encoding="utf-8",
-    )
+    prose_dir = ws / "prose"
+    _write_prose_files(prose_dir, {"architecture", "conventions", "extension_points", "how_to_run"})
     out = ws / "PROJECT_STATE.md"
-    handoff.write_project_state(ws, GATE_COMMANDS, prose_path, out)
+    handoff.write_project_state(ws, GATE_COMMANDS, prose_dir, out)
     doc = out.read_text(encoding="utf-8")
     for predicate in [*MANDATORY_HEADERS, "python -m pytest -q", "python -m echobot"]:
         assert predicate in doc, f"P9 gate predicate missing: {predicate}"
+    assert "Concrete body for ## Architecture & invariants" in doc
+    assert "(human)" not in doc  # all four present → no fallback
+
+
+def test_three_file_plus_fallback_merge(tmp_path) -> None:
+    """Item 2: a 3-file + 1-missing merge still yields all 8 headers; the missing
+    section is a marked (human) fallback, and the gate predicates still hold."""
+    ws = _mk_workspace(tmp_path)
+    prose_dir = ws / "prose"
+    _write_prose_files(prose_dir, {"architecture", "conventions", "how_to_run"})  # extension_points missing
+    out = ws / "PROJECT_STATE.md"
+    handoff.write_project_state(ws, GATE_COMMANDS, prose_dir, out)
+    doc = out.read_text(encoding="utf-8")
+    for predicate in [*MANDATORY_HEADERS, "python -m pytest -q", "python -m echobot"]:
+        assert predicate in doc, f"P9 gate predicate missing: {predicate}"
+    assert handoff.HUMAN_FALLBACK_BODY in doc          # the missing section is flagged
+    assert "(human)" in doc
+    # exactly one section fell back
+    assert doc.count(handoff.HUMAN_FALLBACK_BODY) == 1
 
 
 def test_missing_prose_section_is_visible_not_silent(tmp_path) -> None:

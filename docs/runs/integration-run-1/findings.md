@@ -948,3 +948,34 @@ now precisely characterised as termination-before-action and addressable by
 tool-forcing rather than any prompt-level mechanism. gemma's capability is
 not in question — it wrote the core, adapter, tests, and drafts the doc;
 the gap is the structured emission of open-ended output.
+
+**Part 12 addendum — chat-side ruling (2026-07-05).**
+
+**F18''' ratified with SCOPING:** the floor is open-ended REFLECTIVE
+doc emission (plans the call, terminates before action; reminder-
+immune per S7's negative datum). It is NOT a doc-task floor: T9.1's
+README (concrete ask, same phase/seat/model) passed first try. Roster/
+casting record: gemma-e4b — concrete doc asks reliable; reflective
+synthesis derails at this size.
+
+**Tool-forcing declined for 2.5** (unmeasured daemon surface under
+track-latest; F12 pattern class). Redirected to the Stage-3 battery:
+"forced-emission reliability per model per daemon" joins the
+edit-family sweep as a benchmark axis.
+
+**S7 disposition:** kept, default 0. Mechanism verified (fires once,
+draft verbatim); outcome negative on termination-decided turns; value
+on continuation-intended reasoning-only turns unproven.
+
+**Run 2.5 pre-registration — run 2 CLOSES at 2.5 either way (no 2.6).**
+Deltas: T9.2 -> four micro-tasks T9.2a-d, one per prose section, each a
+CONCRETE ask answerable from the project (3-8 lines, own output file
+under prose/); assembler merges four files + FACT; P9 gate on the
+assembled PROJECT_STATE.md unchanged; per-micro-task gate = file exists
++ non-trivial length. Worlds: (a) all four land -> P9 green -> RUN 2
+COMPLETE -> human fact-check of the full artifact. (b) any micro-task
+derails (one repair each, second red on the same task -> that section
+falls back to binding: human, recorded, run CONTINUES to completion) ->
+run 2 completes FACT-complete with mixed model/human prose; F18'''
+stands as scoped. The fact-check happens in both worlds. Waivers
+forbidden; budgets standard.

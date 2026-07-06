@@ -36,10 +36,21 @@ SECTION_PLAN: tuple[tuple[str, str], ...] = (
     ("## How to run / test", "prose"),
 )
 
-#: The four headers the model (T9.2) must supply in PROJECT_STATE.prose.md.
+#: The four headers the model must supply, one per micro-task (run 2.5).
 PROSE_HEADERS: tuple[str, ...] = tuple(h for h, kind in SECTION_PLAN if kind == "prose")
 #: The four headers assembled mechanically.
 FACT_HEADERS: tuple[str, ...] = tuple(h for h, kind in SECTION_PLAN if kind == "fact")
+
+#: Prose header -> the micro-task body file under ``prose/`` (run 2.5: T9.2a-d).
+PROSE_FILE_MAP: dict[str, str] = {
+    "## Architecture & invariants": "architecture.md",
+    "## Conventions": "conventions.md",
+    "## Extension points": "extension_points.md",
+    "## How to run / test": "how_to_run.md",
+}
+#: Body used when a prose section's micro-task human-fallbacked (its file is
+#: absent). Marked so the fact-check can tell model prose from human-pending.
+HUMAN_FALLBACK_BODY = "_(human)_ — section pending human authorship (micro-task derailed)."
 
 _SKIP_DIRS = {".git", "__pycache__", "verdicts", ".knowledge", ".pytest_cache", ".mypy_cache"}
 _SKIP_FILES = {"PROJECT_STATE.md", "PROJECT_STATE.prose.md"}
@@ -171,6 +182,19 @@ def parse_prose_sections(text: str) -> dict[str, str]:
     return sections
 
 
+def read_prose_sections(prose_dir: Path) -> dict[str, str]:
+    """Read the four prose micro-task body files from ``prose_dir`` into
+    ``{"## Header": body}``. A missing or empty file (its micro-task
+    human-fallbacked) yields the ``(human)`` placeholder so the assembled document
+    stays structurally complete and the gap is visibly marked."""
+    prose_dir = Path(prose_dir)
+    out: dict[str, str] = {}
+    for header, fname in PROSE_FILE_MAP.items():
+        body = _read(prose_dir / fname).strip() if (prose_dir / fname).exists() else ""
+        out[header] = body or HUMAN_FALLBACK_BODY
+    return out
+
+
 def assemble(fact_sections: dict[str, str], prose_sections: dict[str, str]) -> str:
     """Interleave FACT and PROSE sections into the eight-header canonical order.
     Every mandatory header is emitted even if its body is empty (a missing prose
@@ -187,22 +211,22 @@ def assemble(fact_sections: dict[str, str], prose_sections: dict[str, str]) -> s
 def write_project_state(
     workspace: Path,
     gate_commands: list[str],
-    prose_path: Path,
+    prose_dir: Path,
     out_path: Path,
 ) -> str:
-    """Assemble ``PROJECT_STATE.md`` = mechanical FACT + the model's PROSE and
-    write it to ``out_path``. Returns the assembled text. Pure/deterministic given
-    the workspace tree, gate commands, and prose file."""
-    prose_text = _read(Path(prose_path)) if Path(prose_path).exists() else ""
+    """Assemble ``PROJECT_STATE.md`` = mechanical FACT + the four PROSE micro-task
+    files (``prose_dir``) and write it to ``out_path``. Returns the assembled text.
+    Pure/deterministic given the workspace tree, gate commands, and prose files; a
+    missing prose file becomes a marked ``(human)`` placeholder."""
     fact = extract_fact_sections(Path(workspace), gate_commands)
-    prose = parse_prose_sections(prose_text)
+    prose = read_prose_sections(Path(prose_dir))
     assembled = assemble(fact, prose)
     Path(out_path).write_text(assembled, encoding="utf-8")
     return assembled
 
 
 __all__ = [
-    "SECTION_PLAN", "PROSE_HEADERS", "FACT_HEADERS",
-    "python_signatures", "extract_fact_sections", "parse_prose_sections",
-    "assemble", "write_project_state",
+    "SECTION_PLAN", "PROSE_HEADERS", "FACT_HEADERS", "PROSE_FILE_MAP",
+    "HUMAN_FALLBACK_BODY", "python_signatures", "extract_fact_sections",
+    "parse_prose_sections", "read_prose_sections", "assemble", "write_project_state",
 ]

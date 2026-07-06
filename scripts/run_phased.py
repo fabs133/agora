@@ -760,7 +760,7 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         write_project_state(
             workspace=project_dir,
             gate_commands=flow_gate_commands(campaign["flow"]),
-            prose_path=project_dir / "PROJECT_STATE.prose.md",
+            prose_dir=project_dir / "prose",
             out_path=project_dir / "PROJECT_STATE.md",
         )
         gate, gate_results_by_id = reevaluate_phase_gate(project_dir, "P9", tasks)
