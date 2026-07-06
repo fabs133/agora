@@ -350,6 +350,48 @@ def test_cross_invocation_oracle_carries_stdout_verbatim(tmp_path) -> None:
     assert "The following gate failed." in prompt
 
 
+def _mk_working_echobot(project_dir: Path) -> None:
+    """Minimal REAL echobot at ``project_dir``: `python -m echobot` !ping -> pong."""
+    (project_dir / "echobot").mkdir(parents=True, exist_ok=True)
+    (project_dir / "echobot" / "__init__.py").write_text("", encoding="utf-8")
+    (project_dir / "echobot" / "core.py").write_text(
+        "def handle_message(text, rng=None):\n"
+        "    return 'pong' if text.strip() == '!ping' else None\n", encoding="utf-8")
+    (project_dir / "echobot" / "__main__.py").write_text(
+        "import sys\nfrom echobot.core import handle_message\n"
+        "for line in sys.stdin:\n"
+        "    r = handle_message(line.rstrip('\\n'))\n"
+        "    if r is not None:\n        print(r)\n", encoding="utf-8")
+
+
+def test_phase0_revalidation_reflects_pass_and_fail(tmp_path) -> None:
+    """Item 1: --phase0 parses the artifact's run_checks, executes them in the
+    workspace, and the P0 record reflects BOTH a passing and a failing check
+    (mechanical-marked, red overall)."""
+    import json
+    import sys
+
+    output_dir = tmp_path
+    _mk_working_echobot(output_dir / "echobot" / "echobot")
+    passing = {"cmd": [sys.executable, "-m", "echobot"], "stdin": "!ping\n",
+               "expect_stdout_contains": "pong"}
+    failing = {"cmd": [sys.executable, "-m", "echobot"], "stdin": "!ping\n",
+               "expect_stdout_contains": "NOT-IN-OUTPUT"}
+    doc = "## Verification record\n\n" + "\n".join(
+        f"```run_check\n{json.dumps(s)}\n```\n" for s in (passing, failing))
+    art = tmp_path / "PROJECT_STATE.md"
+    art.write_text(doc, encoding="utf-8")
+
+    gate, results = rp.run_phase0({"output_dir": str(output_dir)}, art)
+    assert gate.mechanical is True
+    assert gate.passed is False                       # one check failed → gate red
+    flags = [p for _, p in gate.tasks[0].postconditions]
+    assert True in flags and False in flags           # both outcomes present
+    recs = results["P0-revalidation"].run_check_records
+    assert len(recs) == 2
+    assert any(r["passed"] for r in recs) and any(not r["passed"] for r in recs)
+
+
 def test_mechanical_reeval_records_supersede_stale_oracle(tmp_path) -> None:
     """F17b: a mechanical cross-phase re-eval persists its run_check captures
     (mechanical-marked, attributed to the owning task), so the NEXT

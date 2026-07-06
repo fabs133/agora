@@ -805,6 +805,47 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
     return gate, gate_results_by_id, task_records
 
 
+def run_phase0(campaign: dict[str, Any], artifact_path: str | Path) -> tuple[Any, dict[str, Any]]:
+    """Phase-0 re-validation (run 3, brownfield): mechanically re-run the gate
+    checks a completed project's PROJECT_STATE.md records (F20 form) over the
+    workspace, BEFORE task one. Parses the verification record's fenced run_checks,
+    executes each in the project dir, and returns a mechanical-marked P0
+    PhaseGateResult + a results map (so the standard gate report renders the
+    stdout/stderr). A future run treats ANY red here as a stop before task one —
+    the handoff's protective claim, only trusted after it is seen failing."""
+    from types import SimpleNamespace
+
+    from agora.plan.handoff import parse_verification_run_checks
+    from agora.plan.predicate_registry import build_predicate
+
+    project_dir = Path(campaign["output_dir"]) / "echobot" / "echobot"
+    doc = Path(artifact_path).read_text(encoding="utf-8")
+    specs = parse_verification_run_checks(doc)
+    pcs: list[tuple[str, bool]] = []
+    records: list[dict[str, Any]] = []
+    for i, spec in enumerate(specs):
+        sink: list[dict[str, Any]] = []
+        ctx = {"work_dir": str(project_dir), "run_check_sink": sink}
+        passed, _reason = build_predicate("run_check", spec).evaluate(ctx)
+        label = " ".join(spec.get("cmd", [])) or "run_check"
+        if spec.get("stdin"):
+            label += f"  (stdin={json.dumps(spec['stdin'])})"
+        pcs.append((f"[{i}] {label}", bool(passed)))
+        records.extend(sink)
+    if not specs:
+        pcs.append(("no run_checks parsed from artifact", False))
+    gate = replace(
+        evaluate_phase_gate("P0", [TaskGateOutcome("P0-revalidation", True, pcs)]),
+        mechanical=True,
+    )
+    results_by_id = {
+        "P0-revalidation": SimpleNamespace(
+            task_id="P0-revalidation", run_check_records=records, nudges_used=0
+        )
+    }
+    return gate, results_by_id
+
+
 # ------------------------------------------------------------------ CLI
 
 def _print_status(campaign: dict[str, Any]) -> None:
@@ -813,8 +854,12 @@ def _print_status(campaign: dict[str, Any]) -> None:
     records = load_jsonl(out_dir / "phases.jsonl")
     waivers = load_jsonl(out_dir / "waivers.jsonl")
     latest = latest_by_phase(records)
+    # Surface any ledger-only phase not derived from a task (e.g. the gate-only P0
+    # brownfield re-validation) ahead of the task phases.
+    ledger_only = [p for p in latest if p not in phases]
+    display_phases = sorted(ledger_only) + list(phases)
     print(f"=== {campaign.get('name', 'run')} — phase status ===")
-    for phase, status in phase_states(phases, records, waivers):
+    for phase, status in phase_states(display_phases, records, waivers):
         marker = ""
         if phase in latest and latest[phase][1].get("mechanical"):
             marker = "  (mechanical re-eval)"
@@ -848,6 +893,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--next", action="store_true", dest="do_next", help="Run the next pending phase.")
     g.add_argument("--waive", metavar="REASON", help="Record a waiver on the newest red gate.")
     g.add_argument("--rerun-task", metavar="ID", dest="rerun_task", help="Repair-rerun one task.")
+    g.add_argument("--phase0", metavar="ARTIFACT", help="Re-validate a PROJECT_STATE.md's gate checks (brownfield P0).")
     p.add_argument("--oracle", metavar="PHASE", help="Gate ref (phase) whose oracle wraps the rerun.")
     args = p.parse_args(argv)
 
@@ -865,6 +911,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.waive:
         _do_waive(campaign, args.waive)
         return 0
+    if args.phase0:
+        gate, results_by_id = run_phase0(campaign, args.phase0)
+        append_phase_record(out_dir / "phases.jsonl", gate, run_id)
+        print(format_gate_report(gate, results_by_id, campaign.get("harness")))
+        return 0 if gate.passed else 1
 
     import asyncio
 
