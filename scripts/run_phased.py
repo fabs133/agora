@@ -321,30 +321,38 @@ def format_effective_params(
     return lines
 
 
-def flow_gate_commands(flow_path: str | Path) -> list[str]:
-    """The distinct BEHAVIOURAL gate commands the flow re-runs, for the handoff
-    Verification record (run 2.4). Read from the flow's run_check postconditions:
-    ``python -m pytest -q`` and the ``python -m echobot`` acceptance. The
-    collect-only pytest variant and the verifier json-parse checks are excluded."""
+def flow_gate_checks(flow_path: str | Path) -> list[dict]:
+    """The distinct BEHAVIOURAL gate CHECKS the flow re-runs, for the handoff
+    Verification record (F20). Full re-runnable run_check specs — cmd + stdin +
+    expectation — not bare argv: ``python -m pytest -q`` and the three
+    ``python -m echobot`` stdin-acceptance checks (ping/echo/roll). The collect-only
+    pytest variant and the verifier json-parse checks are excluded."""
     import yaml
 
     data = yaml.safe_load(Path(flow_path).read_text(encoding="utf-8")) or {}
     seen: set[str] = set()
-    out: list[str] = []
+    out: list[dict] = []
     for t in data.get("task_graph", []) or []:
         for pc in t.get("postconditions", []) or []:
             if pc.get("name") != "run_check":
                 continue
-            cmd = (pc.get("args") or {}).get("cmd")
+            args = pc.get("args") or {}
+            cmd = args.get("cmd")
             if not isinstance(cmd, list):
                 continue
             line = " ".join(cmd)
-            keep = (line.startswith("python -m pytest") and "collect-only" not in line) or (
-                line == "python -m echobot"
-            )
-            if keep and line not in seen:
-                seen.add(line)
-                out.append(line)
+            is_pytest_q = line == "python -m pytest -q"
+            is_acceptance = line == "python -m echobot" and bool(args.get("stdin"))
+            if not (is_pytest_q or is_acceptance):
+                continue
+            spec: dict[str, Any] = {"cmd": list(cmd)}
+            for k in ("stdin", "expect_stdout_contains", "expect_exit", "timeout_s"):
+                if k in args:
+                    spec[k] = args[k]
+            key = json.dumps(spec, sort_keys=True)
+            if key not in seen:
+                seen.add(key)
+                out.append(spec)
     return out
 
 
@@ -759,7 +767,7 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         from agora.plan.handoff import write_project_state
         write_project_state(
             workspace=project_dir,
-            gate_commands=flow_gate_commands(campaign["flow"]),
+            gate_checks=flow_gate_checks(campaign["flow"]),
             prose_dir=project_dir / "prose",
             out_path=project_dir / "PROJECT_STATE.md",
         )

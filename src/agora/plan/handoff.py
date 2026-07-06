@@ -21,7 +21,13 @@ workspace fixture and re-runnable in any future phase-0 re-validation.
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
+
+#: Fence tag for a serialized, re-runnable run_check in the Verification record
+#: (F20). A phase-0 re-validator (or the round-trip test) parses these back into
+#: run_check predicate args and executes them — cmd + stdin + expectation intact.
+RUN_CHECK_FENCE = "run_check"
 
 #: The eight mandatory headers, in order, tagged by source. FACT headers are
 #: generated here; PROSE headers are lifted from the model's prose file.
@@ -111,9 +117,69 @@ def _read(p: Path) -> str:
 
 # ------------------------------------------------------------------ FACT sections
 
-def extract_fact_sections(workspace: Path, gate_commands: list[str]) -> dict[str, str]:
+def _human_command_line(chk: dict) -> str:
+    """A ``# ``-prefixed human-readable one-liner for a run_check: the joined
+    command + its stdin/expectation. Keeps the raw command STRING (``pytest -q``,
+    ``python -m echobot``) present in the doc for readers and substring gates,
+    alongside the machine-parseable JSON below it."""
+    cmd = " ".join(chk.get("cmd", []))
+    bits: list[str] = []
+    if chk.get("stdin"):
+        bits.append(f"stdin={json.dumps(chk['stdin'])}")
+    if chk.get("expect_stdout_contains"):
+        bits.append(f'stdout contains "{chk["expect_stdout_contains"]}"')
+    if "expect_exit" in chk and not chk.get("expect_stdout_contains"):
+        bits.append(f"exit {chk['expect_exit']}")
+    return f"# {cmd}" + (f"   ({'; '.join(bits)})" if bits else "")
+
+
+def _verification_record(gate_checks: list[dict]) -> str:
+    """Serialize the verification record (F20): one FENCED, re-runnable run_check
+    per gate — a human command comment plus the full ``cmd`` + ``stdin`` +
+    expectation as JSON (not bare argv) — so a phase-0 re-validator can round-trip
+    each entry back through the run_check predicate."""
+    if not gate_checks:
+        return "_No gate checks recorded._"
+    lines = ["Gate checks (re-run each verbatim in any future phase-0 re-validation):", ""]
+    for chk in gate_checks:
+        lines.append(f"```{RUN_CHECK_FENCE}")
+        lines.append(_human_command_line(chk))
+        lines.append(json.dumps(chk, ensure_ascii=False, sort_keys=True))
+        lines.append("```")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def parse_verification_run_checks(text: str) -> list[dict]:
+    """Inverse of :func:`_verification_record`: extract the run_check arg dicts
+    from a Verification-record body's fenced blocks. A phase-0 re-validator feeds
+    each straight into ``build_predicate("run_check", spec)``."""
+    out: list[dict] = []
+    lines = (text or "").splitlines()
+    i = 0
+    fence_open = f"```{RUN_CHECK_FENCE}"
+    while i < len(lines):
+        if lines[i].strip() == fence_open:
+            body: list[str] = []
+            i += 1
+            while i < len(lines) and lines[i].strip() != "```":
+                if not lines[i].strip().startswith("#"):  # drop the human comment line
+                    body.append(lines[i])
+                i += 1
+            try:
+                spec = json.loads("\n".join(body))
+                if isinstance(spec, dict):
+                    out.append(spec)
+            except json.JSONDecodeError:
+                pass
+        i += 1
+    return out
+
+
+def extract_fact_sections(workspace: Path, gate_checks: list[dict]) -> dict[str, str]:
     """Generate the four FACT section bodies from the workspace tree + the flow's
-    gate commands. Keys are the FACT headers in :data:`FACT_HEADERS`."""
+    gate CHECKS (full run_check specs, not bare argv — F20). Keys are the FACT
+    headers in :data:`FACT_HEADERS`."""
     workspace = Path(workspace)
     files = _iter_source_files(workspace)
     packages = sorted({rel.split("/")[0] for rel, p in files if p.name == "__init__.py"})
@@ -137,11 +203,7 @@ def extract_fact_sections(workspace: Path, gate_commands: list[str]) -> dict[str
             cap_lines.extend(f"- `{s.strip()}`" for s in public)
     capability = "\n".join(cap_lines) if cap_lines else "_None discovered._"
 
-    verification = (
-        "Gate commands (re-run verbatim in any future phase-0 re-validation):\n\n"
-        + "\n".join(f"- `{c}`" for c in gate_commands)
-        if gate_commands else "_No gate commands recorded._"
-    )
+    verification = _verification_record(gate_checks)
 
     map_lines: list[str] = []
     for rel, p in files:
@@ -210,23 +272,24 @@ def assemble(fact_sections: dict[str, str], prose_sections: dict[str, str]) -> s
 
 def write_project_state(
     workspace: Path,
-    gate_commands: list[str],
+    gate_checks: list[dict],
     prose_dir: Path,
     out_path: Path,
 ) -> str:
     """Assemble ``PROJECT_STATE.md`` = mechanical FACT + the four PROSE micro-task
-    files (``prose_dir``) and write it to ``out_path``. Returns the assembled text.
-    Pure/deterministic given the workspace tree, gate commands, and prose files; a
-    missing prose file becomes a marked ``(human)`` placeholder."""
-    fact = extract_fact_sections(Path(workspace), gate_commands)
+    files (``prose_dir``) and write it to ``out_path`` as UTF-8 (F20b). Returns the
+    assembled text. Pure/deterministic given the workspace tree, gate checks, and
+    prose files; a missing prose file becomes a marked ``(human)`` placeholder."""
+    fact = extract_fact_sections(Path(workspace), gate_checks)
     prose = read_prose_sections(Path(prose_dir))
     assembled = assemble(fact, prose)
-    Path(out_path).write_text(assembled, encoding="utf-8")
+    Path(out_path).write_text(assembled, encoding="utf-8")  # F20b: pinned utf-8
     return assembled
 
 
 __all__ = [
     "SECTION_PLAN", "PROSE_HEADERS", "FACT_HEADERS", "PROSE_FILE_MAP",
-    "HUMAN_FALLBACK_BODY", "python_signatures", "extract_fact_sections",
-    "parse_prose_sections", "read_prose_sections", "assemble", "write_project_state",
+    "HUMAN_FALLBACK_BODY", "RUN_CHECK_FENCE", "python_signatures",
+    "extract_fact_sections", "parse_prose_sections", "read_prose_sections",
+    "parse_verification_run_checks", "assemble", "write_project_state",
 ]

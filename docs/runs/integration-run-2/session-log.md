@@ -692,3 +692,23 @@ python -m pytest -q # Runs the full test suite quietly.
 ```
 **RUN 2 COMPLETE. P3-P9 all green. PROJECT_STATE.md produced (FACT mechanical + 4/4 prose
 model-authored), ready for the human fact-check. No waiver. Run 2 closes at 2.5 per the exit rule.**
+
+---
+
+# RUN 2 CORRECTIONS — fact-check fixes (F20 / F20b / F21); baseline -> echobot-v1
+
+## Pre-flight (2026-07-06) @ corrections prep (suite green 1466, ruff clean)
+```
+ollama 200; conduit 200. Fact-check VERDICT (Part-13 addendum): PASS with two corrections.
+Fixes applied (artifact stays fully model-authored):
+  F20  — extractor serializes verification-record entries as COMPLETE re-runnable run_checks
+         (cmd + stdin + expect_stdout_contains), one fenced ```run_check block each (human comment
+         line + JSON spec). flow_gate_commands -> flow_gate_checks (full dicts). parse_verification_run_checks
+         inverse. Test: the recorded P7 !ping entry round-trips through run_check and PASSES on a live
+         workspace. (Was: bare argv, dropping stdin+expectation — a phase-0 re-runnability blocker.)
+  F20b — assembler/extractor writes pinned utf-8; test asserts the em-dash is E2 80 94 on disk (no BOM/cp1252).
+  F21  — T9.2b ask re-anchored: conventions must cite what the CODE does. The invented "plain lowercase"
+         rule dropped; ask now cites core.py's SENTENCE-CASE strings ("Usage: !roll NdM ...",
+         "Malformed roll specification: ... Use format NdM."). Rule adopted: micro-asks cite code/spec anchors.
+action: re-run T9.2b only (--rerun-task T9.2b --oracle P9); re-extract + re-assemble -> PROJECT_STATE.md v1.1.
+```

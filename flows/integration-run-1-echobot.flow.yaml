@@ -357,10 +357,12 @@ task_graph:
     depends_on: [T9.1]
     description: |
       Write prose/conventions.md (3-8 lines) — the conventions a contributor must
-      imitate so new code does not read as foreign in THIS project. Answer
-      concretely from echobot: commands are `!name`-prefixed and dispatched inside
-      `handle_message`; tests are named `test_<behaviour>` in `tests/test_core.py`;
-      usage / error strings are plain lowercase text; the package imports as
+      imitate so new code does not read as foreign in THIS project. State ONLY what
+      the code actually does (cite it; do not invent rules). Anchors in echobot:
+      commands are `!name`-prefixed and dispatched inside `handle_message`; tests
+      are named `test_<behaviour>` in `tests/test_core.py`; usage / error messages
+      are SENTENCE-CASE strings (see core.py: `"Usage: !roll NdM ..."` and
+      `"Malformed roll specification: ... Use format NdM."`); the package imports as
       `echobot`. Write ONLY the body text (no `## ` header — the assembler adds it).
     output_path: prose/conventions.md
     postconditions:
