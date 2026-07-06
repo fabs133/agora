@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -129,6 +130,9 @@ class Orchestrator:
         auto_hooks_enabled: bool = False,
         plan_authoring_enabled: bool = False,
         routed_retry_budget: int = 2,
+        tool_errors: str = "raw",
+        nudge_budget: int = 0,
+        review_budget: int = 0,
         observer: Any = None,
     ) -> None:
         self._matrix = matrix_client
@@ -151,6 +155,11 @@ class Orchestrator:
         self._fetch_max_bytes = fetch_max_bytes
         self._fetch_max_text_bytes = fetch_max_text_bytes
         self._auto_hooks_enabled = auto_hooks_enabled
+        # v3 harness-reliability knobs, threaded into each task's ToolContext.
+        self._tool_errors = tool_errors
+        self._nudge_budget = nudge_budget
+        # v8 S6 completion-review budget (0 = off, byte-identical to v3.2).
+        self._review_budget = review_budget
         # Gates the plan-authoring tool category (plan_upsert_agent,
         # plan_add_task_spec, plan_finalize). The plan-builder runner opts in;
         # every other runner leaves it False so emitted plans don't expose
@@ -776,7 +785,13 @@ class Orchestrator:
             ready = ready_tasks(pending)
             if not ready:
                 break
-            outcomes = await asyncio.gather(*(_execute(t) for t in ready))
+            # AGORA_SERIAL_TASKS (debug, default off): dispatch ready tasks
+            # sequentially instead of concurrently, to isolate scheduling/batching
+            # as a non-determinism source. Off ⇒ the concurrent gather, unchanged.
+            if os.getenv("AGORA_SERIAL_TASKS", "").strip().lower() in ("1", "true", "yes", "on"):
+                outcomes = [await _execute(t) for t in ready]
+            else:
+                outcomes = await asyncio.gather(*(_execute(t) for t in ready))
             for task, agent, outcome in outcomes:
                 attempts[task.id] = attempts.get(task.id, 0) + 1
                 attempt_n = attempts[task.id]
@@ -974,6 +989,9 @@ class Orchestrator:
             control=control,
             auto_hooks_enabled=self._auto_hooks_enabled,
             plan_authoring_enabled=self._plan_authoring_enabled,
+            tool_errors=self._tool_errors,
+            nudge_budget=self._nudge_budget,
+            review_budget=self._review_budget,
             distill_fn=distill_fn,
         )
         return AgentRuntime(llm=llm, matrix_client=self._matrix, tool_context=ctx)

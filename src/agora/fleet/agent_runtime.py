@@ -23,6 +23,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from agora.core.agent import AgentIdentity
@@ -76,6 +77,42 @@ class TaskResult:
     tools_used: list[str] = field(default_factory=list)
     first_text_fallback_iteration: int | None = None
     duration_s: float = 0.0
+    # v3 near-miss capture (findings S4). On a postcondition failure where the
+    # output file WAS written (equality near-miss), the first 2KB of the actual
+    # bytes, so a wrong-bytes failure is diagnosable from JSONL alone.
+    artifact_capture: dict[str, Any] | None = None
+    # v8 completion-review provenance (S6). ``reviews_used`` counts how many
+    # times the in-loop read-back fired this task; ``post_review_action`` is
+    # what the model did on the turn after the LAST review — "confirm" (called
+    # mark_complete again), "revise" (edited/rewrote a file), or "other". None
+    # ⇒ no review fired (review_budget=0 or no valid mark_complete reached).
+    reviews_used: int = 0
+    post_review_action: str | None = None
+
+
+@dataclass
+class _ReviewStats:
+    """Per-task-attempt record of S6 completion-review fires.
+
+    Like :class:`_ToolCallStats`, this lives on one :class:`AgentRuntime`
+    instance (constructed fresh per task attempt) so it aggregates across a
+    staged task's stages yet stays scoped to a single attempt.
+    ``post_review_action`` classifies the model's action on the turn
+    immediately after the LAST review fired; None means no review fired.
+    """
+
+    reviews_used: int = 0
+    post_review_action: str | None = None
+
+    def apply_to(self, result: "TaskResult") -> "TaskResult":
+        """Return ``result`` with the accumulated review fields populated."""
+        from dataclasses import replace as _replace
+
+        return _replace(
+            result,
+            reviews_used=self.reviews_used,
+            post_review_action=self.post_review_action,
+        )
 
 
 @dataclass
@@ -184,6 +221,9 @@ class AgentRuntime:
         # runtime is constructed fresh per task attempt, so this scopes to one
         # attempt yet aggregates across a staged task's stages.
         self.tool_stats = _ToolCallStats()
+        # Per-attempt S6 completion-review accumulator (v8). Scoped to one task
+        # attempt like ``tool_stats``; aggregates across a staged task's stages.
+        self.review_stats = _ReviewStats()
         # Authoritative 0-based iteration index for the active tool loop turn,
         # set in ``_run_loop``. ``_fallback_this_turn`` is flipped by the
         # adapter hook when the current turn's calls came from text fallback;
@@ -274,6 +314,9 @@ class AgentRuntime:
         artifacts = _collect_artifacts(self._ctx)
         postcondition_results = _evaluate_postconditions(task, final_text, artifacts, self._ctx)
         success = all(passed for _, passed, _ in postcondition_results)
+        artifact_capture = _capture_failed_artifact(
+            task.output_path or "", success, self._ctx.work_dir
+        )
 
         learnings = await self._extract_learnings(task, final_text, identity, success)
         await self._persist_learnings(identity, learnings)
@@ -287,18 +330,21 @@ class AgentRuntime:
 
             reinforced_ids = [l.id for l in filter_active(list(identity.learned_patterns))]
 
-        return self.tool_stats.apply_to(
-            TaskResult(
-                task_id=task.id,
-                success=success,
-                output=final_text,
-                artifacts=artifacts,
-                postcondition_results=postcondition_results,
-                learnings=learnings,
-                reinforced_ids=reinforced_ids,
-                token_usage=total_usage,
-                iterations=iterations,
-                stop_reason=last_stop,
+        return self.review_stats.apply_to(
+            self.tool_stats.apply_to(
+                TaskResult(
+                    task_id=task.id,
+                    success=success,
+                    output=final_text,
+                    artifacts=artifacts,
+                    postcondition_results=postcondition_results,
+                    learnings=learnings,
+                    reinforced_ids=reinforced_ids,
+                    token_usage=total_usage,
+                    iterations=iterations,
+                    stop_reason=last_stop,
+                    artifact_capture=artifact_capture,
+                )
             )
         )
 
@@ -325,6 +371,18 @@ class AgentRuntime:
         iterations = 0
         final_text = ""
         last_stop = ""
+        nudges_used = 0
+        # S6 completion-review loop state (v8). ``reviews_used`` caps fires at
+        # ``ctx.review_budget``; ``awaiting_post_review`` is set the turn a review
+        # fires so the NEXT turn's action is classified (confirm/revise/other).
+        reviews_used = 0
+        awaiting_post_review = False
+        # Per-tool JSON schemas for the v3 tool-boundary contract (S1). Stable
+        # across turns; used to validate calls and to render CorrectiveErrors.
+        schemas = {
+            t["name"]: (t.get("input_schema") or t.get("parameters") or {})
+            for t in tools
+        }
 
         for iterations in range(1, max_iterations + 1):
             logger.info(
@@ -363,11 +421,45 @@ class AgentRuntime:
             final_text = resp.content or final_text
 
             if not resp.tool_calls:
+                # A silent turn after a completion review is an "other" action
+                # (neither a confirm nor a revise) — record it before the loop
+                # may break or nudge.
+                if awaiting_post_review:
+                    self.review_stats.post_review_action = "other"
+                    awaiting_post_review = False
+                # v3 completion nudge (S2). A dead loop (0 tool calls) with the
+                # expected output still unwritten and budget remaining gets ONE
+                # corrective user turn and continues; otherwise terminate exactly
+                # as v2. nudge_budget=0 (default) ⇒ this branch never fires ⇒
+                # byte-identical to v2.
+                missing = _expected_output_missing(self._ctx)
+                if missing is not None and nudges_used < self._ctx.nudge_budget:
+                    nudges_used += 1
+                    logger.info(
+                        "completion nudge %d/%d: task=%s expected output %r not written",
+                        nudges_used, self._ctx.nudge_budget, task_id, missing,
+                    )
+                    messages.append(_assistant_turn(self._llm, resp))
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"Not complete: expected output {missing} has not been "
+                            "written. Continue with a tool call."
+                        ),
+                    })
+                    continue
                 break
 
             messages.append(_assistant_turn(self._llm, resp))
             call_list = list(resp.tool_calls)
-            results = [await _run_tool(call, executor) for call in call_list]
+            results = [
+                await _dispatch_tool(
+                    call, executor,
+                    schema=schemas.get(call.name),
+                    mode=self._ctx.tool_errors,
+                )
+                for call in call_list
+            ]
             # Record model tool-call fidelity signals (synthetic auto-hook
             # calls below are intentionally excluded — they aren't model-emitted).
             self.tool_stats.note_turn(
@@ -428,6 +520,44 @@ class AgentRuntime:
                         messages,
                         _tool_results_turn(self._llm, hook_calls, hook_results),
                     )
+
+            # S6 completion review (v8). First classify the action on the turn
+            # after the LAST review fired (this turn); then, if a fresh valid
+            # mark_complete arrived and budget remains, read the written output
+            # back to the model VERBATIM (through the v7 rendering path) and ask
+            # it to confirm or revise, continuing the loop. review_budget=0
+            # (default) ⇒ neither branch is entered ⇒ byte-identical to v3.2:
+            # nothing is constructed, no message injected.
+            if awaiting_post_review:
+                self.review_stats.post_review_action = _classify_post_review(
+                    call_list, results
+                )
+                awaiting_post_review = False
+            if (
+                self._ctx.review_budget
+                and reviews_used < self._ctx.review_budget
+                and _valid_mark_complete(call_list, results)
+            ):
+                reviews_used += 1
+                self.review_stats.reviews_used = reviews_used
+                readback = _render_completion_readback(self._ctx)
+                logger.info(
+                    "completion review %d/%d: task=%s reading back %d file(s)",
+                    reviews_used, self._ctx.review_budget, task_id,
+                    len(self._ctx.written_files),
+                )
+                review_call = ToolCall(
+                    id=f"{task_id}-review-{reviews_used}",
+                    name="completion_review",
+                    arguments={},
+                )
+                review_resp = LLMResponse(content="", tool_calls=(review_call,))
+                messages.append(_assistant_turn(self._llm, review_resp))
+                _append_turn(
+                    messages,
+                    _tool_results_turn(self._llm, [review_call], [readback]),
+                )
+                awaiting_post_review = True
         else:
             logger.warning(
                 "agent_runtime: max_iterations (%d) reached for task %s", max_iterations, task_id
@@ -738,6 +868,184 @@ def _build_stub_awareness_hint(task: Task, work_dir: str) -> str:
     )
 
 
+# v3 tool-boundary contract (findings F1). One hard-coded, tool-specific hint;
+# a general hint registry stays speculative until v3 data justifies it.
+_TOOL_HINTS: dict[str, str] = {
+    "mark_complete": (
+        "It does not write files; use write_file(path, content) first, then "
+        "mark_complete(summary=...)"
+    ),
+}
+
+
+@dataclass(frozen=True)
+class CorrectiveError:
+    """A tool failure rendered back to the model as actionable correction.
+
+    Renders to a single tool-result message with three parts: what was wrong,
+    the tool's expected schema, and an optional hint. Replaces the v2
+    crash-as-string (a raw ``KeyError``/traceback), which the autopsy showed
+    weak models could not recover from (they re-emitted the same bad call).
+    """
+
+    tool_name: str
+    problem: str
+    schema: dict[str, Any]
+    hint: str = ""
+
+    def render(self) -> str:
+        parts = [
+            f"ERROR: your {self.tool_name} call was rejected: {self.problem}",
+            f"Expected schema for {self.tool_name}: "
+            f"{json.dumps(self.schema, sort_keys=True)}",
+        ]
+        if self.hint:
+            parts.append(f"Hint: {self.hint}")
+        return "\n".join(parts)
+
+
+def validate_call(
+    call: ToolCall, schema: dict[str, Any] | None
+) -> CorrectiveError | None:
+    """Pure pre-dispatch check: are the call's required arguments present?
+
+    Returns a :class:`CorrectiveError` when a required key from the tool's JSON
+    schema is missing, else ``None``. Only required-key presence is checked here
+    (the cheap, high-signal case — e.g. mark_complete called with write_file's
+    ``path``/``content`` and no ``summary``); deeper type errors surface as
+    handler exceptions, which the corrective dispatch also renders.
+    """
+    if not schema:
+        return None
+    args = call.arguments or {}
+    missing = [k for k in (schema.get("required") or []) if k not in args]
+    if not missing:
+        return None
+    return CorrectiveError(
+        tool_name=call.name,
+        problem=f"missing required argument(s): {', '.join(missing)}",
+        schema=schema,
+        hint=_TOOL_HINTS.get(call.name, ""),
+    )
+
+
+#: Byte bound for the S4 near-miss capture.
+_ARTIFACT_CAPTURE_LIMIT = 2048
+
+
+def _capture_failed_artifact(
+    output_path: str, success: bool, work_dir: str
+) -> dict[str, Any] | None:
+    """Capture the bytes actually written to ``output_path`` on a failed task
+    where the file exists (the equality near-miss, S4). Returns None on success,
+    when the task declared no output, or when nothing was written (a plain
+    file_exists failure — no bytes to diff). First 2KB, truncation flagged.
+    """
+    if success or not output_path:
+        return None
+    path = Path(work_dir) / output_path
+    if not path.is_file():
+        return None
+    raw = path.read_bytes()
+    return {
+        "path": output_path,
+        "size_bytes": len(raw),
+        "truncated": len(raw) > _ARTIFACT_CAPTURE_LIMIT,
+        "text": raw[:_ARTIFACT_CAPTURE_LIMIT].decode("utf-8", errors="replace"),
+    }
+
+
+def _expected_output_missing(ctx: ToolContext) -> str | None:
+    """Return the task's expected output path if it declared one and no bytes
+    have been written there yet, else ``None`` (the completion-nudge trigger, S2).
+
+    This is the "postconditions unmet" proxy the nudge acts on — specifically the
+    ``file_exists`` failure the fidelity probe gates on, and the exact condition
+    its message names ("expected output X has not been written"). A written-but-
+    wrong output (the gemma near-miss) is NOT nudged — the loop already produced
+    output; that failure is byte-precision (see S4 artifact_capture), not a dead
+    loop. Reuses the same output-written signal as the post-task narration
+    redirect, which cannot fire in-loop (it needs the final artifact list).
+    """
+    rel = ctx.expected_output_path
+    if not rel:
+        return None
+    path = Path(ctx.work_dir) / rel
+    if path.is_file() and path.stat().st_size > 0:
+        return None
+    return rel
+
+
+#: File-mutating tool names. A clean call to any of these on the turn after a
+#: completion review is classified as a "revise" action (S6 provenance).
+_WRITE_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "write_file",
+        "edit_file_replace",
+        "edit_file_insert_before",
+        "edit_file_append",
+        "add_function",
+        "add_class",
+        "add_class_method",
+        "fill_test_body",
+    }
+)
+
+
+def _valid_mark_complete(calls: list[ToolCall], results: list[str]) -> bool:
+    """True iff this turn contains a ``mark_complete`` that dispatched cleanly.
+
+    The S6 review trigger: a mark_complete whose result is neither a corrective
+    rejection nor a raw crash string (both begin ``ERROR:``). Mirrors the
+    "valid completion" the postcondition layer observes, without re-validating
+    the schema here.
+    """
+    for call, res in zip(calls, results, strict=True):
+        if call.name == "mark_complete" and not (res or "").startswith("ERROR:"):
+            return True
+    return False
+
+
+def _classify_post_review(calls: list[ToolCall], results: list[str]) -> str:
+    """Classify the model's action on the turn after a completion review.
+
+    - ``"confirm"``: re-called ``mark_complete`` cleanly (accepted the output).
+    - ``"revise"``: made a clean file-mutating call (edited/rewrote first).
+    - ``"other"``: only non-mutating / errored calls this turn.
+    """
+    if _valid_mark_complete(calls, results):
+        return "confirm"
+    for call, res in zip(calls, results, strict=True):
+        if call.name in _WRITE_TOOL_NAMES and not (res or "").startswith("ERROR:"):
+            return "revise"
+    return "other"
+
+
+def _render_completion_readback(ctx: ToolContext) -> str:
+    """Render the written output files verbatim for the S6 review read-back.
+
+    Each file this task wrote is rendered as ``<path> (<N> bytes):`` — N being
+    the on-disk BYTE count — followed by its exact bytes decoded as UTF-8; the
+    block ends with the single confirm-or-revise instruction line. The string
+    is handed to the adapter's tool-result formatter unchanged, so on the v7
+    (form-B bare tool message) path the bytes reach the model with real
+    newlines and no re-escaping — no new formatting is invented here.
+    """
+    parts: list[str] = []
+    for rel in ctx.written_files:
+        path = Path(ctx.work_dir) / rel
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        parts.append(f"{rel} ({len(raw)} bytes):\n{raw.decode('utf-8', errors='replace')}")
+    parts.append(
+        "Review the written content against the task. Confirm completion "
+        "(call mark_complete again) or revise the file first."
+    )
+    return "\n".join(parts)
+
+
 async def _run_tool(call: ToolCall, executor: dict[str, Any]) -> str:
     fn = executor.get(call.name)
     if fn is None:
@@ -746,6 +1054,39 @@ async def _run_tool(call: ToolCall, executor: dict[str, Any]) -> str:
         return await fn(call.arguments)
     except Exception as exc:  # noqa: BLE001
         return f"ERROR: tool {call.name} raised: {exc}"
+
+
+async def _dispatch_tool(
+    call: ToolCall,
+    executor: dict[str, Any],
+    *,
+    schema: dict[str, Any] | None,
+    mode: str,
+) -> str:
+    """Execute one tool call under the configured error policy.
+
+    ``mode="raw"`` is byte-identical to v2 (:func:`_run_tool`, crash-as-string
+    included). ``mode="corrective"`` validates arguments before dispatch and
+    renders any handler exception as a :class:`CorrectiveError`, so a raw
+    traceback / bare ``KeyError`` string never reaches the model again.
+    """
+    if mode != "corrective":
+        return await _run_tool(call, executor)
+    fn = executor.get(call.name)
+    if fn is None:
+        return f"ERROR: unknown tool {call.name!r}"
+    rejection = validate_call(call, schema)
+    if rejection is not None:
+        return rejection.render()
+    try:
+        return await fn(call.arguments)
+    except Exception as exc:  # noqa: BLE001
+        return CorrectiveError(
+            tool_name=call.name,
+            problem=f"the call raised while running: {exc}",
+            schema=schema or {},
+            hint=_TOOL_HINTS.get(call.name, ""),
+        ).render()
 
 
 def _collect_artifacts(ctx: ToolContext) -> list[str]:

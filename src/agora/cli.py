@@ -282,6 +282,67 @@ def doctor() -> None:
     asyncio.run(_probe())
 
 
+cast_app = typer.Typer(help="Cast (role→profile binding) commands")
+app.add_typer(cast_app, name="cast")
+
+
+@cast_app.command("validate")
+def cast_validate(
+    cast_path: str = typer.Argument(..., help="Path to a casts/<envelope>.yaml file."),
+    profiles_path: str = typer.Option(None, "--profiles", help="Override profiles.yaml path."),
+) -> None:
+    """Validate a cast against the four casting rules; exit 1 if invalid."""
+    from agora.core.errors import AgoraError
+    from agora.fleet.cast import load_cast, ollama_sizes_gb, validate_cast
+    from agora.fleet.profiles import load_profiles
+
+    settings = get_settings()
+    try:
+        profiles = load_profiles(profiles_path)
+        cast = load_cast(cast_path)
+    except AgoraError as exc:
+        typer.echo(f"INVALID: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    # Residency sizes from the local Ollama manifest store (best-effort; the
+    # size query has its own heuristic fallback when the daemon is unreachable).
+    sizes = asyncio.run(ollama_sizes_gb(cast, profiles, settings.ollama_base_url))
+    errors = validate_cast(cast, profiles, sizes_gb=sizes)
+    if errors:
+        typer.echo(f"INVALID cast {cast.name!r} ({len(errors)} problem(s)):")
+        for e in errors:
+            typer.echo(f"  - {e}")
+        raise typer.Exit(code=1)
+    typer.echo(f"OK: cast {cast.name!r} valid ({len(cast.bindings)} bindings).")
+
+
+@cast_app.command("load")
+def cast_load(
+    cast_path: str = typer.Argument(..., help="Path to a casts/<envelope>.yaml file."),
+    profiles_path: str = typer.Option(None, "--profiles", help="Override profiles.yaml path."),
+) -> None:
+    """Resolve a cast into its role table (refuses an invalid cast)."""
+    from agora.core.errors import AgoraError
+    from agora.fleet.cast import load_cast, resolve_cast
+    from agora.fleet.profiles import load_profiles
+
+    try:
+        profiles = load_profiles(profiles_path)
+        cast = load_cast(cast_path)
+        table = resolve_cast(cast, profiles)
+    except AgoraError as exc:
+        typer.echo(f"ERROR: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"== cast {cast.name!r} on {cast.hardware.gpu} ({cast.hardware.vram_budget_gb} GB) ==")
+    for rb in table:
+        if rb.is_human:
+            typer.echo(f"  {rb.role:20} human")
+        else:
+            res = "resident" if rb.resident else "on-demand"
+            typer.echo(f"  {rb.role:20} {rb.model:40} {res} keep_alive={rb.keep_alive}")
+
+
 def _recommend_model(free_mib: int) -> str:
     if free_mib >= 24_000:
         return "ollama/qwen2.5-coder:32b"

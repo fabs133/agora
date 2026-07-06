@@ -1,0 +1,53 @@
+# axis-1 v6 — gemma block under probe_version 6.
+#
+# WHY: probe v5 collapsed loop_depth non-determinism to 1/1 (near-tie mechanism
+# confirmed) but left two byte defects (docs/runs/determinism-probe/findings.md):
+#   * the [read_file#N] marker still leaked into copies — gemma copied the WHOLE
+#     tool-result message (marker line + content), so marker-on-its-own-line was
+#     insufficient;
+#   * loop_depth wrote LITERAL "\n" escape sequences (0x5c 0x6e), not newline
+#     bytes.
+#
+# probe_version:6 lands two single-variable changes:
+#   * tool results are now ONE tool-role message per result — the [name#id] marker
+#     is REMOVED entirely; correlation rides tool_name/tool_call_id, content is the
+#     result verbatim. A verbatim copy now copies only the bytes given.
+#   * the loop_depth prompt gains ONE sentence: "Write actual newline characters
+#     into the file content, not \n escape sequences." (nothing else changes).
+#
+# PRE-REGISTERED predictions, 5 repeats:
+#   * copy tasks (small_chain, content_robustness) byte-EXACT — marker gone, and
+#     content was already correct minus the marker.
+#   * loop_depth either byte-correct (the newline instruction worked) OR
+#     stable-escaped (limitation recorded) — note whichever.
+#   * repeat_distinct stays 1/1 everywhere (the near-tie fix from v5 holds).
+#
+# v5 config otherwise (corrective errors on — inert for gemma; nudge off).
+schema_version: 1
+name: axis-1-v6-gemma
+description: "Axis-1 v6: gemma block under probe_version 6 (per-result tool messages,\
+  \ marker removed; loop_depth newline-instruction). 1 model x 5 repeats = 5 runs;\
+  \ params identical to v5."
+defaults:
+  params:
+    temperature: 0.0
+    seed: 42
+    num_ctx: 8192
+    max_tokens: 2048
+  output_dir: runs_out/axis-1-v6-gemma
+  resume: true
+  review_timeout_seconds: 5
+  harness:
+    tool_errors: corrective
+    nudge_budget: 0
+runs:
+- {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r003, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
+- {id: r004, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 4}
+- {id: r005, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 5}

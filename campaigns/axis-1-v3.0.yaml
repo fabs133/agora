@@ -1,0 +1,89 @@
+# axis-1 v3.0 — harness reliability, corrective tool errors (findings F1).
+#
+# STATUS: DRAFT. Pre-registration of per-model expectations
+# (docs/research/harness-reliability.md) lands BEFORE this is executed.
+#
+# What v3 tests (findings F1: "completion, not emission, is the wall"):
+#   v2 proved emission is cheaply steerable but no strategy moved pass_rate off
+#   0/9 — loops die AFTER a successful emission. The autopsy localized one
+#   mechanism: mark_complete called with write_file's args (path+content, no
+#   summary) raised a bare KeyError('summary') that reached the model as an
+#   opaque crash string it could not recover from — 13 such calls in v2
+#   (qwen-instruct 6, qwen3 7). S1 (tool_errors=corrective) renders that failure
+#   as schema + hint instead.
+#
+# ONE variable changed vs the v2 treatment arms: tool_errors raw -> corrective.
+#   * The completion nudge (S2, nudge_budget) stays OFF here — it is a second
+#     variable, introduced in v3.2, not mixed in now.
+#   * Strategies are the v2 winners carried forward unchanged: coder-14b keeps
+#     qwen2_5_coder, mistral-nemo keeps mistral_nemo (retained as the template-
+#     defect workaround, findings F3). instruct/qwen3/gemma carry no strategy.
+#   * gemma4:e4b is the anchor: zero-drift sentinel (v1==v2 byte-for-byte). It
+#     already completes the protocol, so it isolates whether corrective errors
+#     perturb an already-passing model (they should not).
+#   * Probe is v3 (probe_version:3 in the flow): loop_depth byte-exactness
+#     sentence + artifact_capture on equality near-miss. run.jsonl carries
+#     probe_version so v3 cells are never compared against v1/v2 silently.
+#
+# Comparison this design supports:
+#   v3.0 (corrective) vs v2 (raw), per model, same daemon 0.31.1, same probe
+#   family — the corrective-errors effect on pass_rate / calls-per-task, with
+#   the write_file_args near-miss now visible in artifact_capture.
+#
+# Params identical to v2 (temp=0, seed=42, num_ctx=8192, max_tokens=2048).
+# 5 models x 3 repeats = 15 runs. Ordered to minimize model swaps.
+# DO NOT RUN until harness-reliability.md pre-registration is committed.
+schema_version: 1
+name: axis-1-v3.0
+description: "Axis-1 v3.0: harness reliability. tool_errors=corrective (S1) vs\
+  \ v2 raw; nudge off (v3.2). v2-winning strategies carried forward; gemma anchor.\
+  \ Probe v3 (byte-exactness + artifact_capture). 5 models x 3 repeats = 15 runs."
+defaults:
+  params:
+    temperature: 0.0
+    seed: 42
+    num_ctx: 8192
+    max_tokens: 2048
+  output_dir: runs_out/axis-1-v3.0
+  resume: true
+  review_timeout_seconds: 5
+  # The single changed variable vs v2 treatment arms. Nudge stays off (v3.2).
+  harness:
+    tool_errors: corrective
+    nudge_budget: 0
+runs:
+# --- qwen2.5:7b-instruct (write_file_args near-miss ×6 in v2) ------ 3 runs
+- {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r003, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-instruct-7b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
+# --- qwen3:30b (write_file_args near-miss ×7 in v2; bistable) ------ 3 runs
+- {id: r004, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r005, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r006, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen3-30b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
+# --- mistral-nemo:12b (strategy: mistral_nemo, v2 winner) ---------- 3 runs
+- {id: r007, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: mistral_nemo}
+- {id: r008, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: mistral_nemo}
+- {id: r009, probe: flows/tool-call-fidelity.plan.yaml, profile: mistral-nemo-12b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: mistral_nemo}
+# --- qwen2.5-coder:14b (strategy: qwen2_5_coder, v2 winner) -------- 3 runs
+- {id: r010, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1, strategy: qwen2_5_coder}
+- {id: r011, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2, strategy: qwen2_5_coder}
+- {id: r012, probe: flows/tool-call-fidelity.plan.yaml, profile: qwen-coder-14b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3, strategy: qwen2_5_coder}
+# --- gemma4:e4b (anchor; already passes protocol; no strategy) ----- 3 runs
+- {id: r013, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r014, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r015, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}

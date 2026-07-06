@@ -191,6 +191,15 @@ class TaskRecord(BaseModel):
     failure_category: FailureCategory | None = None
     failure_detail: str | None = None
     duration_s: float = 0.0
+    # v3 near-miss capture (findings S4). {path, size_bytes, truncated, text} of
+    # the bytes actually written when a task failed with its output present (the
+    # gemma equality near-miss). Additive optional; schema_version stays 1.
+    artifact_capture: dict[str, Any] | None = None
+    # v8 completion-review provenance (S6). ``reviews_used`` is how many times
+    # the in-loop read-back fired this task; ``post_review_action`` is what the
+    # model did on the turn after the last review. Additive; schema stays 1.
+    reviews_used: int = 0
+    post_review_action: Literal["confirm", "revise", "other"] | None = None
 
 
 class RunRecord(BaseModel):
@@ -226,6 +235,12 @@ class RunRecord(BaseModel):
     # schema_version stays 1 — pre-v2 run.jsonl lines lack the key and parse
     # unchanged (default None = control cell / no strategy).
     strategy: str | None = None
+    # v3 harness-reliability config actually in force this run (tool_errors,
+    # nudge_budget). Additive optional dict; schema_version stays 1.
+    harness: dict[str, Any] | None = None
+    # Probe design version (findings S4). Carried from the flow file so v3 cells
+    # are never silently compared against v1/v2. Additive optional; stays 1.
+    probe_version: int | None = None
 
 
 # ------------------------------------------------------------------ pure helpers
@@ -407,6 +422,8 @@ class RunObserver:
         host: str | None = None,
         notes: str = "",
         strategy: str | None = None,
+        harness: dict[str, Any] | None = None,
+        probe_version: int | None = None,
     ) -> None:
         self.run_id = run_id
         self.output_dir = Path(output_dir)
@@ -422,6 +439,8 @@ class RunObserver:
         self.host = host or socket.gethostname()
         self.notes = notes
         self.strategy = strategy
+        self.harness = harness
+        self.probe_version = probe_version
         self.started_at = _utc_now_iso()
 
         self._run_path = self.output_dir / "run.jsonl"
@@ -489,6 +508,8 @@ class RunObserver:
         fields.setdefault("host", self.host)
         fields.setdefault("notes", self.notes)
         fields.setdefault("strategy", self.strategy)
+        fields.setdefault("harness", self.harness)
+        fields.setdefault("probe_version", self.probe_version)
         if "async_leak_hits" not in fields:
             fields["async_leak_hits"] = scan_async_leaks(self.log_path)
         record = RunRecord(**fields)
@@ -584,6 +605,9 @@ class RunObserver:
             failure_category=failure_category,
             failure_detail=failure_detail,
             duration_s=float(getattr(result, "duration_s", 0.0) or 0.0),
+            artifact_capture=getattr(result, "artifact_capture", None),
+            reviews_used=int(getattr(result, "reviews_used", 0) or 0),
+            post_review_action=getattr(result, "post_review_action", None),
         )
 
     def close(self) -> None:

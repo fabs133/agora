@@ -126,6 +126,17 @@ class ToolContext:
     # — removes one source of 7B confusion. Empty → tool is hidden from the
     # LLM's manifest.
     active_test_file: str = ""
+    # v3 harness-reliability knobs (findings F1). ``tool_errors="corrective"``
+    # routes tool validation/handler failures through CorrectiveError (schema +
+    # hint) instead of leaking a raw traceback/KeyError string to the model;
+    # "raw" reproduces v2 behaviour byte-identically. ``nudge_budget`` caps the
+    # number of in-loop completion nudges (0 = off, byte-identical to v2).
+    # ``review_budget`` caps in-loop completion REVIEWS (S6): on a valid
+    # mark_complete the framework reads the written output back to the model
+    # once and asks it to confirm or revise (0 = off, byte-identical to v3.2).
+    tool_errors: str = "raw"
+    nudge_budget: int = 0
+    review_budget: int = 0
 
 
 # ============================ Tool descriptions ============================
@@ -1011,7 +1022,11 @@ def _make_read(ctx: ToolContext):
         path = _safe_path(ctx.work_dir, args["path"])
         if not path.is_file():
             return f"ERROR: file not found: {args['path']}"
-        body = path.read_text(encoding="utf-8")
+        # Byte-IO discipline (determinism-probe §5): read with newline='' so no
+        # universal-newline translation — the on-disk bytes reach the model (and
+        # the equality predicates) unchanged, keeping byte facts salient.
+        with path.open(encoding="utf-8", newline="") as _fh:
+            body = _fh.read()
         if (
             ctx.distill_fn is not None
             and len(body) > ctx.read_distill_threshold
@@ -2011,7 +2026,9 @@ def _make_write(ctx: ToolContext, role: AgentRole = AgentRole.ARCHITECT):
                     f"tests are scaffolded separately by the test pipeline)"
                 )
 
-        path.write_text(content, encoding="utf-8")
+        # Byte-IO discipline: write the exact bytes of content (binary utf-8),
+        # never text-mode \n→CRLF translation — a round-tripped \n stays \n.
+        path.write_bytes(content.encode("utf-8"))
         if rel not in ctx.written_files:
             ctx.written_files.append(rel)
         if ctx.expected_output_path and rel != ctx.expected_output_path:

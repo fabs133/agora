@@ -69,6 +69,51 @@ def test_resolve_output_dir_precedence(monkeypatch) -> None:
     assert RunObserver.resolve_output_dir("xyz", "override/dir") == Path("override/dir")
 
 
+def test_harness_and_probe_version_provenance(tmp_path: Path) -> None:
+    """v3 additive provenance: harness config + probe_version round-trip into
+    run.jsonl; a task's artifact_capture round-trips into tasks.jsonl."""
+    obs = _observer(
+        tmp_path,
+        harness={"tool_errors": "corrective", "nudge_budget": 0},
+        probe_version=3,
+    )
+    obs.record_task(
+        task_id="loop_depth", task_index=0, role="implementer",
+        task_kind="code_body", status="failed", first_pass=False,
+        loopback_count=0, iterations=6,
+        postconditions=[{"name": "eq", "passed": False}],
+        artifact_capture={"path": "out/concat.txt", "size_bytes": 5,
+                          "truncated": False, "text": "WRONG"},
+    )
+    obs.record_run(
+        duration_s=1.0, success=False, exit_code=1, tasks_total=1,
+        tasks_passed=0, tasks_failed=1, tasks_first_pass=0, async_leak_hits=0,
+        model_offloaded=None, tokens_in=1, tokens_out=1,
+    )
+    obs.close()
+    run = RunRecord.model_validate(_read_jsonl(tmp_path / "out" / "run.jsonl")[0])
+    assert run.harness == {"tool_errors": "corrective", "nudge_budget": 0}
+    assert run.probe_version == 3
+    task = TaskRecord.model_validate(_read_jsonl(tmp_path / "out" / "tasks.jsonl")[0])
+    assert task.artifact_capture["text"] == "WRONG"
+    assert task.schema_version == 1  # additive; version unchanged
+
+
+def test_pre_v3_run_line_parses_without_harness(tmp_path: Path) -> None:
+    """A v2 run.jsonl line (no harness / probe_version / artifact_capture) still
+    validates — additive fields default to None."""
+    run = RunRecord.model_validate({
+        "schema_version": 1, "run_id": "r", "started_at": "t", "ended_at": "t",
+        "duration_s": 1.0, "probe_name": "p", "flow_path": "f", "project_name": "x",
+        "profile": _profile().model_dump(), "arm": ArmSpec().model_dump(),
+        "success": True, "exit_code": 0, "tasks_total": 1, "tasks_passed": 1,
+        "tasks_failed": 0, "tasks_first_pass": 1, "async_leak_hits": 0,
+        "tokens_in": 0, "tokens_out": 0, "ollama_version": "0", "git_commit": "a",
+        "host": "h",
+    })
+    assert run.harness is None and run.probe_version is None
+
+
 # --------------------------------------------------------------- fake-orchestrator drive
 
 
@@ -226,6 +271,38 @@ def test_record_task_from_result_skipped(tmp_path: Path) -> None:
     assert rec.first_pass is None
     assert rec.loopback_count is None
     assert rec.iterations is None
+
+
+def test_review_provenance_round_trips(tmp_path: Path) -> None:
+    """S6 review fields flow from TaskResult → TaskRecord → tasks.jsonl → parse."""
+    obs = _observer(tmp_path)
+    obs.task_started("build")
+    rec = obs.record_task_from_result(
+        task=_fake_task("build", output_path="out/x.txt"),
+        result=_fake_result(reviews_used=1, post_review_action="revise"),
+        role="implementer",
+        task_index=0,
+    )
+    assert rec.reviews_used == 1
+    assert rec.post_review_action == "revise"
+    obs.close()
+    parsed = TaskRecord.model_validate(_read_jsonl(tmp_path / "out" / "tasks.jsonl")[0])
+    assert parsed.reviews_used == 1
+    assert parsed.post_review_action == "revise"
+
+
+def test_review_provenance_defaults_when_absent(tmp_path: Path) -> None:
+    """A result lacking the S6 fields (pre-v8) records reviews_used=0, action=None."""
+    obs = _observer(tmp_path)
+    obs.task_started("build")
+    rec = obs.record_task_from_result(
+        task=_fake_task("build", output_path="out/x.txt"),
+        result=_fake_result(),  # no reviews_used / post_review_action attrs
+        role="implementer",
+        task_index=0,
+    )
+    assert rec.reviews_used == 0
+    assert rec.post_review_action is None
 
 
 def test_skipped_rows_emit_null_and_aggregation_ignores_them(tmp_path: Path) -> None:

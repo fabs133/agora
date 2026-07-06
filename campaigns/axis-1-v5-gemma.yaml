@@ -1,0 +1,54 @@
+# axis-1 v5 — gemma block under probe_version 5 (rendering + byte-IO fixes).
+#
+# WHY: the determinism-probe (runs_out/determinism-{A,B,B2}) showed gemma's
+# loop_depth content is non-deterministic at temp=0/seed=42 — NOT from task
+# scheduling (serial B still varied) nor warm-model state (cold B2 still varied).
+# The proposed mechanism (docs/runs/determinism-probe/findings.md): near-tie
+# greedy decoding at the seed_a/seed_b join (char 19), created by the low
+# salience of a trailing newline buried after the [read_file#0] marker, plus
+# Windows text-mode CRLF translation infecting the byte comparison.
+#
+# probe_version:5 lands the two fixes the findings predict will resolve it:
+#   * copy-safe result rendering — the [name#id] marker moves to its own line;
+#     content follows verbatim (no leak into copies, byte facts stay salient);
+#   * byte-IO discipline — write_file writes exact bytes, read_file reads
+#     newline='' , equality/artifact_capture already compare raw bytes.
+#
+# PRE-REGISTERED (findings P1/P2), 5 repeats (P1 is a repeat_distinct claim, so
+# 5 not 3):
+#   P1: loop_depth repeat_distinct 1/1 AND byte-correct concat (the join stops
+#       being a guess). FALSIFIER: if the modes do NOT collapse, the near-tie
+#       account is wrong — STOP; CPU-path arbitration is a chat decision.
+#   P2: copy tasks (small_chain, content_robustness) byte-exact — no marker
+#       leak, no CRLF.
+#
+# Single variable vs v3.0.1 gemma: probe_version 4→5 (rendering + byte IO).
+# Corrective errors stay on (inert for gemma), nudge off. Own output dir.
+schema_version: 1
+name: axis-1-v5-gemma
+description: "Axis-1 v5: gemma block under probe_version 5 (copy-safe rendering +\
+  \ byte-IO discipline). Tests determinism-probe P1/P2. 1 model x 5 repeats = 5\
+  \ runs; params identical to v3.0.1."
+defaults:
+  params:
+    temperature: 0.0
+    seed: 42
+    num_ctx: 8192
+    max_tokens: 2048
+  output_dir: runs_out/axis-1-v5-gemma
+  resume: true
+  review_timeout_seconds: 5
+  harness:
+    tool_errors: corrective
+    nudge_budget: 0
+runs:
+- {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r003, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
+- {id: r004, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 4}
+- {id: r005, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 5}

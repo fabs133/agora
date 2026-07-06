@@ -314,15 +314,16 @@ class OllamaAdapter:
         self,
         calls: list[ToolCall],
         results: list[str],
-    ) -> dict[str, Any]:
-        # Ollama accepts one tool message per call; agent_runtime will call us
-        # once per turn with all results, so we fold them into a single message
-        # by joining — callers that need one-per-tool invoke us per result.
-        payload = "\n".join(
-            f"[{call.name}#{call.id}] {res}" for call, res in zip(calls, results, strict=True)
-        )
-        tool_name = calls[0].name if calls else ""
-        return {"role": "tool", "content": payload, "tool_name": tool_name}
+    ) -> list[dict[str, Any]]:
+        # Probe v7 (form B): ONE bare tool-role message per result — content is
+        # the result string VERBATIM, and NO protocol fields (tool_name /
+        # tool_call_id). The rendering arbitration showed that including those
+        # fields makes gemma's daemon renderer wrap the tool result as structure
+        # and escape its newlines (\n → \\n), which the model then reproduces as
+        # literal "\n"; a bare content message renders plainly with real newline
+        # bytes. Correlation is by order + content, which is enough for the probe.
+        # No marker, so a verbatim copy copies only the bytes given.
+        return [{"role": "tool", "content": res} for res in results]
 
     # --- completion ---
 

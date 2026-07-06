@@ -1,0 +1,52 @@
+# axis-1 v7 — gemma block under probe_version 7. The first predicted full pass.
+#
+# WHY: the rendering arbitration (OLLAMA_DEBUG, same 3-turn gemma exchange with
+# 'alpha\nbeta\n') showed the tool result renders TWO ways:
+#   * form A (per-result message WITH tool_name/tool_call_id): the daemon wraps
+#     the result as structure and escapes its newlines (\n→\\n); the model
+#     reproduces literal "\n" (v6 copies failed byte-exact). prompt_len 223.
+#   * form B (BARE tool message, content only): renders plainly with real 0x0a
+#     newlines (model-echo confirmed). prompt_len 221.
+#
+# probe_version:7 lands form B delivery + the last byte-IO hole:
+#   * format_tool_results now emits a bare tool message per result (no protocol
+#     fields, no marker, content verbatim);
+#   * seed_probe_files writes exact LF bytes (was write_text → CRLF, which made
+#     v6 loop_depth's byte-correct LF fail equality vs CRLF seeds).
+#
+# PRE-REGISTERED predictions, 5 repeats:
+#   * copy tasks (small_chain, content_robustness) byte-EXACT, real newlines,
+#     no marker.
+#   * loop_depth byte-correct vs the (now LF) seeds.
+#   * repeat_distinct 1/1 everywhere.
+#   * gemma 9/9 — the first genuine full pass in program history.
+#
+# v6 config otherwise (corrective errors on — inert for gemma; nudge off).
+schema_version: 1
+name: axis-1-v7-gemma
+description: "Axis-1 v7: gemma block under probe_version 7 (form-B bare tool messages\
+  \ + LF seeds). Predicts gemma 9/9 — first genuine full pass. 1 model x 5 repeats\
+  \ = 5 runs; params identical to v6."
+defaults:
+  params:
+    temperature: 0.0
+    seed: 42
+    num_ctx: 8192
+    max_tokens: 2048
+  output_dir: runs_out/axis-1-v7-gemma
+  resume: true
+  review_timeout_seconds: 5
+  harness:
+    tool_errors: corrective
+    nudge_budget: 0
+runs:
+- {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r003, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}
+- {id: r004, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 4}
+- {id: r005, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 5}

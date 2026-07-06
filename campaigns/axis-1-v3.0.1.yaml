@@ -1,0 +1,50 @@
+# axis-1 v3.0.1 — gemma-only rerun under probe_version 4.
+#
+# WHY A SEPARATE CAMPAIGN: v3.0's gemma cells were confounded by the stale-out/
+# workspace bug — the write_file overwrite-guard blocked gemma's writes and
+# equality postconditions compared against stale files (live_pass ≈ 0 across
+# v1/v2/v3.0; docs/runs/axis-1-v3/forensics-stale-out.md). Two fixes landed
+# after v3.0 executed:
+#   * probe runner now resets out/ before each run (writes are no longer
+#     guard-blocked by stale files);
+#   * artifact_capture now fires on the staged path (it was 0/45 in v3.0).
+# The flow is probe_version:4 accordingly. These change what the probe measures,
+# so this rerun is a SEPARATE campaign with its own output_dir — its cells must
+# never be pooled with v3.0's (probe_version:3, distinct in provenance too).
+#
+# EXPECTATION (from harness-reliability.md, now measurable):
+#   * small_chain + content_robustness: LIVE outcomes (gemma actually writes).
+#     Watch for the [read_file#0] marker in the copy — artifact_contains is
+#     prefix-tolerant and may still pass; the byte-exact equality may not. Note
+#     whatever happens; the marker leak is a logged integration defect (v3.2+).
+#   * loop_depth: genuine result WITH artifact_capture populated — the first
+#     look at gemma's actual written concat bytes vs expected (the newline-join
+#     diff), no longer masked by the guard block.
+#
+# Single variable vs v3.0 gemma: the probe hygiene (out/-reset + staged capture).
+# Corrective errors stay on (inert for gemma — 0 rejections in v3.0), nudge off.
+# DO NOT extend beyond the gemma block; this exists only to de-confound gemma.
+schema_version: 1
+name: axis-1-v3.0.1
+description: "Axis-1 v3.0.1: gemma-only rerun under probe_version 4 (out/-reset +\
+  \ staged artifact_capture). De-confounds the v3.0 gemma cells from the stale-out/\
+  \ bug. 1 model x 3 repeats = 3 runs; params identical to v3.0."
+defaults:
+  params:
+    temperature: 0.0
+    seed: 42
+    num_ctx: 8192
+    max_tokens: 2048
+  output_dir: runs_out/axis-1-v3.0.1
+  resume: true
+  review_timeout_seconds: 5
+  harness:
+    tool_errors: corrective
+    nudge_budget: 0
+runs:
+- {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+- {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 2}
+- {id: r003, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b,
+   arm: {scaffolding: lean, strictness: strict}, repeat: 3}

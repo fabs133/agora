@@ -91,6 +91,36 @@ async def test_single_stage_completes_and_runs_postconditions(
     assert (tmp_path / "hello.txt").is_file()
 
 
+async def test_staged_task_populates_artifact_capture_on_failure(
+    tmp_path: Path, fake_matrix_client
+) -> None:
+    """Regression (S4): staged tasks build their OWN TaskResult, so the near-miss
+    capture must fire on this path — it was 0/45 in v3.0 because the capture lived
+    only in AgentRuntime.execute_task, which staged (probe) tasks never hit."""
+    responses = [
+        LLMResponse(
+            content="",
+            tool_calls=(tool_call("write_file", {"path": "out/x.txt", "content": "WRONG"}),),
+        ),
+        LLMResponse(content="done"),
+        LLMResponse(content="[]"),
+    ]
+    runtime, _ctx, identity = await _make_runtime(tmp_path, fake_matrix_client, responses)
+    fail_spec = Specification(
+        postconditions=(make_predicate("nope", "", lambda _c: (False, "forced")),),
+        description="",
+    )
+    staged = StagedTask(
+        task=Task(id="t", spec=fail_spec, description="w", agent_id="w", output_path="out/x.txt"),
+        stages=[Stage(instruction="write out/x.txt", max_iterations=3)],
+    )
+    result = await StageRunner(runtime).execute_staged_task(staged, identity)
+    assert result.success is False
+    assert result.artifact_capture is not None
+    assert result.artifact_capture["path"] == "out/x.txt"
+    assert result.artifact_capture["text"] == "WRONG"
+
+
 async def test_multi_stage_gets_fresh_message_history(
     tmp_path: Path, fake_matrix_client
 ) -> None:

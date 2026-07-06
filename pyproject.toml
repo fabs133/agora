@@ -64,6 +64,7 @@ asyncio_mode = "auto"
 addopts = "-ra"
 markers = [
     "slow: end-to-end tests that drive a live model/daemon (gated by AGORA_E2E=1)",
+    "serial: git working-tree-state tests that intermittently flake under concurrent git activity (index/lock contention); group to one worker if xdist is added.",
 ]
 
 [tool.coverage.run]

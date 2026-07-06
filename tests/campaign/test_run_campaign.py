@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from scripts.expand_campaign import axis1_campaign
 from scripts.run_campaign import (
@@ -188,6 +189,122 @@ runs:
     plan = expand_plan(load_campaign(str(camp)))
     assert plan[0]["strategy"] == "qwen2_5_coder"
     assert plan[1]["strategy"] is None  # control cell
+
+
+def test_harness_defaults_field_merge_and_env(tmp_path) -> None:
+    """v3 harness config: defaults apply, per-run field-merges over them, and
+    build_env emits AGORA_HARNESS_* from the resolved dict."""
+    yaml_text = """
+schema_version: 1
+name: t
+defaults:
+  params: {seed: 42}
+  output_dir: out
+  harness: {tool_errors: corrective, nudge_budget: 1}
+runs:
+  - {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b, arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+  - {id: r002, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b, arm: {scaffolding: lean, strictness: strict}, repeat: 1, harness: {nudge_budget: 5}}
+"""
+    camp = tmp_path / "c.yaml"
+    camp.write_text(yaml_text, encoding="utf-8")
+    plan = expand_plan(load_campaign(str(camp)))
+    assert plan[0]["harness"] == {
+        "tool_errors": "corrective", "nudge_budget": 1, "review_budget": 0,
+    }
+    # per-run overrides only nudge_budget; tool_errors inherited from defaults
+    assert plan[1]["harness"] == {
+        "tool_errors": "corrective", "nudge_budget": 5, "review_budget": 0,
+    }
+    env = build_env(plan[0], "d")
+    assert env["AGORA_HARNESS_TOOL_ERRORS"] == "corrective"
+    assert env["AGORA_HARNESS_NUDGE_BUDGET"] == "1"
+    assert env["AGORA_HARNESS_REVIEW_BUDGET"] == "0"
+
+
+def test_review_budget_resolves_and_emits_env() -> None:
+    """The committed v8 campaign resolves review_budget=1 (nudge off) and
+    build_env forwards it as AGORA_HARNESS_REVIEW_BUDGET."""
+    plan = expand_plan(load_campaign("campaigns/axis-1-v8.yaml"))
+    assert len(plan) == 15
+    assert all(
+        r["harness"] == {
+            "tool_errors": "corrective", "nudge_budget": 0, "review_budget": 1,
+        }
+        for r in plan
+    )
+    env = build_env(plan[0], "d")
+    assert env["AGORA_HARNESS_REVIEW_BUDGET"] == "1"
+    assert env["AGORA_HARNESS_NUDGE_BUDGET"] == "0"
+
+
+def test_load_campaign_rejects_invalid_tool_errors(tmp_path) -> None:
+    """Invalid harness values fail loudly at load (pydantic Literal)."""
+    yaml_text = """
+schema_version: 1
+name: bad
+defaults:
+  params: {seed: 42}
+  output_dir: out
+  harness: {tool_errors: bogus}
+runs:
+  - {id: r001, probe: flows/tool-call-fidelity.plan.yaml, profile: gemma-e4b, arm: {scaffolding: lean, strictness: strict}, repeat: 1}
+"""
+    camp = tmp_path / "bad.yaml"
+    camp.write_text(yaml_text, encoding="utf-8")
+    with pytest.raises((ValueError, ValidationError)):
+        load_campaign(str(camp))
+
+
+def test_v2_campaign_defaults_to_raw_no_nudge() -> None:
+    """A campaign with no harness block resolves to raw/0 — v2 behaviour — and
+    the committed v2 YAML still loads."""
+    plan = expand_plan(load_campaign(COMMITTED))
+    assert all(
+        r["harness"] == {"tool_errors": "raw", "nudge_budget": 0, "review_budget": 0}
+        for r in plan
+    )
+def test_write_plan_index_merges_disjoint_blocks(tmp_path) -> None:
+    """Staged execution writes the index once per block; the second block must
+    extend the first, not truncate it (the axis-1 v2 C1 bug)."""
+    from scripts.run_campaign import write_plan_index
+
+    block_a = [{"id": "r001", "profile": "p"}, {"id": "r002", "profile": "p"}]
+    block_b = [{"id": "r003", "profile": "p"}, {"id": "r004", "profile": "p"}]
+    write_plan_index(tmp_path, block_a)
+    write_plan_index(tmp_path, block_b)
+    ids = [json.loads(line)["id"] for line in
+           (tmp_path / "plan.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert ids == ["r001", "r002", "r003", "r004"]  # both sets, sorted by id
+
+
+def test_write_plan_index_idempotent_and_new_wins(tmp_path) -> None:
+    """Re-invoking with the same ids is idempotent; a changed record for an
+    existing id is replaced by the new one."""
+    from scripts.run_campaign import write_plan_index
+
+    write_plan_index(tmp_path, [{"id": "r002", "v": 1}, {"id": "r001", "v": 1}])
+    first = (tmp_path / "plan.jsonl").read_text(encoding="utf-8")
+    write_plan_index(tmp_path, [{"id": "r001", "v": 1}, {"id": "r002", "v": 1}])
+    assert (tmp_path / "plan.jsonl").read_text(encoding="utf-8") == first  # idempotent
+    # New record for an existing id wins.
+    write_plan_index(tmp_path, [{"id": "r001", "v": 2}])
+    recs = {json.loads(line)["id"]: json.loads(line) for line in first.splitlines()}
+    recs2 = {r["id"]: r for r in (json.loads(line) for line in
+             (tmp_path / "plan.jsonl").read_text(encoding="utf-8").splitlines())}
+    assert recs2["r001"]["v"] == 2 and recs2["r002"]["v"] == 1
+
+
+def test_write_plan_index_corrupt_existing_line_fails_loudly(tmp_path) -> None:
+    """A damaged existing index must fail loudly, not be silently overwritten."""
+    from scripts.run_campaign import write_plan_index
+
+    (tmp_path / "plan.jsonl").write_text('{"id":"r001"}\nnot-json\n', encoding="utf-8")
+    with pytest.raises(json.JSONDecodeError):
+        write_plan_index(tmp_path, [{"id": "r002"}])
+    # A record missing 'id' also fails loudly.
+    (tmp_path / "plan.jsonl").write_text('{"profile":"p"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="without an 'id'"):
+        write_plan_index(tmp_path, [{"id": "r002"}])
 
 
 def test_expand_plan_carries_review_timeout_from_defaults() -> None:

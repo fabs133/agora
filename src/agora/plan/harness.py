@@ -64,11 +64,27 @@ class HarnessConfig:
     # files. Separate from ``max_task_retries`` so routed retries don't
     # compete for the owning task's normal retry pool.
     routed_retry_budget: int = 2
+    # v3 harness-reliability (findings F1). ``tool_errors="corrective"`` renders
+    # tool validation/handler failures as a CorrectiveError (schema + hint)
+    # instead of leaking a raw crash string; "raw" is v2 behaviour byte-for-byte.
+    # ``nudge_budget`` caps in-loop completion nudges (0 = off = v2 behaviour).
+    # ``review_budget`` caps in-loop completion reviews (S6, v8): on a valid
+    # mark_complete the harness reads the written output back to the model and
+    # asks it to confirm or revise (0 = off, byte-identical to v3.2).
+    tool_errors: str = "raw"
+    nudge_budget: int = 0
+    review_budget: int = 0
 
     @classmethod
     def from_env(cls, work_dir: str | Path = "workspace") -> HarnessConfig:
         """Pull the same env knobs the existing runners read."""
         work_dir_path = Path(work_dir)
+        tool_errors = os.getenv("AGORA_HARNESS_TOOL_ERRORS", "raw").strip() or "raw"
+        if tool_errors not in ("raw", "corrective"):
+            raise ValueError(
+                f"AGORA_HARNESS_TOOL_ERRORS={tool_errors!r} invalid; "
+                "expected 'raw' or 'corrective'"
+            )
         return cls(
             homeserver=os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167"),
             system_password=os.getenv("AGORA_MATRIX_PASSWORD", "agora-dev-pass"),
@@ -78,6 +94,9 @@ class HarnessConfig:
             max_parallel_agents=int(os.getenv("AGORA_MAX_PARALLEL_AGENTS", "2")),
             max_task_retries=int(os.getenv("AGORA_MAX_TASK_RETRIES", "2")),
             routed_retry_budget=int(os.getenv("AGORA_ROUTED_RETRY_BUDGET", "2")),
+            tool_errors=tool_errors,
+            nudge_budget=int(os.getenv("AGORA_HARNESS_NUDGE_BUDGET", "0")),
+            review_budget=int(os.getenv("AGORA_HARNESS_REVIEW_BUDGET", "0")),
             work_dir=work_dir_path,
             knowledge_cache_dir=work_dir_path / ".knowledge",
         )
@@ -240,6 +259,9 @@ def build_orchestrator(
         auto_hooks_enabled=cfg.auto_hooks_enabled,
         plan_authoring_enabled=cfg.plan_authoring_enabled,
         routed_retry_budget=cfg.routed_retry_budget,
+        tool_errors=cfg.tool_errors,
+        nudge_budget=cfg.nudge_budget,
+        review_budget=cfg.review_budget,
         observer=observer,
     )
 

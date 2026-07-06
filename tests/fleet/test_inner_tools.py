@@ -54,6 +54,27 @@ async def test_write_and_read_file(ctx: ToolContext) -> None:
     assert back == "hi"
 
 
+async def test_byte_io_newline_round_trip_untranslated(ctx: ToolContext) -> None:
+    """\\n must survive write_file → read_file → equality untranslated, incl. on
+    Windows (no text-mode \\n→CRLF). The equality predicate reads raw bytes, so
+    the whole byte-exactness path must agree (determinism-probe §5)."""
+    from agora.plan.probe_predicates import postcond_file_content_equals_seed
+
+    executor = get_tool_executor(AgentRole.IMPLEMENTER, ctx)
+    content = "apple\napricot\navocado\n"
+    await executor["write_file"]({"path": "out/x.txt", "content": content})
+    # On-disk bytes are exactly the content — no CRLF injected.
+    assert (Path(ctx.work_dir) / "out" / "x.txt").read_bytes() == content.encode("utf-8")
+    # read_file returns the same \n bytes (no universal-newline translation).
+    assert await executor["read_file"]({"path": "out/x.txt"}) == content
+    # Equality predicate (raw-byte compare) sees them equal to a seed of the
+    # same bytes — the round trip is byte-exact end to end.
+    (Path(ctx.work_dir) / "seed.txt").write_bytes(content.encode("utf-8"))
+    pred = postcond_file_content_equals_seed(path="out/x.txt", seed_path="seed.txt")
+    passed, _reason = pred.evaluate({"work_dir": ctx.work_dir})
+    assert passed is True
+
+
 async def test_write_file_sets_blocked_flag_on_guard_failure(ctx: ToolContext) -> None:
     """A blocked write flips ``ctx.write_file_blocked`` so the next turn's
     tool manifest can hide write_file entirely. The 7B otherwise cycles

@@ -144,3 +144,20 @@ profiles:
     keep_alive: 30m
     vram:
       safety_margin_mib: 1024
+
+  # Roster specializations referenced by casts/p40-24gb.yaml (classifier +
+  # retriever seats). Not part of the axis-1 agentic sweep — sizes/residency
+  # are what the cast validator checks.
+  classification-12b:
+    description: Task-specific classification fine-tune (roster). Load-on-demand.
+    model: ollama/classification-12b:latest
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 1024
+
+  nomic-embed-text:
+    description: Embedding model for retrieval/similarity (roster). Resident.
+    model: ollama/nomic-embed-text:latest
+    keep_alive: 30m
+    vram:
+      safety_margin_mib: 512

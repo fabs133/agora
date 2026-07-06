@@ -85,13 +85,34 @@ SEED_FILES: dict[str, str] = {
 }
 
 
+def reset_out_dir(project_dir: Path) -> None:
+    """Remove the project's ``out/`` so each run starts with a clean output slate.
+
+    Without this a prior run's ``out/*.txt`` persists; the write_file overwrite-
+    guard then blocks the model's write and equality postconditions compare
+    against STALE bytes — the confound that made ``live_pass`` ≈ 0 across v1/v2/v3
+    (``docs/runs/axis-1-v3/forensics-stale-out.md``). ``plan/`` is NEVER touched:
+    those are the seeded probe inputs.
+    """
+    import shutil
+
+    out = project_dir / "out"
+    if out.exists():
+        shutil.rmtree(out)
+
+
 def seed_probe_files(work_dir: Path, project_name: str) -> Path:
-    """Write the four plan/*.txt fixtures into the project's work_dir. Idempotent."""
+    """Reset ``out/`` then write the plan/*.txt fixtures. Each run starts fresh."""
     project_dir = work_dir / project_name
+    reset_out_dir(project_dir)
     for rel, content in SEED_FILES.items():
         path = project_dir / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        # Byte-IO discipline (determinism-probe): write exact LF bytes, never
+        # text-mode \n→CRLF. The seed files ARE the equality baseline — a CRLF
+        # seed makes byte-exact copies/concat fail vs the model's LF output (the
+        # v6 loop_depth near-miss). Last write_text hole in the byte path.
+        path.write_bytes(content.encode("utf-8"))
     return project_dir
 
 
@@ -148,7 +169,20 @@ async def main() -> None:
         git_commit=git_commit_short(REPO_ROOT),
         log_path=output_dir / "run.log",
         strategy=strategy_name,
+        # v3 provenance: the harness config actually in force + the probe design
+        # version carried from the flow file.
+        harness={
+            "tool_errors": cfg.tool_errors,
+            "nudge_budget": cfg.nudge_budget,
+            "review_budget": cfg.review_budget,
+        },
+        probe_version=getattr(plan.flow, "probe_version", None),
     )
+    if cfg.tool_errors != "raw" or cfg.nudge_budget or cfg.review_budget:
+        print(
+            f"[*] Harness: tool_errors={cfg.tool_errors} "
+            f"nudge_budget={cfg.nudge_budget} review_budget={cfg.review_budget}"
+        )
     print(f"[*] Run observer → {output_dir} (run_id={run_id})")
 
     # When a strategy is set, wrap the profile's factory so every adapter the
