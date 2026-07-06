@@ -48,6 +48,11 @@ def _strip_provider_prefix(model: str) -> str:
 
 @dataclass(frozen=True)
 class VRAMCheck:
+    """Verdict of the pre-flight free-VRAM probe. ``fits`` is the go/no-go;
+    ``free_mib`` is ``None`` when the probe could not read the device (in which
+    case the caller decides whether to proceed), and ``reason`` is a
+    human-readable explanation for the log/error path."""
+
     fits: bool
     free_mib: int | None
     required_mib: int

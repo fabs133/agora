@@ -35,6 +35,11 @@ SAFE_ENV_KEYS = (
 
 @dataclass(frozen=True)
 class RunResult:
+    """Outcome of one host-Python subprocess run. ``ok`` is the caller's success
+    verdict (returncode 0 and not timed out); ``returncode`` / ``timed_out`` keep
+    the raw signal so a postcondition can tell a clean failure from a timeout, and
+    ``stdout`` / ``stderr`` are captured verbatim to feed the repair oracle."""
+
     ok: bool
     returncode: int
     stdout: str
