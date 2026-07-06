@@ -826,3 +826,125 @@ program kept circling is answered in gemma's favour: it wrote a correct
 core, a working adapter, spec-faithful tests (via the tester seat), and —
 shown here — a correct PROJECT_STATE draft; the remaining gap is getting
 that draft reliably EMITTED through the tool channel at scale.
+
+**Part 11 addendum — chat-side ruling (2026-07-05).**
+
+**F18'' ratified; F18 and F18' retired.** The diagnostic establishes:
+gemma drafts the complete, gate-passing document inside its reasoning
+and inconsistently fails to emit the structured call (done_reason
+stop, not length). Reasoning-vs-action emission gap at doc scale —
+framework/reliability class, not capability. The adapter discards the
+thinking that contains the finished work.
+
+**F19 ruling — wire, don't delete.** Campaign params become explicit
+overrides over cast-bound profile params (campaign = experiment
+conditions; profile = model identity — the axis-1 orthogonality),
+effective set logged at run start. Proof-by-use in 2.4: profile
+max_tokens reverts to 2048; the campaign carries 4096; the run works
+iff the wiring does.
+
+**S7 registered — reasoning-salvage nudge.** Trigger: tool_calls=0 AND
+stripped content empty AND thinking non-empty. Action: ONE re-prompt
+carrying the model's own thinking draft verbatim + "emit the required
+tool call now". salvage_budget default 0 (construct-nothing);
+provenance: salvages_used, turns_reasoning_only. S2-family mechanism;
+doctrine: the model's discarded draft is channel content.
+
+**Run 2.4 pre-registration (bundling justified: F18''s cause is
+established out-of-band by controlled diagnostic + seed reproduction;
+the run's purpose is completion + handoff quality, not attribution).**
+Deltas: (i) agora-handoff extractor — FACT sections (identity, file
+map + AST signatures, verification record from gate commands,
+capability inventory) generated mechanically; (ii) T9.2 becomes
+PROSE-only: write PROJECT_STATE.prose.md (architecture & invariants,
+conventions, extension points, how-to-run prose) — README-scale
+single write; (iii) runner assembles PROJECT_STATE.md = FACT + PROSE
+mechanically before the P9 gate (pure, deterministic, unit-tested);
+gate checks the ASSEMBLED file, unchanged predicates; (iv) S7 armed at
+salvage_budget 1 campaign-wide; (v) F19 wiring live. Worlds:
+(a) P9 green -> RUN 2 COMPLETE -> PROJECT_STATE.md to the human
+fact-check (FACT true-by-construction; the review measures PROSE).
+(b) prose task derails AND salvage fails -> S7's first negative datum;
+stop, chat-side. (c) extractor/assembly defect -> mechanical, loud,
+fix-and-re-establish under the conditions-defect rule. One repair per
+gate otherwise; waivers forbidden.
+
+---
+
+## Part 12 — run 2.4 findings (2026-07-06)
+
+**Run 2.4:** the F18'' fix bundle landed and three of four deltas VERIFIED
+live; the run stopped at P9 in **world (b)** — S7's first negative datum.
+Every framework mechanism works; the residual is a model tool-EMISSION
+floor that re-prompting does not force.
+
+**F19 — VERIFIED live.** ``run_phased`` now resolves inference params as
+profile <- campaign override and logs the effective set per model at each
+phase start. The run's first lines: ``effective params [ollama/gemma4:e4b]:
+... max_tokens=4096* ...`` — the campaign override reached the model while
+the gemma-e4b profile identity stays 2048. The silently-inert knob (Part 11
+F19) is wired and observable. Proof-by-use satisfied.
+
+**Extractor + assembler — VERIFIED live.** The runner assembled
+PROJECT_STATE.md = mechanical FACT + prose before the P9 gate. FACT is
+correct-by-construction: Identity (echobot, runnable module), Capability
+inventory (the REAL AST signature ``def handle_message(text: str, rng:
+random.Random) -> str | None``), Verification record (the two gate
+commands), File map (real tree + per-file top-level defs). All eight
+assembled-file header predicates + both gate-command predicates PASS — the
+assembler is sound and the FACT half of the handoff is now
+true-by-construction. (World (c) — assembly defect — did not occur.)
+
+**S7 — mechanism VERIFIED, outcome NEGATIVE (first negative datum).** T9.2:
+salvages_used=1, turns_reasoning_only=3, tools_used=[]. The salvage fired
+EXACTLY on its condition (reasoning-only turn, thinking 2683 chars) and
+re-prompted with the draft verbatim + "emit the tool call now — no further
+analysis." gemma produced three reasoning-only turns and never wrote the
+prose file. **Re-prompting with the model's own draft does not recover
+emission.** The construct-nothing / trigger-precision guarantees held
+(unit-tested); the mechanism is correct, the hypothesis that a reminder
+recovers the gap is falsified.
+
+**F18''' — the emission gap is TERMINATION-BEFORE-ACTION, not forgetting.**
+The decisive diagnostic (direct /api/chat, prose task, seed 42): gemma
+returns done_reason=**stop**, 326 tokens, tool_calls=0, and a thinking
+trace ending "...I will use a single write_file call ... Plan: 1.
+Construct the markdown content string. 2. Use write_file to create
+PROJECT_STATE.prose.md." — then TERMINATES without emitting the call. Not
+truncation (stop, not length), not envelope (tiny), not inability (it
+plans the exact call). gemma-e4b, on open-ended generative tasks,
+non-deterministically ENDS THE TURN after reasoning to the intent, without
+emitting the structured tool call. This is why S7 (a reminder) cannot fix
+it — there is nothing to remind; the model has decided it is done. It also
+explains the whole F18 family: code/test tasks (tight structure, short
+reasoning) emit reliably; the open-ended handoff doc maximises reasoning
+and so maximises the termination-before-action risk. The fix is not a
+prompt — it is to FORCE the emission (structured-output / forced
+tool_choice) or to remove the model from the FACT path (already done — the
+extractor makes the FACT half model-free).
+
+**Disposition — the handoff is now mostly solved; one lever left.** The
+run's real yield: the FACT handoff is done and correct (mechanical,
+verified), and the failure is isolated to one thing — getting gemma to
+EMIT its prose through the tool channel. Options (run 2.5, owner's pick):
+- (a) **tool-forcing** — request gemma with a forced tool call (Ollama
+  ``tool_choice``-equivalent / structured ``format``) so the turn cannot
+  terminate without emitting write_file. Highest-leverage; directly targets
+  F18'''. S7 stays as provenance (turns_reasoning_only is the metric).
+- (b) **FACT-complete handoff, prose optional** — the assembled
+  PROJECT_STATE.md is already structurally complete and factually correct
+  with placeholder prose; ship it as the handoff and make prose a
+  best-effort/human section. The deferred "can the implementer describe its
+  own project" question is then answered precisely: it can produce the
+  FACTS (mechanically) but not reliably EMIT prose at this model size.
+- (c) a stronger model for the single prose task (cast a doc-capable seat).
+Recommend (a), with (b) as the ship-anyway fallback. P3-P7 stand as the
+regression suite; PROJECT_STATE.md exists (FACT correct, prose pending).
+Waivers forbidden; run did not complete.
+
+**Program status.** Framework findings F1-F19 + S7 are closed or
+verified-live; the sole open blocker is F18''' (tool-emission reliability),
+now precisely characterised as termination-before-action and addressable by
+tool-forcing rather than any prompt-level mechanism. gemma's capability is
+not in question — it wrote the core, adapter, tests, and drafts the doc;
+the gap is the structured emission of open-ended output.

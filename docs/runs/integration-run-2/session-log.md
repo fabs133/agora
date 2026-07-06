@@ -510,3 +510,59 @@ conditions delta (bundled per Part-11 addendum — cause established out-of-band
 ledger: P3-P7 green, P9 red (run-2.3). action: re-establish P9 -> `--rerun-task T9.2 --oracle P9`
   (conditions-defect: F18'' is a verified emission/framework defect; no budget), then confirm the run closes.
 ```
+
+## P9 re-establishment (S7 armed, prose-split, F19 4096) — RED (world (b): S7's first negative datum) (2026-07-06)
+```
+[*] effective params [ollama/gemma4:e4b]: num_ctx=8192* max_tokens=4096* temperature=0.0* seed=42*  (*=campaign override)   <- F19 VERIFIED LIVE
+=== phase P9 gate: RED ===  blockers: T9.2
+  [PASS] T9.1 (block)  README.md ok
+  [FAIL] T9.2 (block)
+      FAIL PROJECT_STATE.prose.md_has_## Architecture & invariants (+3 prose headers)   <- gemma wrote NO prose file
+      ok   PROJECT_STATE.md_has_## Identity ... ## How to run / test (all 8) + pytest -q + python -m echobot  <- ASSEMBLER works
+  [PASS] V9.1 (nonblock) -> verdicts/p9.json valid
+```
+### F19 — VERIFIED LIVE
+The effective-params log line prints at phase start; `max_tokens=4096*` shows the campaign
+override reached the model (profile identity stays 2048). The knob that silently did nothing
+(Part-11 F19) is now wired and visible.
+### Extractor + assembler — VERIFIED LIVE
+The runner assembled PROJECT_STATE.md = mechanical FACT + prose before the gate. FACT is
+correct-by-construction: Identity (echobot, runnable), Capability inventory (the real AST
+signature `def handle_message(text: str, rng: random.Random) -> str | None`), Verification
+record (the two gate commands), File map (real tree + per-file defs). All 8 assembled-file
+header checks + both gate-command checks PASS. The four PROSE sections are
+`_(section not provided)_` placeholders — see below.
+### S7 — mechanism VERIFIED, outcome NEGATIVE (first negative datum)
+T9.2 record: status=failed, tools_used=[], iters=3, nudges=1, **salvages=1, turns_reasoning_only=3**.
+run.log:
+```
+turn 1: tool_calls=0 content_len=0  ->  reasoning-salvage 1/1: task=T9.2 (thinking 2683 chars, no tool call)
+turn 2: tool_calls=0 content_len=0  ->  completion nudge 1/1 (PROJECT_STATE.prose.md not written)
+turn 3: tool_calls=0 content_len=0
+```
+S7 fired EXACTLY on its condition (reasoning-only turn) and re-prompted with the 2683-char
+draft verbatim + "emit the tool call now." gemma still did not emit — three reasoning-only
+turns, no prose file. **S7's first negative datum: re-prompting with the draft does not
+recover emission.**
+### Diagnostic (direct /api/chat, prose task, seed 42) — the refined root cause
+```
+done_reason: stop | eval_count: 326 | tool_calls: 0 | thinking 551 chars | content 0
+thinking tail: "...I will use a single write_file call ... Plan: 1. Construct the markdown
+content string. 2. Use write_file to create PROJECT_STATE.prose.md."   <-- then TERMINATES
+```
+gemma-e4b reasons to the point of "I will use write_file", forms the plan, and **terminates
+the turn (done_reason=stop, 326 tokens) WITHOUT emitting the structured tool call.** Not
+truncation (stop, not length), not envelope (tiny), not inability (it plans the exact call).
+It is a tool-call-EMISSION reliability floor on open-ended generative tasks — the action does
+not reliably follow the reasoning, and re-prompting (S7) doesn't force it. (Non-deterministic:
+the run-2.3 diagnostic sometimes DID emit; here it does not.)
+
+### STOP — world (b): S7's first negative datum, chat-side
+Per the Part-11 addendum world (b): prose task derails AND salvage fails -> stop, chat-side.
+No decomposition/tool-forcing without sign-off. Ledger: P3-P7 green, P9 red. The assembled
+PROJECT_STATE.md exists (FACT correct-by-construction; prose placeholders). Run did not complete.
+
+### Phase gate ledger (run 2.4)
+```
+P3-P7 GREEN | P9 RED (T9.2 prose emission derail; S7 fired 1x, negative; assembler + FACT verified) -> STOP
+```
