@@ -82,6 +82,13 @@ task_graph:
     phase: P5
     depends_on: [T4.1]
     description: |
+      NAVIGATE VIA THE BRIEF: read PROJECT_STATE.md first — its "## Capability
+      inventory" gives the REAL API you must call. The core function is:
+          from echobot.core import handle_message
+          handle_message(text: str, rng: random.Random) -> str | None
+      Call THAT exact function (positional args: the message text, then a
+      random.Random). Do NOT invent other function names or keyword arguments.
+
       Extend tests/test_core.py with the FOUR new named test functions below,
       exercising the REAL implementation (import from echobot.core). KEEP the
       existing 8 tests unchanged — they are the regression suite.
@@ -154,6 +161,10 @@ task_graph:
     phase: P6
     depends_on: [T6.1]
     description: |
+      NAVIGATE VIA THE BRIEF: read PROJECT_STATE.md first — its "## Capability
+      inventory" / "## File map" name the real modules and interfaces. Call the
+      REAL API; do not invent function names.
+
       Write tests/test_discord_adapter.py — contract tests for the new adapter
       against a FakeGateway (deterministic, headless). Import:
           from echobot.discord_adapter import run_adapter
