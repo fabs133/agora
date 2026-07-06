@@ -28,7 +28,7 @@ single-variable rerun:
 3. **Write-path newline translation.** Python text-mode `write_text`
    turned `\n` into CRLF on Windows across tools, predicates, and
    capture — byte-equality tasks partly measured the translation layer.
-   Committed: `docs/runs/determinism-probe/findings.md` §5; fixed in
+   Committed: `docs/runs/determinism-probe/findings.md`, Consequences item 5; fixed in
    probe v5 (byte-IO discipline).
 4. **Low-salience byte transmission.** The deciding byte for the
    equality task (a trailing newline at a decorated message boundary)
@@ -64,4 +64,4 @@ and measurable.
 
 Items 1–4 are independently committed as cited; items 5–6 were, until
 this note, attested only by campaign artifacts and session reports.
-Claims in `docs/arc/arc.md` §2 cite this document.
+Claims in `docs/arc/arc.md` §3 cite this document.

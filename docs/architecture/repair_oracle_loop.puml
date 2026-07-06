@@ -1,0 +1,42 @@
+@startuml repair_oracle_loop
+' Diagram 5/5 — the repair/oracle loop: how a red gate becomes a fix.
+' Source of truth: scripts/run_phased.py (--rerun-task, reevaluate_phase_gate),
+' oracle_records_for_phase, build_repair_description, repair-task-template.md.
+
+skinparam shadowing false
+
+start
+:Phase gate RED\n(per-predicate outcomes recorded);
+:Resolve oracle: oracle_records_for_phase\nreads tasks.jsonl, LATEST record wins\n(mechanical re-evals are persisted too — **F17b**);
+note right
+  oracle quality is bounded by what
+  gates can NAME (**F7**) and by what
+  artifacts let surface: swallowed
+  errors starve the oracle (**F17**);
+  captures keep head+tail so pytest's
+  tail summary survives (**F11**)
+end note
+:Build repair prompt =\noriginal task description\n+ AUTHORITY clause\n+ oracle VERBATIM;
+note right
+  repair inherits the original task's
+  context (**F9**) — so the original
+  description must carry the contract
+  (**F8**), and the authority clause
+  states the tests/spec are right
+end note
+:--rerun-task <task> --oracle <phase>\n(cross-phase allowed: fix lives in\nanother phase's artifact);
+:Task executes; its OWN gate must be\nable to red on its own defect (**F10**)\n— a locally-green task no-ops under\na foreign oracle;
+:reevaluate_phase_gate — mechanical,\nfull gate re-evaluated (**F23**),\nrecord marked mechanical: true;
+if (gate green?) then (yes)
+  :continue (--next);
+  stop
+else (no)
+  if (conditions defect verified?\n(framework bug / channel\nstarvation / spec defect)) then (yes)
+    :re-establish WITHOUT consuming\nbudget (standing rule, 3 precedents);
+    stop
+  else (no)
+    :budget: ONE repair per gate;\nsecond red on the same gate\nSTOPS THE RUN — waivers forbidden;
+    stop
+  endif
+endif
+@enduml

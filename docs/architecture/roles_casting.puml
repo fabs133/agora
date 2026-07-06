@@ -1,0 +1,52 @@
+@startuml roles_casting
+' Diagram 4/5 — roles, casts, evidence: how a seat gets a model (or a human).
+' Source of truth: roles.yaml, casts/, src/agora/fleet/cast.py.
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+[roles.yaml\nROLE CONTRACTS\nrequires + harness config] as ROLES
+[casts/<envelope>.yaml\nBINDINGS per hardware\nprofile | human, resident,\nevidence | waiver] as CASTS
+[profiles.yaml\nmodel identity] as PROF
+[capability matrix\nevidence rows keyed\n(model x probe_version x\nharness x tool-surface)] as MATRIX
+[local manifest store\nmodel sizes (bytes on disk)] as MANIFEST
+
+[validate_cast] as VAL
+[load_cast -> seat table] as LOAD
+[Orchestrator seats\nimplementer / tester /\nverifier / planner / ...] as SEATS
+
+ROLES --> VAL
+CASTS --> VAL
+PROF --> VAL
+MATRIX ..> VAL : evidence lookup
+MANIFEST ..> VAL : resident VRAM sum
+VAL --> LOAD
+LOAD --> SEATS
+
+note bottom of VAL
+  four rules, all loud:
+  1. every profile reference resolves
+  2. sum(resident sizes) <= vram_budget
+     (sizes from disk, never hand-entered)
+  3. evidence at compatible keys OR an
+     explicit waiver — **F12**: the tool
+     surface a seat exposes is part of
+     the evidence key
+  4. binding: human is always valid
+     (planner precedent; no pretending)
+end note
+
+note bottom of CASTS
+  one cast file per hardware envelope;
+  changing GPUs = choosing a different
+  cast, roles.yaml untouched
+end note
+
+note bottom of SEATS
+  seat manifests are then shaped at
+  runtime: allowlist filter + overwrite
+  guard under the zero-mutation-
+  affordance invariant (**F13**),
+  every delta logged
+end note
+@enduml
