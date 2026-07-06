@@ -1,4 +1,22 @@
-"""Task model plus DAG construction, topological sort, and status transitions."""
+"""Task model plus DAG construction, topological sort, and status transitions.
+
+Position: the unit the orchestrator schedules. A flow instantiates :class:`Task`
+nodes; :func:`build_task_graph` / :func:`topological_sort` order them by their
+``depends_on`` edges; the runtime walks that order, evaluates each task's
+:class:`~agora.core.contract.Specification`, and drives status through the
+machine in ``VALID_TASK_TRANSITIONS``.
+
+Invariants:
+  - Tasks are FROZEN — every mutation returns a fresh instance via
+    :func:`dataclasses.replace`; nothing edits a task in place.
+  - Status only moves along ``VALID_TASK_TRANSITIONS`` edges (enforced by
+    :func:`transition_task`, which raises rather than silently allow a jump).
+  - Two distinct edge kinds (F5): ``depends_on`` gates readiness on the
+    predecessor reaching DONE; ``order_after`` gates only on a TERMINAL state
+    (DONE or FAILED), so a verifier ordered after a blocking task still runs at
+    gate time when that task FAILED — the fix for verifiers being skipped
+    behind a red task.
+"""
 
 from __future__ import annotations
 
