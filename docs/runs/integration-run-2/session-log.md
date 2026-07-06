@@ -712,3 +712,32 @@ Fixes applied (artifact stays fully model-authored):
          "Malformed roll specification: ... Use format NdM."). Rule adopted: micro-asks cite code/spec anchors.
 action: re-run T9.2b only (--rerun-task T9.2b --oracle P9); re-extract + re-assemble -> PROJECT_STATE.md v1.1.
 ```
+
+## CORRECTIONS outcome — PROJECT_STATE.md v1.1 (all fixes verified; still fully model-authored) (2026-07-06)
+Re-ran T9.2b only (--rerun-task T9.2b --oracle P9): passed, iters=3, salvages=0, turns_reasoning_only=0
+(concrete anchored ask holds — no derail). Re-extract + re-assemble -> P9 GREEN, run stays COMPLETE.
+### F21 — corrected Conventions section (VERBATIM; the false "lowercase" claim gone, now cites the code)
+```
+## Conventions
+
+Commands are prefixed with `!` and dispatched inside `handle_message`. Tests must be named
+`test_<behaviour>` in `tests/test_core.py`. Usage and error messages should use SENTENCE-CASE strings
+(e.g., `"Usage: !roll NdM ..."`). The package import name is `echobot`.
+```
+Verified against core.py L38 (`"Usage: !roll NdM ..."`) / L47 (`"Malformed roll specification: ... Use
+format NdM."`) — the model now states what the code does. Doctrine adopted: prose micro-asks cite anchors.
+### F20 — Verification record now serializes COMPLETE re-runnable run_checks (VERBATIM)
+Four fenced ```run_check blocks: `python -m pytest -q` (exit 0) + the three P7 stdin-acceptance checks
+(ping->pong, echo->hello world, roll->rolled 2d6:), each carrying cmd + stdin + expect_stdout_contains.
+LIVE round-trip: parsed the recorded !ping entry from PROJECT_STATE.md and ran it through the run_check
+predicate against the live workspace -> PASSES. (Was: bare argv, dropping stdin + expectation.)
+### F20b — encoding pinned + byte-verified
+Absolute-path byte read of the assembled PROJECT_STATE.md: em-dash = E2 80 94, no UTF-8 BOM, no cp1252
+0x97. All assembler/extractor writes pinned utf-8; unit test asserts the on-disk bytes.
+### Which sections are model vs human (final)
+ALL FOUR prose sections MODEL-authored (architecture, conventions[corrected], extension_points, how_to_run);
+FACT sections mechanical. Zero human fallbacks. The artifact is fully model-authored + fact-checked PASS.
+
+**RUN 2 CLOSED — COMPLETE, corrected. Baseline tagged echobot-v1. P3-P9 green; PROJECT_STATE.md v1.1
+(mechanical FACT + 4/4 model prose) fact-checked PASS with F20/F20b/F21 fixed. Next: brownfield probe
+(chat-side pre-registration, new program off this baseline).**
