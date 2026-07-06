@@ -142,7 +142,11 @@ task_graph:
           .content string; send(channel, text) delivers a reply.
         - run_adapter(gateway, rng): for each event from gateway.receive(), pass
           event.content through handle_message(.., rng); send NON-None responses via
-          gateway.send(...); do NOT send None responses.
+          gateway.send(channel, response); do NOT send None responses.
+      The event guarantees ONLY .content — it may not have a channel. Derive the
+      channel best-effort as getattr(event, "channel", None) and ALWAYS send the
+      non-None response; a missing channel must NOT suppress the send (the reply
+      text is what matters).
       Do NOT modify echobot/core.py (a new transport is a new module; see the
       brief's "## Extension points").
     output_path: echobot/discord_adapter.py

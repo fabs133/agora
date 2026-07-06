@@ -86,3 +86,45 @@ recurring TESTER-side. The model is exonerated (run-1 doctrine); this is a VERIF
 DEFECT. Per the standing rule, fix the condition + re-establish (no budget): add the map-pointer
 line + the real `handle_message(text, rng)` signature to T5.1 and T6.2. (The headline navigation
 measurement, by its ABSENCE in the tester seat, produced the fabrication — a clean instrument result.)
+
+### P5 re-established — GREEN (conditions-defect fix; tester now navigates) (2026-07-06)
+With the map-pointer + inline `handle_message(text, rng)` API in T5.1, the tester read the brief
+and called the REAL function. Full suite **12 passed** (8 regression + 4 new). P5:
+red(fabricated API) -> red(repair, condition still defective) -> [F22 fix: pointer+API] -> GREEN.
+The re-establishment consumed NO repair budget (verified conditions defect, standing rule).
+
+## P6 — Discord adapter — RED first pass (adapter over-reached the event contract) (2026-07-06)
+```
+=== phase P6 gate: RED ===  blockers: T6.2
+  [PASS] T6.1 (block)  import echobot.discord_adapter -> ok
+  [FAIL] T6.2 (block)  pytest -q -> 1 failed, 13 passed
+    test_adapter_maps_ping: AttributeError: 'FakeEvent' object has no attribute 'channel'
+      (discord_adapter.py:47  gateway.send(event.channel, response))
+```
+The DEFECT is the adapter (T6.1), not the test: the delta spec's event interface is `.content`
+ONLY; run_adapter over-reached by requiring `event.channel`. The FakeGateway test (T6.2) is
+spec-faithful. Regression suite still green (13 passed incl. the 12 core tests). Nameable defect
+(F7) -> ONE repair on the adapter: --rerun-task T6.1 --oracle P6.
+
+### P6 repair -> adapter still fails (channel ambiguity) + a runner false-green (F23)
+The T6.1 repair rewrote the adapter (event.channel -> event.channel_id + `if channel is not None: send`)
+— fixing the crash but now SKIPPING the send when the event has no channel (the spec-faithful content-only
+event) -> test_adapter_maps_ping still fails (nothing sent). Two problems surfaced:
+- **Root cause = spec/task under-specification (conditions defect, F15/F6 class):** the delta spec's
+  `send(channel, text)` needs a channel, but events only guarantee `.content`. Where the channel comes from
+  was never specified; gemma guessed the event twice. Fix the condition: T6.1 now states the channel is
+  best-effort (getattr(event,'channel',None)) and the non-None response must ALWAYS be sent.
+- **F23 (runner finding, backlog):** a SAME-PHASE repair of a task (T6.1) that is NOT the gate blocker (T6.2)
+  evaluates only the reran task, so a broken adapter recorded a FALSE P6 green (T6.1's import passes; T6.2's
+  pytest — the real blocker — was never re-run). Same-phase repair needs a full-phase mechanical re-eval,
+  like the cross-phase path. For run 3 I re-establish honestly: fix the adapter, then re-run T6.2's pytest gate.
+
+### P6 re-established — GREEN (conditions-defect fix: channel contract) (2026-07-06)
+With T6.1 clarified (channel best-effort getattr(event,'channel',None); ALWAYS send the non-None
+response), the adapter re-run made pytest -q **14 passed** (12 core + 2 adapter contract tests). Then
+--rerun-task T6.2 --oracle P6 recorded the HONEST P6 gate (T6.2's pytest green). P6: red(adapter
+crash) -> red(repair, channel still guessed) -> [conditions-defect fix] -> GREEN. import
+echobot.discord_adapter ok; core UNTOUCHED. Regression suite intact throughout.
+(Executor error, recorded: one stray --rerun-task ran against the run-2 campaign; the closed run-2
+workspace was reset --hard to its echobot-v1 state fa4d6e8 (8/8), a stray P6 ledger line left as
+provenance. Run 3's baseline was copied before this — run 3 unaffected.)
