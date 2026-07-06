@@ -60,6 +60,11 @@ class LLMResponse:
     tool_calls: tuple[ToolCall, ...] = ()
     usage: dict[str, int] = field(default_factory=dict)
     stop_reason: str = ""
+    # S7 (run 2.4): the model's reasoning trace, surfaced instead of discarded —
+    # either the provider's separate ``thinking`` field or the ``<think>…</think>``
+    # blocks stripped from content. The runtime's reasoning-salvage nudge re-prompts
+    # with this verbatim when a turn produces only reasoning and no tool call.
+    thinking: str = ""
 
 
 @runtime_checkable
@@ -396,15 +401,21 @@ class OllamaAdapter:
             ) from exc
 
         msg = data.get("message", {}) or {}
-        content = msg.get("content", "") or ""
+        raw_content = msg.get("content", "") or ""
         # Reasoning-trace models (qwen3, gemma4, deepseek-r1, etc.) emit
         # ``<think>…</think>`` blocks that the framework's tool-call
         # parser and postcondition system don't model. Strip them before
-        # any downstream consumer sees the text. Ollama sometimes also
-        # surfaces the trace under a separate ``thinking`` key on the
-        # message — that one is silently dropped because content is the
-        # authoritative output channel.
-        content = _strip_thinking_blocks(content)
+        # any downstream consumer sees the text. Ollama also surfaces the
+        # trace under a separate ``thinking`` key on the message. S7: capture
+        # BOTH (separate key + inline blocks) into LLMResponse.thinking so the
+        # runtime can salvage a reasoning-only turn instead of discarding the work.
+        content = _strip_thinking_blocks(raw_content)
+        thinking = "\n".join(
+            t for t in (
+                (msg.get("thinking", "") or "").strip(),
+                _extract_thinking_blocks(raw_content),
+            ) if t
+        )
         tool_calls: list[ToolCall] = []
         for i, tc in enumerate(msg.get("tool_calls", []) or []):
             fn = tc.get("function", {}) or {}
@@ -439,6 +450,7 @@ class OllamaAdapter:
             tool_calls=tuple(tool_calls),
             usage=usage,
             stop_reason=data.get("done_reason", "") or "",
+            thinking=thinking,
         )
 
     @staticmethod
@@ -502,6 +514,38 @@ def _strip_thinking_blocks(text: str) -> str:
             break
         pos = close_idx + len(nearest_close)
     return "".join(chunks).strip()
+
+
+def _extract_thinking_blocks(text: str) -> str:
+    """Return the concatenated INNER text of all ``<think>``/``<thinking>`` blocks
+    in ``text`` (the companion to :func:`_strip_thinking_blocks`, which removes
+    them). Used by S7 to surface the model's discarded reasoning to the runtime.
+    An unterminated open captures to end-of-string."""
+    if not text or "<" not in text:
+        return ""
+    lower = text.lower()
+    parts: list[str] = []
+    pos = 0
+    while pos < len(text):
+        nearest_open = -1
+        open_len = 0
+        nearest_close = ""
+        for open_tag, close_tag in _THINKING_TAG_PAIRS:
+            idx = lower.find(open_tag, pos)
+            if idx != -1 and (nearest_open == -1 or idx < nearest_open):
+                nearest_open = idx
+                open_len = len(open_tag)
+                nearest_close = close_tag
+        if nearest_open == -1:
+            break
+        inner_start = nearest_open + open_len
+        close_idx = lower.find(nearest_close, inner_start)
+        if close_idx == -1:
+            parts.append(text[inner_start:])  # unterminated — take the rest
+            break
+        parts.append(text[inner_start:close_idx])
+        pos = close_idx + len(nearest_close)
+    return "\n".join(p.strip() for p in parts if p.strip())
 
 
 def _parse_tool_calls_from_text(

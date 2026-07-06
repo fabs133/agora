@@ -202,6 +202,11 @@ class TaskRecord(BaseModel):
     post_review_action: Literal["confirm", "revise", "other"] | None = None
     # Integration run 1 (v3.2 erratum): completion nudges (S2) that fired. Additive.
     nudges_used: int = 0
+    # S7 (run 2.4): reasoning-salvage provenance. ``turns_reasoning_only`` = turns
+    # that emitted only a thinking trace (the F18'' gap); ``salvages_used`` = salvage
+    # re-prompts fired. Additive; schema stays 1.
+    salvages_used: int = 0
+    turns_reasoning_only: int = 0
     # Integration run 1: per-task phase membership + whether the task gates its
     # phase (verifier tasks are non-blocking). Additive; None phase = pre-run-1.
     phase: str | None = None
@@ -691,6 +696,8 @@ class RunObserver:
             reviews_used=int(getattr(result, "reviews_used", 0) or 0),
             post_review_action=getattr(result, "post_review_action", None),
             nudges_used=int(getattr(result, "nudges_used", 0) or 0),
+            salvages_used=int(getattr(result, "salvages_used", 0) or 0),
+            turns_reasoning_only=int(getattr(result, "turns_reasoning_only", 0) or 0),
             phase=(getattr(task, "phase", "") or None),
             blocking=bool(getattr(task, "blocking", True)),
             run_check_records=list(getattr(result, "run_check_records", []) or []),

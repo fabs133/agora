@@ -330,21 +330,39 @@ task_graph:
     phase: P9
     depends_on: [T9.1]
     description: |
-      Write PROJECT_STATE.md at the project root with this project's facts,
-      using EXACTLY these eight mandatory section headers (verbatim, in order):
-        ## Identity
+      Write PROJECT_STATE.prose.md at the project root — the PROSE half of the
+      handoff (the FACT half — identity, capability inventory, verification
+      record, file map — is generated mechanically and assembled in, so do NOT
+      write those). Use EXACTLY these four section headers (verbatim, in order),
+      each a short paragraph or a few bullets — README-scale prose:
         ## Architecture & invariants
-        ## Capability inventory
-        ## Verification record
-        ## File map
         ## Conventions
         ## Extension points
         ## How to run / test
-      Under "## Verification record", list the exact gate commands verbatim —
-      `python -m pytest -q` and the `python -m echobot` acceptance — because they
-      are re-run in any future phase-0 re-validation.
-    output_path: PROJECT_STATE.md
+      Contract:
+        - ## Architecture & invariants: the pure core (handle_message) + thin
+          stdin/stdout adapter split, and what must stay true (core is
+          network-free and deterministic under a seeded rng).
+        - ## Conventions: naming / style / test conventions a contributor follows.
+        - ## Extension points: where a new command or a new adapter would plug in.
+        - ## How to run / test: prose pointing at `python -m echobot` and
+          `python -m pytest -q`.
+      One write_file with all four sections. Do not emit the other four headers.
+    output_path: PROJECT_STATE.prose.md
     postconditions:
+      # The model's own output: the four PROSE sections it must supply.
+      - name: file_contains
+        args: {rel: PROJECT_STATE.prose.md, substring: "## Architecture & invariants"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.prose.md, substring: "## Conventions"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.prose.md, substring: "## Extension points"}
+      - name: file_contains
+        args: {rel: PROJECT_STATE.prose.md, substring: "## How to run / test"}
+      # Gate UNCHANGED (run 2.4): the eight mandatory headers + the two gate
+      # commands, evaluated against the ASSEMBLED PROJECT_STATE.md (FACT + prose)
+      # the runner writes after T9.2, before this gate. FACT sections are
+      # true-by-construction; these predicates also smoke-test the assembler.
       - name: file_contains
         args: {rel: PROJECT_STATE.md, substring: "## Identity"}
       - name: file_contains

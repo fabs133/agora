@@ -467,6 +467,8 @@ class StageRunner:
                     artifact_capture=artifact_capture,
                     run_check_records=list(self._ctx.run_check_records),
                     nudges_used=self._runtime._nudges_used,
+                    salvages_used=self._runtime._salvages_used,
+                    turns_reasoning_only=self._runtime._turns_reasoning_only,
                 )
             )
         )

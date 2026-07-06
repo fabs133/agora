@@ -458,6 +458,92 @@ async def test_manifest_delta_logging_emits_both_lines(
     assert "manifest: hid write_file (overwrite guard)" in text
 
 
+# --------------------------------------------------------------- S7 reasoning-salvage
+
+async def test_s7_salvage_fires_once_and_carries_draft_verbatim(
+    tmp_path: Path, fake_matrix_client
+) -> None:
+    """S7: a reasoning-only turn (0 tool calls, empty content, non-empty thinking)
+    triggers ONE salvage re-prompt carrying the draft verbatim; the model then
+    emits the call. Provenance: salvages_used=1, turns_reasoning_only=1."""
+    draft = "## Identity\n\n<<DRAFT-MARKER-77>>\n\n## How to run / test"
+    responses = [
+        LLMResponse(content="", tool_calls=(), thinking=draft),  # reasoning-only turn
+        LLMResponse(content="", tool_calls=(
+            tool_call("write_file", {"path": "out.md", "content": "x"}),)),  # emits after salvage
+    ]
+    runtime, ctx, identity = await _make_runtime(tmp_path, fake_matrix_client, responses)
+    ctx.salvage_budget = 1
+    staged = StagedTask(
+        task=Task(id="t1", spec=_file_exists_spec("out.md"), description="w",
+                  agent_id="w", output_path="out.md"),
+        stages=[Stage(instruction="Write out.md.", max_iterations=4)],
+    )
+    await StageRunner(runtime).execute_staged_task(staged, identity)
+    assert runtime._salvages_used == 1
+    assert runtime._turns_reasoning_only == 1
+    # the salvage re-prompt (injected before the 2nd call) carries the draft verbatim
+    second = "\n".join(
+        m["content"] for m in runtime._llm.calls[1]["messages"] if isinstance(m.get("content"), str)
+    )
+    assert "<<DRAFT-MARKER-77>>" in second
+    assert "Emit the required tool call now" in second
+
+
+async def test_s7_salvage_budget_zero_is_construct_nothing(
+    tmp_path: Path, fake_matrix_client
+) -> None:
+    """salvage_budget=0: a reasoning-only turn injects NOTHING (byte-identical to
+    pre-S7). The counter still records the derailment (provenance-only)."""
+    draft = "some analysis <<NOPE>>"
+    responses = [LLMResponse(content="", tool_calls=(), thinking=draft)]
+    runtime, ctx, identity = await _make_runtime(tmp_path, fake_matrix_client, responses)
+    ctx.salvage_budget = 0
+    staged = StagedTask(
+        task=Task(id="t1", spec=_file_exists_spec("out.md"), description="w",
+                  agent_id="w", output_path="out.md"),
+        stages=[Stage(instruction="Write out.md.", max_iterations=3)],
+    )
+    await StageRunner(runtime).execute_staged_task(staged, identity)
+    assert runtime._salvages_used == 0
+    assert runtime._turns_reasoning_only == 1  # provenance records the gap
+    assert len(runtime._llm.calls) == 1  # no salvage re-prompt => no extra call
+    injected = "\n".join(
+        m["content"] for c in runtime._llm.calls for m in c["messages"]
+        if isinstance(m.get("content"), str)
+    )
+    assert "Emit the required tool call now" not in injected  # nothing constructed
+
+
+async def test_s7_does_not_fire_when_content_present(
+    tmp_path: Path, fake_matrix_client
+) -> None:
+    """The trigger is EXACT: content present (even with thinking) is not a
+    reasoning-only turn — no salvage, no counter."""
+    responses = [LLMResponse(content="here is text", tool_calls=(), thinking="draft")]
+    runtime, ctx, identity = await _make_runtime(tmp_path, fake_matrix_client, responses)
+    ctx.salvage_budget = 1
+    staged = StagedTask(
+        task=Task(id="t1", spec=_always_pass_spec(), description="w", agent_id="w"),
+        stages=[Stage(instruction="Do it.", max_iterations=2)],
+    )
+    await StageRunner(runtime).execute_staged_task(staged, identity)
+    assert runtime._salvages_used == 0
+    assert runtime._turns_reasoning_only == 0  # content present => not the condition
+
+
+def test_extract_thinking_blocks_pairs_with_strip() -> None:
+    from agora.fleet.llm_adapter import _extract_thinking_blocks, _strip_thinking_blocks
+
+    text = "before<think>REASONING HERE</think>after"
+    assert _extract_thinking_blocks(text) == "REASONING HERE"
+    assert _strip_thinking_blocks(text) == "beforeafter"
+    # unterminated open: capture to end
+    assert "tail" in _extract_thinking_blocks("x<think>tail")
+    # no blocks
+    assert _extract_thinking_blocks("plain content") == ""
+
+
 async def test_stage_token_usage_aggregates_across_stages(
     tmp_path: Path, fake_matrix_client
 ) -> None:

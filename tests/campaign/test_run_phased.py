@@ -203,6 +203,33 @@ def test_resolve_agent_models_maps_roles_to_cast() -> None:
     assert by_agent["verifier"].allowed_tools == ()  # unrestricted
 
 
+def test_campaign_params_override_profile() -> None:
+    """F19: campaign params win over the cast-bound profile (override), absent
+    keys keep the profile value, and the effective-set log line is present."""
+    from agora.fleet.profiles import load_profiles
+
+    profs = load_profiles("profiles.yaml")
+    m2p = {"ollama/gemma4:e4b": profs.profiles["gemma-e4b"]}
+    assert m2p["ollama/gemma4:e4b"].max_tokens == 2048  # profile identity
+
+    # (a) override wins
+    over = rp.apply_campaign_params(m2p, {"max_tokens": 4096})
+    assert over["ollama/gemma4:e4b"].max_tokens == 4096
+    assert over["ollama/gemma4:e4b"].num_ctx == m2p["ollama/gemma4:e4b"].num_ctx  # untouched
+    assert m2p["ollama/gemma4:e4b"].max_tokens == 2048  # original not mutated
+
+    # (b) absent campaign params => profile values unchanged
+    same = rp.apply_campaign_params(m2p, None)
+    assert same["ollama/gemma4:e4b"].max_tokens == 2048
+    same2 = rp.apply_campaign_params(m2p, {})
+    assert same2["ollama/gemma4:e4b"].max_tokens == 2048
+
+    # (c) effective-set log line present, marks the override
+    lines = rp.format_effective_params(over, {"max_tokens": 4096})
+    assert any("effective params [ollama/gemma4:e4b]" in ln for ln in lines)
+    assert any("max_tokens=4096*" in ln for ln in lines)  # * = overridden
+
+
 def test_allowed_tools_filters_the_manifest() -> None:
     """The seat allowlist filters the LLM-facing manifest down to exactly its
     tools; the edit/AST family is gone, the four allowed tools remain."""

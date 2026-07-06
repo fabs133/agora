@@ -285,6 +285,69 @@ def resolve_agent_models(agents: list[Any], cast: Any, profiles: Any) -> tuple[l
     return resolved, model_to_profile
 
 
+#: The four inference knobs a campaign may override on a cast-bound profile.
+_PARAM_KEYS = ("num_ctx", "max_tokens", "temperature", "seed")
+
+
+def apply_campaign_params(
+    model_to_profile: dict[str, Any], params: dict[str, Any] | None
+) -> dict[str, Any]:
+    """F19: layer campaign ``params`` as OVERRIDES over the cast-bound profile
+    params. Resolution order is PROFILE (model identity) then CAMPAIGN (experiment
+    conditions) — the axis-1 orthogonality. Only :data:`_PARAM_KEYS` are
+    overridable; absent keys leave the profile value untouched. Returns a new
+    ``{model_id: overridden_profile}`` (profiles are pydantic; model_copy is a
+    non-mutating update)."""
+    overrides = {k: params[k] for k in _PARAM_KEYS if params and k in params}
+    if not overrides:
+        return dict(model_to_profile)
+    return {m: p.model_copy(update=overrides) for m, p in model_to_profile.items()}
+
+
+def format_effective_params(
+    model_to_profile: dict[str, Any], params: dict[str, Any] | None
+) -> list[str]:
+    """One human-readable line per model naming the EFFECTIVE inference set and
+    which knobs the campaign overrode (``*``). Logged at each phase invocation so
+    a run's provenance shows exactly what the model ran with (F19 — the config
+    knob that silently did nothing is now visible)."""
+    overridden = {k for k in _PARAM_KEYS if params and k in params}
+    lines: list[str] = []
+    for model, prof in sorted(model_to_profile.items()):
+        vals = " ".join(
+            f"{k}={getattr(prof, k, None)}{'*' if k in overridden else ''}" for k in _PARAM_KEYS
+        )
+        lines.append(f"effective params [{model}]: {vals}  (*=campaign override over profile)")
+    return lines
+
+
+def flow_gate_commands(flow_path: str | Path) -> list[str]:
+    """The distinct BEHAVIOURAL gate commands the flow re-runs, for the handoff
+    Verification record (run 2.4). Read from the flow's run_check postconditions:
+    ``python -m pytest -q`` and the ``python -m echobot`` acceptance. The
+    collect-only pytest variant and the verifier json-parse checks are excluded."""
+    import yaml
+
+    data = yaml.safe_load(Path(flow_path).read_text(encoding="utf-8")) or {}
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in data.get("task_graph", []) or []:
+        for pc in t.get("postconditions", []) or []:
+            if pc.get("name") != "run_check":
+                continue
+            cmd = (pc.get("args") or {}).get("cmd")
+            if not isinstance(cmd, list):
+                continue
+            line = " ".join(cmd)
+            keep = (line.startswith("python -m pytest") and "collect-only" not in line) or (
+                line == "python -m echobot"
+            )
+            if keep and line not in seen:
+                seen.add(line)
+                out.append(line)
+    return out
+
+
 def strip_cross_phase_deps(phase_task_ids: set[str], tasks: list[Any]) -> list[Any]:
     """Return ``tasks`` with every depends_on / order_after edge pointing OUTSIDE
     the phase dropped — prior phases already ran and left their artifacts on
@@ -438,6 +501,8 @@ def build_task_record(task: Any, result: Any, role: str, task_index: int, run_id
         reviews_used=int(getattr(result, "reviews_used", 0) or 0),
         post_review_action=getattr(result, "post_review_action", None),
         nudges_used=int(getattr(result, "nudges_used", 0) or 0),
+        salvages_used=int(getattr(result, "salvages_used", 0) or 0),
+        turns_reasoning_only=int(getattr(result, "turns_reasoning_only", 0) or 0),
         phase=(getattr(task, "phase", "") or None),
         blocking=bool(getattr(task, "blocking", True)),
         run_check_records=list(getattr(result, "run_check_records", []) or []),
@@ -622,6 +687,10 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
     flow = load_flow(campaign["flow"])
     agents, tasks = instantiate_flow(flow, "echobot", id_strategy="preserve")
     agents, model_to_profile = resolve_agent_models(agents, cast, profiles)
+    # F19: campaign params override the cast-bound profile; log the effective set.
+    model_to_profile = apply_campaign_params(model_to_profile, campaign.get("params"))
+    for _line in format_effective_params(model_to_profile, campaign.get("params")):
+        print(f"[*] {_line}")
 
     phase_tasks = [t for t in tasks if t.phase == phase]
     if rerun_task:
@@ -655,6 +724,7 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         tool_errors=harness.get("tool_errors", "corrective"),
         nudge_budget=int(harness.get("nudge_budget", 1)),
         review_budget=int(harness.get("review_budget", 0)),
+        salvage_budget=int(harness.get("salvage_budget", 0)),
         work_dir=Path(campaign["output_dir"]) / "echobot",
         review_timeout_seconds=float(campaign.get("run", {}).get("review_timeout_seconds", 5)),
         enable_observer=False,
@@ -678,16 +748,33 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         detach_run_log(log_state)
 
     tasks_by_id = {t.id: t for t in phase_tasks}
+    project_dir = Path(campaign["output_dir"]) / "echobot" / "echobot"
+    gated_phase = oracle_phase if (rerun_task and oracle_phase) else phase
+    # Handoff assembly (run 2.4): before gating P9, assemble PROJECT_STATE.md =
+    # mechanical FACT sections (identity, capability inventory, verification
+    # record, file map) + T9.2's PROSE (PROJECT_STATE.prose.md), then gate over the
+    # ASSEMBLED file. FACT is true-by-construction; the gate also smoke-tests the
+    # assembler (an assembly defect reds loudly — world (c)).
+    if gated_phase == "P9":
+        from agora.plan.handoff import write_project_state
+        write_project_state(
+            workspace=project_dir,
+            gate_commands=flow_gate_commands(campaign["flow"]),
+            prose_path=project_dir / "PROJECT_STATE.prose.md",
+            out_path=project_dir / "PROJECT_STATE.md",
+        )
+        gate, gate_results_by_id = reevaluate_phase_gate(project_dir, "P9", tasks)
+        mechanical_reeval = True
     # Cross-phase repair: the reran task lives in phase ``phase`` (its owner),
     # but --oracle names a DIFFERENT phase whose gate must be re-checked. Fixing
     # a src task (Y) to satisfy the pytest gate (X) → re-evaluate X's gate
     # mechanically over the now-modified workspace. Same-phase repair keeps the
     # normal evaluate-over-the-reran-task path.
-    mechanical_reeval = bool(rerun_task and oracle_phase and oracle_phase != phase)
-    if mechanical_reeval:
-        project_dir = Path(campaign["output_dir"]) / "echobot" / "echobot"
+    elif bool(rerun_task and oracle_phase and oracle_phase != phase):
+        mechanical_reeval = True
         gate, gate_results_by_id = reevaluate_phase_gate(project_dir, oracle_phase, tasks)
     else:
+        mechanical_reeval = False
         outcomes = outcomes_from_results(tasks_by_id, result.task_results)
         gate = evaluate_phase_gate(phase, outcomes)
         gate_results_by_id = {r.task_id: r for r in result.task_results}

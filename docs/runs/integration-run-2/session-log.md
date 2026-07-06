@@ -488,3 +488,25 @@ NO decomposition applied (chat-side sign-off required per the addendum). No code
 this step — the diagnostic is the deliverable; the fix is a design question (options:
 force/greedy tool emission, recover a drafted artifact from the thinking trace, or the
 scheduled mechanical FACT-section extractor). Ledger unchanged: P3-P7 green, P9 red.
+
+---
+
+# RUN 2.4 — F18'' fix bundle: F19 param wiring + S7 reasoning-salvage + mechanical FACT extractor + prose-split T9.2
+
+## Pre-flight (2026-07-06) @ run-2.4 prep (suite green 1463, ruff clean)
+```
+ollama /api/version: {"version":"0.31.1"}; conduit HTTP 200 (docker); gemma4:e4b + qwen2.5:7b resident
+conditions delta (bundled per Part-11 addendum — cause established out-of-band by the 2.3 diagnostic):
+  (F19) run_phased now resolves inference params as PROFILE <- CAMPAIGN override; effective set logged
+        per model at each phase start. gemma-e4b profile reverted to 2048 (identity); campaign carries 4096.
+  (S7)  salvage_budget=1 campaign-wide. On a reasoning-only turn (0 tool calls, empty content, non-empty
+        thinking) the adapter surfaces the thinking and the runtime re-prompts ONCE with the draft verbatim
+        + "Emit the required tool call now." Provenance: salvages_used, turns_reasoning_only.
+  (extractor) agora.plan.handoff: mechanical FACT sections (identity, capability inventory from AST,
+        verification record from flow gate commands, file map) + deterministic assembly with the prose file.
+  (T9.2)  PROSE-only now: writes PROJECT_STATE.prose.md (4 prose sections, README-scale); the runner
+        assembles PROJECT_STATE.md = FACT + prose before the P9 gate; the 8-header + 2-cmd gate is UNCHANGED,
+        evaluated against the assembled file (also smoke-tests the assembler).
+ledger: P3-P7 green, P9 red (run-2.3). action: re-establish P9 -> `--rerun-task T9.2 --oracle P9`
+  (conditions-defect: F18'' is a verified emission/framework defect; no budget), then confirm the run closes.
+```
