@@ -128,3 +128,119 @@ echobot.discord_adapter ok; core UNTOUCHED. Regression suite intact throughout.
 (Executor error, recorded: one stray --rerun-task ran against the run-2 campaign; the closed run-2
 workspace was reset --hard to its echobot-v1 state fa4d6e8 (8/8), a stray P6 ledger line left as
 provenance. Run 3's baseline was copied before this — run 3 unaffected.)
+
+## P7 — acceptance — GREEN, first try (2026-07-06)
+```
+=== phase P7 gate: GREEN ===  [PASS] T7.1
+  CLI regression: !ping->pong ; !echo hello world->hello world ; !roll 2d6->rolled 2d6: 6+6=12
+  FakeGateway round-trip: run_adapter(FakeGateway['!ping'], Random(0)) -> assert 'pong' in sent -> ok
+```
+The extended bot works end-to-end: CLI unchanged (regression) + the new Discord adapter maps a
+scripted event through the frozen core to a captured send. No repair.
+
+## P9 — handoff v2 — GREEN; RUN 3 COMPLETE (2026-07-06)
+T9.2c navigation: read_file PROJECT_STATE.md FIRST -> write_file prose/extension_points.md ->
+mark_complete (brief-as-index navigation, third affirmative). The runner re-extracted FACT (file
+map + capability inventory now include echobot/discord_adapter.py + the new tests) and re-assembled
+PROJECT_STATE.md v2; all 8 headers + 2 gate commands present.
+```
+=== integration-run-3 — phase status ===
+  P0 green | P4 green | P5 green | P6 green | P7 green | P9 green   ->  next: done
+```
+### Convention adherence (watchlist) — HELD
+New command strings follow the brief's honestly-recorded convention: sentence-case usage/error
+(`"Usage: !choose <arg1> ..."`); flip returns the exact F15 values "heads"/"tails"; new tests named
+test_<behaviour> in tests/test_core.py. The brief's conventions section (corrected in run 2.5) was
+followed by the returning implementer.
+
+**RUN 3 COMPLETE (world (a)) — the brownfield probe SUCCEEDED. P0 red-team proved the protective
+gate; the implementer RETURNED to a completed project, NAVIGATED via the brief before every edit
+(P4/P6/P9 all read PROJECT_STATE.md first), extended it (2 commands + a transport-injected Discord
+adapter) WITHOUT breaking the frozen core or the regression suite (8 old tests green throughout),
+and handed off again (PROJECT_STATE.md v2). Two conditions defects found + fixed under the standing
+rule (F22 tester-seat navigation gap; P6 send-channel under-specification); one runner backlog item
+(F23 same-phase-repair false green). No model-capability floor. PROJECT_STATE.md v2 below, verbatim,
+for the chat-side fact-check.**
+
+### PROJECT_STATE.md v2 (VERBATIM — for the human fact-check)
+```markdown
+## Identity
+
+**echobot** — Python package. Runnable module (`python -m echobot`).
+
+## Architecture & invariants
+
+The core message handling function must remain a pure function, containing no IO or side effects.
+All input and output operations (IO) must be confined exclusively to the main execution adapter (`__main__`).
+Random number generation must use an injected `random.Random` instance (`rng`) to ensure deterministic behavior under seeding.
+The core signature `handle_message(text: str, rng: random.Random) -> str | None` is frozen and must not be altered.
+
+## Capability inventory
+
+`echobot/core.py`:
+- `def handle_message(text: str, rng: random.Random) -> str | None`
+`echobot/discord_adapter.py`:
+- `class Gateway`
+- `def receive(self) -> Generator['Event', None, None]`
+- `def send(self, channel: Optional[any], text: str) -> None`
+- `class Event`
+- `def __init__(self, content: str)`
+- `def from_event(cls, event: 'Event')`
+- `def run_adapter(gateway: Gateway, rng: random.Random) -> None`
+
+## Verification record
+
+Gate checks (re-run each verbatim in any future phase-0 re-validation):
+
+```run_check
+# python -m pytest -q   (exit 0)
+{"cmd": ["python", "-m", "pytest", "-q"], "expect_exit": 0, "timeout_s": 60}
+```
+
+```run_check
+# python -m echobot   (stdin="!ping\n"; stdout contains "pong")
+{"cmd": ["python", "-m", "echobot"], "expect_stdout_contains": "pong", "stdin": "!ping\n", "timeout_s": 30}
+```
+
+```run_check
+# python -m echobot   (stdin="!echo hello world\n"; stdout contains "hello world")
+{"cmd": ["python", "-m", "echobot"], "expect_stdout_contains": "hello world", "stdin": "!echo hello world\n", "timeout_s": 30}
+```
+
+```run_check
+# python -m echobot   (stdin="!roll 2d6\n"; stdout contains "rolled 2d6:")
+{"cmd": ["python", "-m", "echobot"], "expect_stdout_contains": "rolled 2d6:", "stdin": "!roll 2d6\n", "timeout_s": 30}
+```
+
+## File map
+
+- `.gitignore`
+- `echobot/__init__.py`
+- `echobot/__main__.py`
+- `echobot/core.py` — handle_message
+- `echobot/discord_adapter.py` — Gateway, Event, run_adapter
+- `prose/architecture.md`
+- `prose/conventions.md`
+- `prose/extension_points.md`
+- `prose/how_to_run.md`
+- `README.md`
+- `requirements.txt`
+- `tests/test_core.py` — get_seeded_rng, test_ping, test_echo, test_echo_preserves_spacing, test_roll_deterministic, test_roll_malformed, test_help_lists_all_commands, test_unknown_command, test_non_command_returns_none, test_flip_deterministic, test_choose, test_choose_no_args, test_help_lists_new_commands
+- `tests/test_discord_adapter.py` — FakeGateway, FakeEvent, TestDiscordAdapter
+
+## Conventions
+
+Commands are prefixed with `!` and dispatched inside `handle_message`. Tests must be named `test_<behaviour>` in `tests/test_core.py`. Usage and error messages should use SENTENCE-CASE strings (e.g., `"Usage: !roll NdM ..."`). The package import name is `echobot`.
+
+## Extension points
+
+New commands attach in handle_message's dispatch and require a corresponding named test in tests/test_core.py. New transport mechanisms are implemented as dedicated adapter modules, such as echobot/discord_adapter.py. These adapters inject functionality via run_adapter(gateway, rng) without modifying the core logic. The signature of the core function, handle_message(text, rng), remains frozen.
+
+## How to run / test
+
+To run the bot:
+python -m echobot # Reads stdin and writes responses to stdout.
+
+To run tests:
+python -m pytest -q # Runs the full test suite quietly.
+```
