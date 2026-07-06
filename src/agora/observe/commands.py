@@ -43,6 +43,11 @@ VALID_VERBS = frozenset(
 
 @dataclass(frozen=True)
 class ParsedCommand:
+    """A parsed ``/agora <verb> <args>`` directive. ``args`` is the whitespace
+    split (kept for free-text verbs like ``note``); ``argv`` is the shlex
+    tokenization (for verbs with quoted arguments). ``raw``/``sender`` preserve
+    provenance for the audit log."""
+
     verb: str
     args: tuple[str, ...]
     raw: str

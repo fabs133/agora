@@ -22,6 +22,10 @@ from agora.matrix.events import (
 
 @dataclass
 class TaskCard:
+    """One task's current state as folded from the event stream. ``fingerprint``
+    is the spec fingerprint (identity across status changes); ``last_timestamp``
+    is the latest event that set this status, so a later event supersedes."""
+
     id: str
     description: str
     status: TaskStatus
@@ -32,6 +36,10 @@ class TaskCard:
 
 @dataclass
 class KanbanBoard:
+    """The derived board: :class:`TaskCard`s bucketed by :class:`TaskStatus`
+    column. A pure snapshot of the stream at one point — rebuilt from scratch
+    each fold, never mutated in place. :meth:`to_dict` serializes it for export."""
+
     columns: dict[TaskStatus, list[TaskCard]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, list[dict[str, Any]]]:
