@@ -44,6 +44,18 @@ Cross-cutting analysis: [docs/runs/findings.md](docs/runs/findings.md).
 Round-by-round evolution and design rationale:
 [docs/lessons-learned.md](docs/lessons-learned.md).
 
+**Integration program (echobot lifecycle).** A phase-gated program then drove a
+single 9.6 GB local model (gemma) through a full software lifecycle on the
+Manifold pattern: greenfield build → machine-consumable handoff → phase-0
+re-validation (red-teamed) → brownfield extension via brief-as-index navigation →
+re-handoff. The two shipped baselines are tagged **`echobot-v1`** (greenfield,
+PROJECT_STATE.md v1.1) and **`echobot-v2`** (brownfield `!flip`/`!choose` + a
+transport-injected Discord adapter, PROJECT_STATE.md v2.1). Every claim carries a
+pointer into the committed record: the pre-registrations and findings F1–F25 live
+in [docs/runs/integration-run-1/findings.md](docs/runs/integration-run-1/findings.md)
+(Parts 1–16), and the narrative index is
+[docs/arc/arc-outline.md](docs/arc/arc-outline.md).
+
 ## How it works
 
 Five load-bearing ideas, each driven by an observed failure mode:

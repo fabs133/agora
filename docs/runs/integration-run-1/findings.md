@@ -4,6 +4,11 @@
 (session log b117471, provenance runs_out/integration-run-1/). Run 1.1
 pre-registration recorded BEFORE its execution, per program practice.*
 
+> **Scope note.** Parts 1–16 of this file cover the whole integration
+> program — runs 1.x (repair doctrine), 2.x (greenfield echobot → v1.1,
+> tag `echobot-v1`), and 3 (brownfield → v2.1, tag `echobot-v2`). Findings
+> are numbered F1–F25. Canonical index / narrative: `docs/arc/arc-outline.md`.
+
 ## Part 1 — run 1 findings
 
 **Outcome:** P3 green, P4 red→green (1 repair), P5 red→red, protocol

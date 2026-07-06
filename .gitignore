@@ -20,6 +20,10 @@ conduit/data/
 # the user's responsibility to stage or skip.
 workspace/.knowledge/
 workspace/.logs/*.tmp
+# Active scratch working-dirs with their OWN nested .git (separate repos, not
+# run archives) — skipped per the policy above so they stop showing as strays.
+workspace/discord-bot/
+workspace/tool-call-fidelity/
 
 # Structured run-logging output (run.jsonl / tasks.jsonl per run). These are
 # empirical run artefacts the user stages deliberately, not tracked source.
