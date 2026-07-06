@@ -979,3 +979,65 @@ falls back to binding: human, recorded, run CONTINUES to completion) ->
 run 2 completes FACT-complete with mixed model/human prose; F18'''
 stands as scoped. The fact-check happens in both worlds. Waivers
 forbidden; budgets standard.
+
+---
+
+## Part 13 — run 2.5 findings — RUN 2 COMPLETE (2026-07-06)
+
+**Run 2.5:** world (a). The four concrete prose micro-asks (T9.2a-d) each
+landed FIRST TRY — no repair, no human fallback — the assembler produced
+the full PROJECT_STATE.md, and **P9 went GREEN. Run 2 is the first full
+P3->P9 completion in program history.** ``--status: next: done``.
+
+**F18''' fix VALIDATED, and the finding sharpened by the provenance.**
+Per-micro-task: salvages_used=0 and **turns_reasoning_only=0 for ALL
+FOUR.** The reasoning-only derailment that blocked the eight-section
+reflective task across runs 2.2-2.4 (turns_reasoning_only up to 3, S7
+firing, done_reason=stop-before-emit) simply DID NOT OCCUR under concrete,
+project-answerable asks. gemma emitted write_file directly every time; S7
+never needed to fire. This is the decisive, clean confirmation of the
+Part-12 scoping: **the tool-emission floor is open-ended REFLECTIVE
+synthesis, not doc-writing.** Give the model a concrete question it can
+answer from the project (as T9.1's README always was) and it stays in the
+action channel; ask it to reflectively synthesize an eight-section
+document and it plans-then-terminates. The fix was not a harness mechanism
+(S7 kept, default 0, its value on continuation-intended turns still
+unproven) but TASK DESIGN — the same lesson as F14's incremental build,
+now applied to documentation. (Two micro-tasks took ~20 iterations of
+corrective churn but never went reasoning-only — concreteness holds the
+model in emission even through retries.)
+
+**The deferred run-1 measurement — ANSWERED, affirmatively.** "Can the
+implementer describe its own project accurately?" Yes: the completed
+PROJECT_STATE.md carries four correct model-authored prose sections — the
+architecture invariants (pure core, IO in the adapter, injected rng, frozen
+signature), the conventions, the extension points, and the run/test
+commands are all faithful to the code. The FACT half (identity, capability
+inventory via AST, verification record, file map) is true-by-construction.
+The artifact is fact-checkable and correct; the human fact-check is now a
+review of a real, complete handoff rather than a measurement of whether one
+can be produced at all.
+
+**Doctrine yield — the handoff pattern.** A machine-consumable handoff
+document for a small-context model should be built as: (i) FACT sections
+generated mechanically from the tree + gates (never model-emitted —
+hallucination-proof and reliability-proof), assembled deterministically;
+(ii) PROSE sections decomposed into per-section CONCRETE asks, each
+answerable from the project, each its own tiny gated task, with a
+human-fallback that keeps the document structurally complete. This is the
+required quality bar for the brownfield probe's phase-0 re-validation and
+generalises beyond echobot.
+
+**RUN 2 CLOSED.** Every finding F1-F19 + S7 + the F18 family is closed or
+verified-live; there is no open framework blocker. Net arc of run 2
+(greenfield): P4 whole-file-rewrite regression (F12xF14, repaired), P5
+spec-underspecification (F15, spec-doctrine fix), P6/P7 adapter
+import-contract + weak-gate + error-swallow (F16/F17/F17b, fixed), P9
+tool-emission floor (F18 -> F18' falsified -> F18'' -> F18''' scoped ->
+fixed by concrete micro-asks). The instrument found a real, previously
+unreachable class at every phase and closed it; the bot exists, passes its
+own tests end-to-end, runs headlessly, and describes itself. **Next: the
+pre-registered brownfield probe** (extension spec — new commands + a real
+Discord adapter against a fake gateway; phase-0 opens by re-validating this
+PROJECT_STATE.md's gates, with a deliberate stale-file red-team). That is a
+new program, off this completed baseline.

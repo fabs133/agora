@@ -598,3 +598,97 @@ ledger: P3-P7 green, P9 red (run-2.4). action: re-establish P9 (run T9.2a-d), th
   adapter module (never the core); the core signature `handle_message(text, rng)` is frozen."
 - **T9.2d -> prose/how_to_run.md**: "the verbatim commands to run and test ... `python -m echobot` runs
   the bot (reads stdin, writes responses); `python -m pytest -q` runs the test suite."
+
+## P9 re-establishment (four concrete micro-asks) — GREEN, RUN 2 COMPLETE (world (a)) (2026-07-06)
+Ran T9.2a-d sequentially (--rerun-task T9.2x --oracle P9). Each concrete micro-ask landed
+FIRST TRY — no repair, no human fallback. After T9.2d the assembler produced the full
+PROJECT_STATE.md and the P9 gate went GREEN:
+```
+=== phase P9 gate: GREEN ===
+  [PASS] T9.1 (README) | [PASS] T9.2a T9.2b T9.2c T9.2d (all four prose micro-tasks)
+  [PASS] T9.2d: all 8 assembled-file headers + `pytest -q` + `python -m echobot` ok
+  [PASS] V9.1 (nonblock)
+--status: next: done (all phases green or waived)
+```
+### Per-micro-task provenance (item 3) — F18''' fix VALIDATED
+```
+T9.2a: passed, write_file+mark_complete, 3 iters,  salvages=0, turns_reasoning_only=0
+T9.2b: passed, write_file+mark_complete, 20 iters, salvages=0, turns_reasoning_only=0
+T9.2c: passed, write_file+mark_complete, 4 iters,  salvages=0, turns_reasoning_only=0
+T9.2d: passed, write_file+mark_complete, 20 iters, salvages=0, turns_reasoning_only=0
+```
+**turns_reasoning_only=0 for ALL FOUR.** The reasoning-only derailment that blocked the
+8-section reflective task (run 2.2-2.4, turns_reasoning_only up to 3) VANISHED under concrete,
+project-answerable micro-asks. gemma emitted write_file directly every time; S7 never needed to
+fire (salvages=0). This is the decisive confirmation of the F18''' scoping (Part-12 addendum):
+the emission floor is open-ended REFLECTIVE synthesis, not doc-writing — concrete asks are as
+reliable as T9.1's README. (T9.2b/d took 20 iters of churn but never went reasoning-only — they
+kept emitting; the concreteness holds the model in the action channel.)
+### Which sections are model vs human (item 4)
+ALL FOUR prose sections MODEL-authored (gemma) — no human fallback:
+  prose/architecture.md (450 B), conventions.md (477 B), extension_points.md (465 B), how_to_run.md (150 B).
+FACT sections (Identity, Capability inventory, Verification record, File map) mechanical (extractor).
+
+### RUN 2 COMPLETE — first full P3->P9 in program history
+```
+P3 GREEN | P4 red->repair->GREEN | P5 red->[F15]->GREEN | P6 GREEN | P7 red->[F16/F17]->GREEN
+| P9 red(2.2-2.4 F18 family)->[F18''' concrete micro-asks]->GREEN  ==>  RUN 2 CLOSED, COMPLETE
+```
+
+### Final PROJECT_STATE.md (VERBATIM — for the chat-side human fact-check; all prose model-authored)
+```markdown
+## Identity
+
+**echobot** — Python package. Runnable module (`python -m echobot`).
+
+## Architecture & invariants
+
+The core message handling function must remain a pure function, containing no IO or side effects.
+All input and output operations (IO) must be confined exclusively to the main execution adapter (`__main__`).
+Random number generation must use an injected `random.Random` instance (`rng`) to ensure deterministic behavior under seeding.
+The core signature `handle_message(text: str, rng: random.Random) -> str | None` is frozen and must not be altered.
+
+## Capability inventory
+
+`echobot/core.py`:
+- `def handle_message(text: str, rng: random.Random) -> str | None`
+
+## Verification record
+
+Gate commands (re-run verbatim in any future phase-0 re-validation):
+
+- `python -m pytest -q`
+- `python -m echobot`
+
+## File map
+
+- `.gitignore`
+- `echobot/__init__.py`
+- `echobot/__main__.py`
+- `echobot/core.py` — handle_message
+- `prose/architecture.md`
+- `prose/conventions.md`
+- `prose/extension_points.md`
+- `prose/how_to_run.md`
+- `README.md`
+- `requirements.txt`
+- `tests/test_core.py` — get_seeded_rng, test_ping, test_echo, test_echo_preserves_spacing, test_roll_deterministic, test_roll_malformed, test_help_lists_all_commands, test_unknown_command, test_non_command_returns_none
+
+## Conventions
+
+All commands must be prefixed with an exclamation mark (`!`) and their dispatch logic must reside exclusively within the `handle_message` function. Unit tests should consistently follow the naming convention `test_<behaviour>` and must be placed in `tests/test_core.py`. Usage messages, error strings, and help text must always use plain lowercase text for consistency across the project. Furthermore, the package name used for all imports throughout the codebase is `echobot`.
+
+## Extension points
+
+New functionality attaches primarily through extending the message handling dispatch within handle_message. New commands require adding entries here, alongside corresponding tests in tests/test_core.py. For new transport mechanisms, developers must create a dedicated adapter module; these modules should never modify the core library structure directly. Furthermore, the signature of the core function, handle_message(text, rng), is frozen and must not be altered.
+
+## How to run / test
+
+To run the bot:
+python -m echobot # Reads stdin and writes responses to stdout.
+
+To run tests:
+python -m pytest -q # Runs the full test suite quietly.
+```
+**RUN 2 COMPLETE. P3-P9 all green. PROJECT_STATE.md produced (FACT mechanical + 4/4 prose
+model-authored), ready for the human fact-check. No waiver. Run 2 closes at 2.5 per the exit rule.**
