@@ -168,7 +168,9 @@ task_graph:
           !echo <text>         -> <text> verbatim (everything after the 1st space)
           !roll NdM (e.g. 2d6) -> "rolled NdM: a+b+...=total"; rng injected
                                   (deterministic under a seeded random.Random);
-                                  a malformed spec -> a usage message
+                                  a malformed spec -> a usage message that
+                                  MUST contain the substring "NdM" (acceptance
+                                  predicate per F15; any phrasing otherwise)
           !help                -> one line per command
           unknown !cmd         -> "unknown command: cmd (try !help)"
 
@@ -224,14 +226,26 @@ task_graph:
     assigned_to: impl
     phase: P6
     depends_on: [T5.1]
-    description: >
-      Implement echobot/__main__.py: read lines from stdin, pass each to
-      handle_message (with a default random.Random), write non-None responses to
-      stdout, ignore None. No other IO.
+    description: |
+      Implement echobot/__main__.py. Import the core function EXPLICITLY at the
+      module top:
+          from echobot.core import handle_message
+      Then read lines from stdin, pass each to handle_message (with a default
+      random.Random()), write non-None responses to stdout, ignore None. No other
+      IO. Do not wrap the core call in defensive try/except; let errors propagate.
     output_path: echobot/__main__.py
     postconditions:
       - name: run_check
         args: {cmd: ["python", "-m", "pytest", "-q"], expect_exit: 0, timeout_s: 60}
+      # F16 behavioural smoke gate (F10-analogue): drive the ASSEMBLED bot over
+      # stdin so the adapter's own gate reds on its own defect (a missing import
+      # or a swallowed error). pytest above never executes __main__.
+      - name: run_check
+        args:
+          cmd: ["python", "-m", "echobot"]
+          stdin: "!ping\n"
+          expect_stdout_contains: "pong"
+          timeout_s: 30
       - name: mark_complete
   - id: V6.1
     assigned_to: verifier
@@ -311,26 +325,89 @@ task_graph:
       - name: file_contains
         args: {rel: README.md, substring: "pytest"}
       - name: mark_complete
-  - id: T9.2
+  # PROSE half of the handoff, split into four CONCRETE micro-asks (run 2.5,
+  # F18''' fix): each answerable from the project (like T9.1's README, which
+  # passed first try) rather than an open-ended reflective synthesis. Each writes
+  # a short body file under prose/; the runner assembles PROJECT_STATE.md =
+  # mechanical FACT + these four before the P9 gate. Per-task gate = file exists +
+  # non-trivial length (>=80 bytes). The FACT half is model-free (agora.plan.handoff).
+  - id: T9.2a
     assigned_to: impl
     phase: P9
     depends_on: [T9.1]
     description: |
-      Write PROJECT_STATE.md at the project root with this project's facts,
-      using EXACTLY these eight mandatory section headers (verbatim, in order):
-        ## Identity
-        ## Architecture & invariants
-        ## Capability inventory
-        ## Verification record
-        ## File map
-        ## Conventions
-        ## Extension points
-        ## How to run / test
-      Under "## Verification record", list the exact gate commands verbatim —
-      `python -m pytest -q` and the `python -m echobot` acceptance — because they
-      are re-run in any future phase-0 re-validation.
-    output_path: PROJECT_STATE.md
+      Write prose/architecture.md (3-8 lines) — the load-bearing architecture
+      decisions and INVARIANTS of THIS project (echobot) that a future extension
+      MUST NOT break. Answer concretely from the code, one invariant per line,
+      imperatively stated. Include at least: the core `handle_message` is a PURE
+      function (no IO in core); ALL IO lives in the `__main__` adapter; `rng` is
+      injected so behaviour is deterministic under a seeded `random.Random`; the
+      core signature `handle_message(text, rng) -> str | None` is frozen.
+      Write ONLY the body text (no `## ` header — the assembler adds it).
+    output_path: prose/architecture.md
     postconditions:
+      - name: file_exists
+        args: {rel: prose/architecture.md}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import os,sys; sys.exit(0 if os.path.getsize('prose/architecture.md')>=80 else 1)"], expect_exit: 0}
+      - name: mark_complete
+  - id: T9.2b
+    assigned_to: impl
+    phase: P9
+    depends_on: [T9.1]
+    description: |
+      Write prose/conventions.md (3-8 lines) — the conventions a contributor must
+      imitate so new code does not read as foreign in THIS project. State ONLY what
+      the code actually does (cite it; do not invent rules). Anchors in echobot:
+      commands are `!name`-prefixed and dispatched inside `handle_message`; tests
+      are named `test_<behaviour>` in `tests/test_core.py`; usage / error messages
+      are SENTENCE-CASE strings (see core.py: `"Usage: !roll NdM ..."` and
+      `"Malformed roll specification: ... Use format NdM."`); the package imports as
+      `echobot`. Write ONLY the body text (no `## ` header — the assembler adds it).
+    output_path: prose/conventions.md
+    postconditions:
+      - name: file_exists
+        args: {rel: prose/conventions.md}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import os,sys; sys.exit(0 if os.path.getsize('prose/conventions.md')>=80 else 1)"], expect_exit: 0}
+      - name: mark_complete
+  - id: T9.2c
+    assigned_to: impl
+    phase: P9
+    depends_on: [T9.1]
+    description: |
+      Write prose/extension_points.md (3-8 lines) — where new work attaches in
+      THIS project, stated concretely. Answer from the code: a new command is added
+      to `handle_message`'s dispatch PLUS one named test in `tests/test_core.py`; a
+      new transport is a NEW adapter module (never the core); the core signature
+      `handle_message(text, rng)` is frozen. Write ONLY the body text (no `## `
+      header — the assembler adds it).
+    output_path: prose/extension_points.md
+    postconditions:
+      - name: file_exists
+        args: {rel: prose/extension_points.md}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import os,sys; sys.exit(0 if os.path.getsize('prose/extension_points.md')>=80 else 1)"], expect_exit: 0}
+      - name: mark_complete
+  - id: T9.2d
+    assigned_to: impl
+    phase: P9
+    depends_on: [T9.1]
+    description: |
+      Write prose/how_to_run.md (3-8 lines) — the verbatim commands to run and test
+      THIS project, one line each with a short note. Answer from the project:
+      `python -m echobot` runs the bot (reads stdin, writes responses to stdout);
+      `python -m pytest -q` runs the test suite. Write ONLY the body text (no `## `
+      header — the assembler adds it).
+    output_path: prose/how_to_run.md
+    postconditions:
+      - name: file_exists
+        args: {rel: prose/how_to_run.md}
+      - name: run_check
+        args: {cmd: ["python", "-c", "import os,sys; sys.exit(0 if os.path.getsize('prose/how_to_run.md')>=80 else 1)"], expect_exit: 0}
+      # P9 gate UNCHANGED, evaluated on the ASSEMBLED PROJECT_STATE.md (FACT +
+      # prose, written by the runner before this gate): the eight mandatory headers
+      # + the two gate commands. Also smoke-tests the assembler (world (c) reds loud).
       - name: file_contains
         args: {rel: PROJECT_STATE.md, substring: "## Identity"}
       - name: file_contains
@@ -356,7 +433,7 @@ task_graph:
     assigned_to: verifier
     phase: P9
     blocking: false
-    order_after: [T9.1, T9.2]
+    order_after: [T9.1, T9.2a, T9.2b, T9.2c, T9.2d]
     description: >
       Verify P9 docs + PROJECT_STATE.md against the actual tree. Create your
       verdict file at verdicts/p9.json using write_file.

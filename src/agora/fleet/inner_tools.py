@@ -137,6 +137,10 @@ class ToolContext:
     tool_errors: str = "raw"
     nudge_budget: int = 0
     review_budget: int = 0
+    # S7 (run 2.4): reasoning-salvage budget. On a turn with no tool call, empty
+    # stripped content, and a non-empty thinking trace, re-prompt once with the
+    # model's own draft (0 = off, construct-nothing).
+    salvage_budget: int = 0
     # Integration run 1: sink for ``run_check`` postcondition captures. The
     # run_check predicate appends one record per command it executes (cmd,
     # exit, stdout/stderr bounded 4 KB each, truncation marked); the runtime

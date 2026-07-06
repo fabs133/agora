@@ -74,6 +74,11 @@ class HarnessConfig:
     tool_errors: str = "raw"
     nudge_budget: int = 0
     review_budget: int = 0
+    # S7 (run 2.4): reasoning-salvage nudges. On a turn with 0 tool calls, empty
+    # stripped content, and a non-empty thinking trace, re-prompt ONCE carrying
+    # the model's own draft verbatim + "emit the tool call now". 0 (default) =
+    # off = construct-nothing = byte-identical to pre-S7.
+    salvage_budget: int = 0
 
     @classmethod
     def from_env(cls, work_dir: str | Path = "workspace") -> HarnessConfig:
@@ -97,6 +102,7 @@ class HarnessConfig:
             tool_errors=tool_errors,
             nudge_budget=int(os.getenv("AGORA_HARNESS_NUDGE_BUDGET", "0")),
             review_budget=int(os.getenv("AGORA_HARNESS_REVIEW_BUDGET", "0")),
+            salvage_budget=int(os.getenv("AGORA_HARNESS_SALVAGE_BUDGET", "0")),
             work_dir=work_dir_path,
             knowledge_cache_dir=work_dir_path / ".knowledge",
         )
@@ -262,6 +268,7 @@ def build_orchestrator(
         tool_errors=cfg.tool_errors,
         nudge_budget=cfg.nudge_budget,
         review_budget=cfg.review_budget,
+        salvage_budget=cfg.salvage_budget,
         observer=observer,
     )
 

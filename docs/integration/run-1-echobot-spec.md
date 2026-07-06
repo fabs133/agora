@@ -19,7 +19,7 @@ Commands:
 - `!ping` -> `pong`
 - `!echo <text>` -> `<text>` verbatim (everything after the first space)
 - `!roll NdM` (e.g. `!roll 2d6`) -> `rolled NdM: a+b+...=total`;
-  rng injected (deterministic in tests); malformed spec -> usage message
+  rng injected (deterministic in tests); malformed spec -> usage message that MUST contain the substring "NdM" (acceptance predicate per F15; any phrasing otherwise)
 - `!help` -> one line per command
 - Unknown `!cmd` -> `unknown command: cmd (try !help)`
 

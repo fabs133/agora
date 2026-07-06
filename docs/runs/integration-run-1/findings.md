@@ -507,3 +507,537 @@ rather than repairing?) is a run-2.0 measurement, not a run-1.x fix.
 detector; add_function audit (append vs upsert, `path` requirement);
 verdicts/p5.json confirmation on a P5-touching run (V5.1 never re-ran in a
 P4-task rerun). These carry into the run-2.0 backlog.
+
+---
+
+## Part 8 — run 2.0 findings, F15 doctrine, run 2.1 pre-registration (2026-07-05)
+
+**Run 2.0:** P3 green, P4 red->green (repair landed !roll in one pass),
+P5 red->repair->red->stop on ONE test. F13 verified live across a full
+greenfield run (allowlisted seats kept write_file; unrestricted verifier
+correctly guarded — both branches observed). F14-fresh: 6/8 first pass,
+7/8 after one named-oracle repair — incremental build + per-task smoke
+gates beat 1.5's whole-file 4/8, confirming the pre-registered F12xF14
+mitigation.
+
+**F15 — spec self-testability.** The blocker was a contract ambiguity,
+not a defect: the spec said "malformed spec -> a usage message" with no
+acceptance predicate; the tester invented literals; the implementation
+answered correctly in different words. Neither is wrong against the
+human spec; the gate reds on the SPEC AUTHOR'S omission — the first
+planner-side finding of the program (the taxonomy's Phase-1 failure
+surface, missed by its own human review). Doctrine, adopted: every
+behavioural requirement carries its own acceptance predicate — exact
+output, or an explicit tolerance; implicit freedom is delegated
+ambiguity. Applied: the roll-malformed requirement now reads "usage
+message that MUST contain 'NdM'" — gemma's live output already
+conforms; only the test regenerates.
+
+**Standing protocol rule — conditions-defect re-establishment (third
+use, now named):** a trial whose conditions contained a VERIFIED defect
+(framework bug, channel starvation, spec defect) re-establishes without
+consuming repair budget; a trial that reached the model under valid
+conditions consumes budget. Precedents: run 1 scope bug, run 1.4
+affordance void, run 2.0 spec defect.
+
+**Verifier fidelity record (non-gating, axis-2 data):** instruct as
+verifier across the program: verdict "pending" (1.2) -> post_note, no
+artifact (1.2') -> file written, malformed JSON (2.0). Trend: protocol
+adherence improving, artifact fidelity not yet reliable. No fix; the
+record IS the measurement.
+
+**Run 2.1 pre-registration.** Conditions delta: the F15 predicate in the
+spec + T5.1's inline contract (one line each); nothing else changes;
+core.py untouched (already conforms). Action: conditions-defect
+re-establishment of P5 — rerun T5.1; then --next through P6/P7/P9.
+Worlds: (a) tester asserts the stated predicate -> pytest green ->
+proceed; P6/P7 are FIRST exercises (instrument findings likely; standard
+protocol, one repair each, second red stops); completion -> PROJECT_STATE
+human fact-check. (b) tester deviates from a now-stated predicate ->
+red; ONE repair (this time deviation is attributable — the contract
+names the predicate); second red stops with a genuine tester-fidelity
+finding. Waivers forbidden. Budget: fresh per gate for the never-run
+phases; P5's re-establishment consumes none per the standing rule.
+
+---
+
+## Part 9 — run 2.1 findings (2026-07-05)
+
+**Run 2.1:** furthest point in program history. P5 re-established GREEN
+(world (a) — the tester wrote `assert result is not None and "NdM" in
+result`, citing F15; the named acceptance predicate resolved the 2.0
+ambiguity with zero implementation change). **P6 GREEN first-ever** (T6.1
+wrote the __main__ adapter; suite still 8/8). **P7 RED first-ever ->
+repair -> RED -> STOP.** P9 not reached; no PROJECT_STATE.md.
+
+**F15 validated.** Naming the acceptance predicate ("usage message MUST
+contain 'NdM'") closed the 2.0 blocker at the re-establishment: the tester
+conformed to the stated predicate verbatim. Spec self-testability works —
+the ambiguity was the whole defect. Re-establishment consumed no repair
+budget (standing rule; the 2.0 red was a verified spec defect).
+
+**F16 — the adapter task repeats the missing-contract + weak-gate pattern
+at a new phase (F6/F8 x F10, recurrence).** P7's stdin acceptance is the
+first thing to actually EXECUTE __main__; it caught a bug two green gates
+could not. Two coupled causes: (i) T6.1's description says "pass each to
+handle_message" but never inlines `from echobot.core import
+handle_message`, so gemma wrote the adapter assuming the name was in scope
+(the F6/F8 missing-contract pattern, now implementer-side at the adapter);
+(ii) T6.1's ONLY gate is `pytest -q`, which imports echobot.core directly
+and never runs __main__ — so T6.1 passes its own gate while the adapter is
+broken (the F10 weak-gate pattern: a task's gate must exercise the
+contract that task owns). Fix (run-2.2 flow delta): T6.1 gains the import
+contract inline AND a behavioural smoke run_check that drives `python -m
+echobot` over stdin (`!ping` -> `pong`), so the adapter's own gate reds on
+its own defect — the direct analogue of the P4 F10 smoke gates.
+
+**F17 — defensive error-swallowing starves the repair oracle.** The first
+__main__ wrapped the call in `try: ... except NameError: pass`. The
+NameError from the missing import was swallowed, so `python -m echobot`
+exited 0 with empty stdout — and the P7 acceptance oracle could carry only
+"stdout did not contain 'pong'", NOT the NameError that explains it. The
+one repair (rerun T6.1 --oracle P7) correctly removed the swallow
+(surfacing the error, exit 1 now) but could not also infer the missing
+import from a symptom-only oracle within budget. Doctrine: an artifact
+that swallows its own errors degrades F7 oracle expressiveness — the
+oracle can only teach what the failure EXPOSES. This pairs with F16(ii):
+a behavioural smoke gate on T6.1 would have surfaced the NameError at P6
+(exit 1), before the acceptance phase, with the error un-swallowed and the
+repair budget intact.
+
+**Verifier fidelity record (continued).** V7.1 produced VALID JSON (first
+since V4.1); V5.1/V6.1 did not (malformed / empty). Instruct's verdict
+fidelity remains phase-inconsistent — the record is the measurement, no
+fix.
+
+**Nudge / truncation.** P3 1 nudge (S2); P5-re-est / P6 / P7 tasks 0. No
+truncation events (all outputs under the F11 head+tail bound). Infra held.
+
+**Disposition — run 2.2 pre-registration.** The stop is a clean instrument
+result: the first-ever adapter+acceptance exercise found a real,
+previously-unreachable class (F16/F17), exactly the phase-depth design's
+purpose. Conditions delta (flow, small): T6.1 gains (i) the inline import
+contract (`from echobot.core import handle_message`) and (ii) a
+behavioural smoke run_check (`python -m echobot` stdin `!ping\n` ->
+stdout contains `pong`) — the F16 fix. Action: conditions-defect
+re-establishment of P6 (rerun T6.1 — a verified missing-contract/weak-gate
+defect, no budget) then --next through P7/P9. Worlds: (a) adapter imports
++ smoke green -> P6 green -> P7 acceptance green -> P9 -> completion +
+PROJECT_STATE human fact-check; (b) adapter still wrong under the inline
+import + smoke oracle -> one repair -> second red stops with a genuine
+model-side adapter finding. Waivers forbidden. The deferred PROJECT_STATE
+measurement still waits on a completed run; P9 remains the last
+never-reached phase.
+
+**Part 9 addendum — chat-side ruling (2026-07-05).**
+
+**Answer to the repair question:** the model read the oracle; the oracle
+was contentless. F17 (artifact swallowed its own NameError) meant
+attempt-1's captures said only "exit 0, empty stdout". The repair's
+removal of the swallow was the most oracle-improving move available and
+CREATED the informative failure — which then never persisted:
+
+**F17b — mechanical re-evals drop their run_check captures.**
+reevaluate_phase_gate runs predicates over the workspace but appends no
+task records; the post-repair NameError exists only in the printed gate
+report. oracle_records_for_phase would therefore resolve the STALE
+pre-repair records for any subsequent P7 repair. Fix: mechanical
+re-evals append their run_check records to tasks.jsonl (mechanical-
+marked, attributed to the owning task) so latest-record-wins reflects
+post-repair reality.
+
+**Run 2.2 (greenlit, augmenting Part 9's pre-registration):** T6.1 gains
+(i) the inline import contract, (ii) the F10-analogue smoke gate
+(python -m echobot, stdin "!ping\n" -> stdout contains "pong"),
+(iii) one F17 clause: "Do not wrap the core call in defensive
+try/except; let errors propagate." Plus the F17b persistence fix.
+Re-establishment of P6 under the conditions-defect rule (F16 = channel
+starvation class), then --next P7/P9. Worlds: (a) adapter imports and
+passes its smoke -> P7 acceptance green -> P9 -> PROJECT_STATE.md ->
+the deferred human fact-check. (b) P7 reds with a now-informative,
+now-persisted oracle -> ONE repair (first repair in program history fed
+by a post-repair-quality oracle); second red stops. Waivers forbidden.
+
+---
+
+## Part 10 — run 2.2 findings (2026-07-05)
+
+**Run 2.2:** the deepest run in program history. **P6 re-established, P7
+GREEN first-ever** (F16/F17 fixes landed), **P9 RED -> repair -> RED ->
+STOP** on T9.2. World (a) for P7; a new model floor (F18) at P9.
+
+**F16/F17 VALIDATED (world (a)).** T6.1, given the explicit inline import
+contract + the no-swallow clause, wrote `from echobot.core import
+handle_message` (line 3 of __main__.py) and the assembled bot passed all
+three P7 stdin acceptance checks first try (`pong`, `hello world`,
+`rolled 2d6: 1+2=3`). The F10-analogue smoke gate on T6.1 (`python -m
+echobot` stdin `!ping` -> `pong`) means the adapter now reds on its own
+defect at P6, not two phases downstream. The re-establishment consumed no
+budget (F16/F17 were a verified missing-contract/weak-gate defect).
+
+**F17b VERIFIED LIVE.** The mechanical P7 re-eval persisted a
+mechanical-marked T7.1 TaskRecord (mechanical=True, 3 run_check records)
+to tasks.jsonl — the re-eval's captures now survive for any subsequent
+oracle_records_for_phase (latest-record-wins), closing the stale-oracle
+hole. (Here the re-eval was GREEN so no repair keyed off it, but the
+persistence is the durable fix.)
+
+**F18 — model floor on large structured-document generation (the deferred
+run-1 measurement, ANSWERED).** T9.2 (PROJECT_STATE.md: eight mandatory
+verbatim section headers + a verification record + a file map) stalled
+into pure empty turns (tool_calls=0, content_len=0) on BOTH the attempt
+and the repair — the S2 nudge did not recover, no artifact was ever
+written. T9.1 (README, ~20 lines, two substrings) passed first try, so the
+floor is the LARGE, highly-structured document specifically, not
+doc-writing. This directly answers the amendment's deferred question —
+"can the implementer describe its own project accurately?": at gemma-e4b's
+size, it produces NOTHING for the 8-section handoff brief. F18 is distinct
+from F14 (partial/incorrect output): F14 is a wrong answer, F18 is no
+answer — a generation stall on document scale/structure. The one-repair
+budget was spent reproducing the stall exactly. Fix candidates (run 2.3,
+owner's call): decompose T9.2 into per-section tasks (the F14 small-task
+mitigation applied to docs — build the handoff incrementally, as the core
+was built), reduce the mandatory-section scope, or seed a scaffolded
+template the model only fills. None is a run-2.2 change.
+
+**Verifier fidelity (continued).** V7.1 and V9.1 produced VALID JSON this
+run; V5.1 (malformed) and V6.1 (empty) did not. Still phase-inconsistent;
+the record is the measurement.
+
+**Nudge / truncation.** P9 T9.2: 1 nudge each attempt (ineffective against
+the stall); all other 2.2 tasks 0. No truncation events.
+
+**Disposition.** Run 2.2 is the program's high-water mark: seven of eight
+phases green (P3-P7 + the P9 README), the first-ever end-to-end assembled
+bot passing stdin acceptance, and the last-phase measurement answered.
+Every framework finding in the F1-F17b arc is now closed or verified live;
+the sole remaining blocker, F18, is a MODEL floor (document-scale
+generation), not a framework or spec defect — the same category the
+program was built to isolate. PROJECT_STATE.md, the deferred human
+fact-check target, does not exist because producing it is exactly the
+capability the run measured and found absent. **Run 2.3 (pre-registration
+sketch, owner's call):** decompose the P9 handoff into small per-section
+tasks and re-establish P9 (F18 = a task-granularity defect, analogous to
+F14's incremental-build mitigation); on completion the (now
+incrementally-built) PROJECT_STATE.md finally reaches the human
+fact-check. Standard protocol; the P3-P7 gates stand as a regression
+suite. Waivers forbidden.
+
+**Part 10 addendum — chat-side ruling (2026-07-05).**
+
+**F18 provisionally reclassified F18' — output-envelope starvation.**
+Forensic basis: T9.2's empty turns took 23.6s and 35.7s of generation
+(run.log timestamps) — the truncation-death signature, not a fast
+stall. max_tokens=2048 is inherited unchanged from axis-1 v1 (sized for
+3-line probe artifacts) and a single write_file call carrying the full
+8-section PROJECT_STATE.md plausibly exceeds it; a mid-JSON cut yields
+zero parseable tool calls -> empty turn, nudge-immune. README fit the
+envelope; the handoff doc did not. Confirmation pending run 2.3.
+
+**Run 2.3 (single variable):** campaign max_tokens 2048 -> 4096; only
+P9 executes (P3-P7 stand as the regression suite). Worlds: (a) T9.2
+lands -> F18' confirmed; conditions-defect rule applies retroactively;
+PROJECT_STATE.md to the human fact-check; doctrine adopted: OUTPUT
+ENVELOPE SCALES WITH ARTIFACT CLASS (per-task-kind budget, matrix-
+derivable). (b) still empty at 4096 -> ONE OLLAMA_DEBUG diagnostic
+capture of the raw generation (malformed-at-scale vs true stall), then
+run 2.4 = decomposed per-section tasks (the F14 lesson, held in
+reserve to preserve attribution). (c) partial artifact -> standard
+protocol; the oracle finally has content. Waivers forbidden.
+
+**Scheduled regardless of 2.3's colour:** the agora-handoff mechanical
+extractor graduates from deferred to justified — run 2's evidence:
+FACT sections (file map, signatures, verification record) are
+mechanically derivable and should not be model-emitted (hallucination
+risk even within envelope); models write PROSE sections at README
+scale. Build after run 2 closes; required quality bar for the
+brownfield probe's phase-0 anyway.
+
+---
+
+## Part 11 — run 2.3 findings (2026-07-05)
+
+**Run 2.3:** single variable (gemma-e4b output envelope 2048 -> 4096).
+P9 re-established -> RED (world (b)); STOP; one OLLAMA_DEBUG diagnostic.
+Outcome: **F18' FALSIFIED and F18 reclassified — the P9 blocker is neither
+a model floor nor envelope starvation, but a reasoning-vs-action emission
+gap (F18'').**
+
+**Config-provenance finding (F19).** The addendum's "campaign max_tokens
+2048 -> 4096" could not have worked as written: ``run_phased`` never reads
+``campaign.params`` — inference params resolve from the CAST-bound PROFILE
+(``profiles.yaml`` gemma-e4b, max_tokens 2048). The campaign field is a
+silent no-op. The effective change was made on the profile instead (2048
+-> 4096), campaign param synced as documentation. A config knob that
+silently does nothing is a live trap; the campaign ``params`` block should
+either be wired through or removed. (Recorded; not fixed this run.)
+
+**F18' (envelope starvation) FALSIFIED.** At 4096 the stall persisted; the
+discriminator killed the truncation hypothesis: turn 1 generated for 41.0s
+(vs 23.6s at 2048) and still returned content_len=0 — a LONGER generation
+yielding zero parseable output, the opposite of a truncation the higher
+cap would relieve.
+
+**F18'' — reasoning-vs-action emission gap at doc scale (the real
+blocker; a FRAMEWORK/reliability finding, not a model floor).** The
+OLLAMA_DEBUG capture (direct /api/chat, T9.2's exact manifest + brief,
+num_predict 4096, seed 42) is decisive: gemma returns **done_reason=stop**
+(natural termination, not "length"), a **1610-char ``thinking`` trace that
+fully drafts the correct document** (all eight headers + both gate
+commands — would have PASSED the gate), and — in the successful call — a
+**valid structured ``write_file`` tool call** carrying that content. So the
+model is CAPABLE. But it is UNRELIABLE at this scale: a second call
+(terser prompt, same seed) emitted the reasoning and NO structured call.
+Mechanism (``llm_adapter.py`` ~401-423): the adapter strips ``<think>``
+from content, reads structured ``msg["tool_calls"]``, and runs the
+text-fallback tool parser ONLY when the stripped content is non-empty.
+When gemma spends the turn reasoning and does not emit a structured call,
+the stripped content is empty -> no call -> content_len=0/tool_calls=0
+(exactly the real run), and the S2 nudge re-triggers the same derailment
+(nudge-immune). This retires F18 (the "can't describe its own project"
+reading was wrong — it CAN; it inconsistently fails to EMIT) and F18'
+(envelope). The largest, most open-ended task in the flow is where the
+model's reasoning-vs-action reliability floor shows.
+
+**Disposition — no decomposition (sign-off pending).** Per the addendum,
+world (b) forbids decomposition without chat-side sign-off, and the
+diagnostic vindicates that hold: decomposition would have "fixed" a
+mislabelled defect and buried F18''. The real fix is a DESIGN choice, none
+made this run:
+- (a) **emission reliability** — request gemma with tool-forcing / a
+  greedy structured-call setting, or a two-step "reason then emit" turn so
+  the drafted artifact in the thinking trace is actually written;
+- (b) **recover the drafted artifact** — when a turn yields only a
+  thinking trace that contains a fenced artifact for the expected output
+  path, the adapter could surface it as a write (bounded, opt-in);
+- (c) **the scheduled mechanical FACT-section extractor** — the
+  file-map/verification-record/signature sections are mechanically
+  derivable and should not be model-emitted at all; this both dodges F18''
+  for the FACT sections and raises handoff quality (required for the
+  brownfield phase-0 anyway).
+Recommendation: (a)+(c). Run 2.4 pre-registration waits on the owner's
+pick. P3-P7 stand as the regression suite; PROJECT_STATE.md still unwritten
+(now known to be an emission-reliability gap, not an inability).
+
+**Program status.** Every framework finding F1-F17b is closed or verified
+live; F19 (config provenance) and F18'' (emission reliability) are the two
+open threads, both framework-side. The model-capability question the
+program kept circling is answered in gemma's favour: it wrote a correct
+core, a working adapter, spec-faithful tests (via the tester seat), and —
+shown here — a correct PROJECT_STATE draft; the remaining gap is getting
+that draft reliably EMITTED through the tool channel at scale.
+
+**Part 11 addendum — chat-side ruling (2026-07-05).**
+
+**F18'' ratified; F18 and F18' retired.** The diagnostic establishes:
+gemma drafts the complete, gate-passing document inside its reasoning
+and inconsistently fails to emit the structured call (done_reason
+stop, not length). Reasoning-vs-action emission gap at doc scale —
+framework/reliability class, not capability. The adapter discards the
+thinking that contains the finished work.
+
+**F19 ruling — wire, don't delete.** Campaign params become explicit
+overrides over cast-bound profile params (campaign = experiment
+conditions; profile = model identity — the axis-1 orthogonality),
+effective set logged at run start. Proof-by-use in 2.4: profile
+max_tokens reverts to 2048; the campaign carries 4096; the run works
+iff the wiring does.
+
+**S7 registered — reasoning-salvage nudge.** Trigger: tool_calls=0 AND
+stripped content empty AND thinking non-empty. Action: ONE re-prompt
+carrying the model's own thinking draft verbatim + "emit the required
+tool call now". salvage_budget default 0 (construct-nothing);
+provenance: salvages_used, turns_reasoning_only. S2-family mechanism;
+doctrine: the model's discarded draft is channel content.
+
+**Run 2.4 pre-registration (bundling justified: F18''s cause is
+established out-of-band by controlled diagnostic + seed reproduction;
+the run's purpose is completion + handoff quality, not attribution).**
+Deltas: (i) agora-handoff extractor — FACT sections (identity, file
+map + AST signatures, verification record from gate commands,
+capability inventory) generated mechanically; (ii) T9.2 becomes
+PROSE-only: write PROJECT_STATE.prose.md (architecture & invariants,
+conventions, extension points, how-to-run prose) — README-scale
+single write; (iii) runner assembles PROJECT_STATE.md = FACT + PROSE
+mechanically before the P9 gate (pure, deterministic, unit-tested);
+gate checks the ASSEMBLED file, unchanged predicates; (iv) S7 armed at
+salvage_budget 1 campaign-wide; (v) F19 wiring live. Worlds:
+(a) P9 green -> RUN 2 COMPLETE -> PROJECT_STATE.md to the human
+fact-check (FACT true-by-construction; the review measures PROSE).
+(b) prose task derails AND salvage fails -> S7's first negative datum;
+stop, chat-side. (c) extractor/assembly defect -> mechanical, loud,
+fix-and-re-establish under the conditions-defect rule. One repair per
+gate otherwise; waivers forbidden.
+
+---
+
+## Part 12 — run 2.4 findings (2026-07-06)
+
+**Run 2.4:** the F18'' fix bundle landed and three of four deltas VERIFIED
+live; the run stopped at P9 in **world (b)** — S7's first negative datum.
+Every framework mechanism works; the residual is a model tool-EMISSION
+floor that re-prompting does not force.
+
+**F19 — VERIFIED live.** ``run_phased`` now resolves inference params as
+profile <- campaign override and logs the effective set per model at each
+phase start. The run's first lines: ``effective params [ollama/gemma4:e4b]:
+... max_tokens=4096* ...`` — the campaign override reached the model while
+the gemma-e4b profile identity stays 2048. The silently-inert knob (Part 11
+F19) is wired and observable. Proof-by-use satisfied.
+
+**Extractor + assembler — VERIFIED live.** The runner assembled
+PROJECT_STATE.md = mechanical FACT + prose before the P9 gate. FACT is
+correct-by-construction: Identity (echobot, runnable module), Capability
+inventory (the REAL AST signature ``def handle_message(text: str, rng:
+random.Random) -> str | None``), Verification record (the two gate
+commands), File map (real tree + per-file top-level defs). All eight
+assembled-file header predicates + both gate-command predicates PASS — the
+assembler is sound and the FACT half of the handoff is now
+true-by-construction. (World (c) — assembly defect — did not occur.)
+
+**S7 — mechanism VERIFIED, outcome NEGATIVE (first negative datum).** T9.2:
+salvages_used=1, turns_reasoning_only=3, tools_used=[]. The salvage fired
+EXACTLY on its condition (reasoning-only turn, thinking 2683 chars) and
+re-prompted with the draft verbatim + "emit the tool call now — no further
+analysis." gemma produced three reasoning-only turns and never wrote the
+prose file. **Re-prompting with the model's own draft does not recover
+emission.** The construct-nothing / trigger-precision guarantees held
+(unit-tested); the mechanism is correct, the hypothesis that a reminder
+recovers the gap is falsified.
+
+**F18''' — the emission gap is TERMINATION-BEFORE-ACTION, not forgetting.**
+The decisive diagnostic (direct /api/chat, prose task, seed 42): gemma
+returns done_reason=**stop**, 326 tokens, tool_calls=0, and a thinking
+trace ending "...I will use a single write_file call ... Plan: 1.
+Construct the markdown content string. 2. Use write_file to create
+PROJECT_STATE.prose.md." — then TERMINATES without emitting the call. Not
+truncation (stop, not length), not envelope (tiny), not inability (it
+plans the exact call). gemma-e4b, on open-ended generative tasks,
+non-deterministically ENDS THE TURN after reasoning to the intent, without
+emitting the structured tool call. This is why S7 (a reminder) cannot fix
+it — there is nothing to remind; the model has decided it is done. It also
+explains the whole F18 family: code/test tasks (tight structure, short
+reasoning) emit reliably; the open-ended handoff doc maximises reasoning
+and so maximises the termination-before-action risk. The fix is not a
+prompt — it is to FORCE the emission (structured-output / forced
+tool_choice) or to remove the model from the FACT path (already done — the
+extractor makes the FACT half model-free).
+
+**Disposition — the handoff is now mostly solved; one lever left.** The
+run's real yield: the FACT handoff is done and correct (mechanical,
+verified), and the failure is isolated to one thing — getting gemma to
+EMIT its prose through the tool channel. Options (run 2.5, owner's pick):
+- (a) **tool-forcing** — request gemma with a forced tool call (Ollama
+  ``tool_choice``-equivalent / structured ``format``) so the turn cannot
+  terminate without emitting write_file. Highest-leverage; directly targets
+  F18'''. S7 stays as provenance (turns_reasoning_only is the metric).
+- (b) **FACT-complete handoff, prose optional** — the assembled
+  PROJECT_STATE.md is already structurally complete and factually correct
+  with placeholder prose; ship it as the handoff and make prose a
+  best-effort/human section. The deferred "can the implementer describe its
+  own project" question is then answered precisely: it can produce the
+  FACTS (mechanically) but not reliably EMIT prose at this model size.
+- (c) a stronger model for the single prose task (cast a doc-capable seat).
+Recommend (a), with (b) as the ship-anyway fallback. P3-P7 stand as the
+regression suite; PROJECT_STATE.md exists (FACT correct, prose pending).
+Waivers forbidden; run did not complete.
+
+**Program status.** Framework findings F1-F19 + S7 are closed or
+verified-live; the sole open blocker is F18''' (tool-emission reliability),
+now precisely characterised as termination-before-action and addressable by
+tool-forcing rather than any prompt-level mechanism. gemma's capability is
+not in question — it wrote the core, adapter, tests, and drafts the doc;
+the gap is the structured emission of open-ended output.
+
+**Part 12 addendum — chat-side ruling (2026-07-05).**
+
+**F18''' ratified with SCOPING:** the floor is open-ended REFLECTIVE
+doc emission (plans the call, terminates before action; reminder-
+immune per S7's negative datum). It is NOT a doc-task floor: T9.1's
+README (concrete ask, same phase/seat/model) passed first try. Roster/
+casting record: gemma-e4b — concrete doc asks reliable; reflective
+synthesis derails at this size.
+
+**Tool-forcing declined for 2.5** (unmeasured daemon surface under
+track-latest; F12 pattern class). Redirected to the Stage-3 battery:
+"forced-emission reliability per model per daemon" joins the
+edit-family sweep as a benchmark axis.
+
+**S7 disposition:** kept, default 0. Mechanism verified (fires once,
+draft verbatim); outcome negative on termination-decided turns; value
+on continuation-intended reasoning-only turns unproven.
+
+**Run 2.5 pre-registration — run 2 CLOSES at 2.5 either way (no 2.6).**
+Deltas: T9.2 -> four micro-tasks T9.2a-d, one per prose section, each a
+CONCRETE ask answerable from the project (3-8 lines, own output file
+under prose/); assembler merges four files + FACT; P9 gate on the
+assembled PROJECT_STATE.md unchanged; per-micro-task gate = file exists
++ non-trivial length. Worlds: (a) all four land -> P9 green -> RUN 2
+COMPLETE -> human fact-check of the full artifact. (b) any micro-task
+derails (one repair each, second red on the same task -> that section
+falls back to binding: human, recorded, run CONTINUES to completion) ->
+run 2 completes FACT-complete with mixed model/human prose; F18'''
+stands as scoped. The fact-check happens in both worlds. Waivers
+forbidden; budgets standard.
+
+---
+
+## Part 13 — run 2.5 findings — RUN 2 COMPLETE (2026-07-06)
+
+**Run 2.5:** world (a). The four concrete prose micro-asks (T9.2a-d) each
+landed FIRST TRY — no repair, no human fallback — the assembler produced
+the full PROJECT_STATE.md, and **P9 went GREEN. Run 2 is the first full
+P3->P9 completion in program history.** ``--status: next: done``.
+
+**F18''' fix VALIDATED, and the finding sharpened by the provenance.**
+Per-micro-task: salvages_used=0 and **turns_reasoning_only=0 for ALL
+FOUR.** The reasoning-only derailment that blocked the eight-section
+reflective task across runs 2.2-2.4 (turns_reasoning_only up to 3, S7
+firing, done_reason=stop-before-emit) simply DID NOT OCCUR under concrete,
+project-answerable asks. gemma emitted write_file directly every time; S7
+never needed to fire. This is the decisive, clean confirmation of the
+Part-12 scoping: **the tool-emission floor is open-ended REFLECTIVE
+synthesis, not doc-writing.** Give the model a concrete question it can
+answer from the project (as T9.1's README always was) and it stays in the
+action channel; ask it to reflectively synthesize an eight-section
+document and it plans-then-terminates. The fix was not a harness mechanism
+(S7 kept, default 0, its value on continuation-intended turns still
+unproven) but TASK DESIGN — the same lesson as F14's incremental build,
+now applied to documentation. (Two micro-tasks took ~20 iterations of
+corrective churn but never went reasoning-only — concreteness holds the
+model in emission even through retries.)
+
+**The deferred run-1 measurement — ANSWERED, affirmatively.** "Can the
+implementer describe its own project accurately?" Yes: the completed
+PROJECT_STATE.md carries four correct model-authored prose sections — the
+architecture invariants (pure core, IO in the adapter, injected rng, frozen
+signature), the conventions, the extension points, and the run/test
+commands are all faithful to the code. The FACT half (identity, capability
+inventory via AST, verification record, file map) is true-by-construction.
+The artifact is fact-checkable and correct; the human fact-check is now a
+review of a real, complete handoff rather than a measurement of whether one
+can be produced at all.
+
+**Doctrine yield — the handoff pattern.** A machine-consumable handoff
+document for a small-context model should be built as: (i) FACT sections
+generated mechanically from the tree + gates (never model-emitted —
+hallucination-proof and reliability-proof), assembled deterministically;
+(ii) PROSE sections decomposed into per-section CONCRETE asks, each
+answerable from the project, each its own tiny gated task, with a
+human-fallback that keeps the document structurally complete. This is the
+required quality bar for the brownfield probe's phase-0 re-validation and
+generalises beyond echobot.
+
+**RUN 2 CLOSED.** Every finding F1-F19 + S7 + the F18 family is closed or
+verified-live; there is no open framework blocker. Net arc of run 2
+(greenfield): P4 whole-file-rewrite regression (F12xF14, repaired), P5
+spec-underspecification (F15, spec-doctrine fix), P6/P7 adapter
+import-contract + weak-gate + error-swallow (F16/F17/F17b, fixed), P9
+tool-emission floor (F18 -> F18' falsified -> F18'' -> F18''' scoped ->
+fixed by concrete micro-asks). The instrument found a real, previously
+unreachable class at every phase and closed it; the bot exists, passes its
+own tests end-to-end, runs headlessly, and describes itself. **Next: the
+pre-registered brownfield probe** (extension spec — new commands + a real
+Discord adapter against a fake gateway; phase-0 opens by re-validating this
+PROJECT_STATE.md's gates, with a deliberate stale-file red-team). That is a
+new program, off this completed baseline.

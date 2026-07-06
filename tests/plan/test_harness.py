@@ -175,6 +175,15 @@ def test_from_env_defaults_are_v2_behavior(monkeypatch) -> None:
     assert cfg.tool_errors == "raw" and cfg.nudge_budget == 0
 
 
+def test_salvage_budget_default_off_and_env(monkeypatch) -> None:
+    """S7: salvage_budget defaults to 0 (construct-nothing) and reads its env."""
+    monkeypatch.delenv("AGORA_HARNESS_SALVAGE_BUDGET", raising=False)
+    assert HarnessConfig().salvage_budget == 0
+    assert HarnessConfig.from_env().salvage_budget == 0
+    monkeypatch.setenv("AGORA_HARNESS_SALVAGE_BUDGET", "1")
+    assert HarnessConfig.from_env().salvage_budget == 1
+
+
 def test_from_env_rejects_invalid_tool_errors(monkeypatch) -> None:
     monkeypatch.setenv("AGORA_HARNESS_TOOL_ERRORS", "bogus")
     with pytest.raises(ValueError, match="AGORA_HARNESS_TOOL_ERRORS"):

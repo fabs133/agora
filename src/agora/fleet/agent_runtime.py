@@ -91,6 +91,12 @@ class TaskResult:
     # Integration run 1 (v3.2 erratum): completion nudges (S2) that fired this
     # task — the rehabilitated stall-recovery mechanism. Additive; default 0.
     nudges_used: int = 0
+    # S7 (run 2.4): reasoning-salvage provenance. ``turns_reasoning_only`` counts
+    # turns that produced ONLY a thinking trace (0 tool calls, empty content,
+    # non-empty thinking) — the F18'' emission-gap signature. ``salvages_used``
+    # counts how many salvage re-prompts actually fired (bounded by salvage_budget).
+    salvages_used: int = 0
+    turns_reasoning_only: int = 0
     # Integration run 1: one capture dict per run_check command executed during
     # postcondition evaluation (cmd, exit_code, timed_out, stdout/stderr bounded
     # 4 KB with truncation flags, passed). Additive; default empty.
@@ -234,6 +240,10 @@ class AgentRuntime:
         # Integration run 1: per-attempt completion-nudge counter (S2), surfaced
         # to TaskResult.nudges_used. Accumulates across a staged task's stages.
         self._nudges_used = 0
+        # S7 (run 2.4): per-attempt reasoning-salvage counters, surfaced to
+        # TaskResult. Accumulate across a staged task's stages like _nudges_used.
+        self._salvages_used = 0
+        self._turns_reasoning_only = 0
         # Authoritative 0-based iteration index for the active tool loop turn,
         # set in ``_run_loop``. ``_fallback_this_turn`` is flipped by the
         # adapter hook when the current turn's calls came from text fallback;
@@ -366,6 +376,8 @@ class AgentRuntime:
                     artifact_capture=artifact_capture,
                     run_check_records=list(self._ctx.run_check_records),
                     nudges_used=self._nudges_used,
+                    salvages_used=self._salvages_used,
+                    turns_reasoning_only=self._turns_reasoning_only,
                 )
             )
         )
@@ -394,6 +406,7 @@ class AgentRuntime:
         final_text = ""
         last_stop = ""
         nudges_used = 0
+        salvages_used = 0  # S7: reasoning-salvage re-prompts fired this loop
         # S6 completion-review loop state (v8). ``reviews_used`` caps fires at
         # ``ctx.review_budget``; ``awaiting_post_review`` is set the turn a review
         # fires so the NEXT turn's action is classified (confirm/revise/other).
@@ -451,6 +464,33 @@ class AgentRuntime:
                 if awaiting_post_review:
                     self.review_stats.post_review_action = "other"
                     awaiting_post_review = False
+                # S7 reasoning-salvage (run 2.4). The F18'' emission gap: the model
+                # spent the turn reasoning (non-empty thinking) but emitted no tool
+                # call and no content — its drafted work is trapped in the discarded
+                # trace. On the EXACT condition and with budget remaining, re-prompt
+                # ONCE carrying the draft verbatim. salvage_budget=0 ⇒ this branch
+                # constructs nothing (byte-identical to pre-S7); the counter still
+                # records the derailment for provenance.
+                thinking = (getattr(resp, "thinking", "") or "").strip()
+                if not (resp.content or "").strip() and thinking:
+                    self._turns_reasoning_only += 1
+                    if salvages_used < self._ctx.salvage_budget:
+                        salvages_used += 1
+                        self._salvages_used += 1
+                        logger.info(
+                            "reasoning-salvage %d/%d: task=%s (thinking %d chars, no tool call)",
+                            salvages_used, self._ctx.salvage_budget, task_id, len(thinking),
+                        )
+                        messages.append(_assistant_turn(self._llm, resp))
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "Your prior analysis (verbatim):\n\n"
+                                f"{thinking}\n\n"
+                                "Emit the required tool call now — no further analysis."
+                            ),
+                        })
+                        continue
                 # v3 completion nudge (S2). A dead loop (0 tool calls) with the
                 # expected output still unwritten and budget remaining gets ONE
                 # corrective user turn and continues; otherwise terminate exactly
