@@ -1,0 +1,60 @@
+@startuml system_dataflow
+' Diagram 1/5 — system dataflow: configuration -> execution -> provenance.
+' Source of truth: scripts/run_phased.py, src/agora/fleet/*, src/agora/plan/*.
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+package "Configuration (experiment conditions vs identity)" {
+  [campaign.yaml\nconditions + params] as CAMP
+  [flow.yaml\nphases / tasks / gates] as FLOW
+  [roles.yaml + casts/*.yaml\ncontracts + bindings] as CAST
+  [profiles.yaml\nmodel identity] as PROF
+}
+note bottom of CAMP
+  params precedence: profile <- campaign
+  override, effective set logged (**F19**)
+end note
+note bottom of FLOW
+  load-time lints: role-scope
+  feasibility (**F2**), spec-channel
+  reference check (**F6-L**)
+end note
+note bottom of CAST
+  validate_cast: profile resolves, VRAM
+  from manifest store, evidence-or-waiver,
+  human always valid (**F12**: tool surface
+  is part of the evidence key)
+end note
+
+[run_phased.py\nresume-from-provenance\n--phase0 / --rerun-task] as RUNNER
+[Orchestrator\ncast-resolved seats] as ORCH
+[AgentRuntime\nturn loop + S1/S2/S7] as RT
+[LLM adapter\nv7 byte-transparent channel] as AD
+[Ollama daemon] as OL
+[inner tools -> workspace] as TOOLS
+[handoff extractor + assembler\nFACT mechanical, PROSE by micro-ask] as HAND
+
+CAMP --> RUNNER
+FLOW --> RUNNER
+CAST --> ORCH
+PROF --> ORCH
+RUNNER --> ORCH
+ORCH --> RT
+RT --> AD
+AD --> OL
+RT --> TOOLS
+RUNNER --> HAND : at P9
+HAND --> TOOLS : PROJECT_STATE.md
+
+package "Provenance (errors leave evidence — F3)" {
+  [run.log\nper-turn calls, results,\nmanifest deltas] as LOG
+  [tasks.jsonl\nlatest-record-wins;\nmechanical re-evals persisted (**F17b**)] as TJ
+  [phases.jsonl\ngate records, mechanical flag] as PJ
+  [waivers.jsonl] as WJ
+}
+RT --> LOG
+RT --> TJ
+RUNNER --> PJ
+RUNNER --> WJ
+@enduml

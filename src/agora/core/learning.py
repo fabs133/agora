@@ -1,4 +1,15 @@
-"""Knowledge flywheel — structured learnings with confidence decay."""
+"""Knowledge flywheel — structured learnings with confidence decay.
+
+Position: the retry-memory layer. When a task fails a postcondition the runtime
+records a :class:`Learning` (a failure trace + a corrective hint) and injects it
+into the model's next-turn prompt — the mechanism that turns a raw failure into
+context on retry, rather than letting the model repeat it blind.
+
+Invariants: confidence is bounded to ``[0, MAX_CONFIDENCE]``; a learning below
+``CONFIDENCE_THRESHOLD`` is considered stale and dropped; reinforcement adds
+``REINFORCE_BOOST`` and time subtracts ``DECAY_RATE`` — so a hint that keeps
+proving useful survives and one that stops mattering ages out on its own.
+"""
 
 from __future__ import annotations
 

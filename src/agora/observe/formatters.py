@@ -1,9 +1,12 @@
 """Render domain events as HTML-formatted Matrix messages.
 
-Every formatter returns :class:`FormattedMessage` — a ``content`` dict ready to
-hand to ``matrix_client.send_event(room_id, "m.room.message", content)``. We
-produce both a plain ``body`` (for clients that don't render HTML) and a
-``formatted_body`` with ``org.matrix.custom.html`` for Element.
+Every formatter is a PURE function ``domain event -> `` :class:`FormattedMessage`
+(a ``content`` dict ready for ``matrix_client.send_event(room_id,
+"m.room.message", content)``). Each produces both a plain ``body`` (clients that
+don't render HTML) and an ``org.matrix.custom.html`` ``formatted_body`` (Element),
+escaping every interpolated value. That shared contract is the docstring for the
+one-line ``format_*`` renderers below; only the ones with a non-obvious contract
+(dual input shapes, optional artifact snapshot) carry their own.
 
 Golden-tested: these functions are pure.
 """
@@ -22,6 +25,10 @@ from agora.observe.commands import HELP_TEXT
 
 @dataclass(frozen=True)
 class FormattedMessage:
+    """A Matrix message in both plain and HTML form. ``msgtype`` defaults to
+    ``m.notice`` so clients render these as bot output (dimmed) rather than as a
+    human turn. :meth:`to_content` produces the exact event content dict."""
+
     body: str
     formatted_body: str
     msgtype: str = "m.notice"  # notice = bot, so clients dim them
@@ -77,6 +84,10 @@ def format_task_started(task_content: dict[str, Any]) -> FormattedMessage:
 
 
 def format_task_completed(result_content: dict[str, Any]) -> FormattedMessage:
+    """Render a task-completion card (badge + artifacts + per-postcondition
+    results). Tolerates both postcondition-result shapes — dicts (MCP path) and
+    ``(name, passed, reason)`` tuples (orchestrator path) — so the same formatter
+    serves both callers; failed predicates show their reason, passed ones don't."""
     tid = str(result_content.get("task_id", ""))[:8]
     success = bool(result_content.get("success"))
     badge = "✓" if success else "✗"

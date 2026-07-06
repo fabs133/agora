@@ -1,0 +1,45 @@
+@startuml handoff_lifecycle
+' Diagram 3/5 — the handoff lifecycle: build -> describe -> re-validate -> extend.
+' Source of truth: agora.plan.handoff, run_phased --phase0, runs 2.x / 3.
+
+skinparam shadowing false
+
+start
+:Greenfield build (P3-P9)\nphase gates, one repair per gate;
+:Extract FACT mechanically\nfile map + AST signatures,\ncapability inventory,\nverification record as COMPLETE\nre-runnable run_checks (**F20**);
+note right
+  FACT is never model-emitted:
+  mechanically derivable facts
+  hallucinate when generated
+  (**F18-family** rationale)
+end note
+:PROSE via concrete micro-asks\n(3-8 lines each, anchored to\nspec/code — **F21**);
+note right
+  open-ended reflective asks derail
+  (**F18‴**); concrete asks ran
+  4/4 with zero reasoning-only
+  turns (run 2.5)
+end note
+:Assemble PROJECT_STATE.md\n(deterministic, utf-8 pinned — **F20b**);
+:Fact-check by RE-EXECUTION\n(chat-side; claims cite record);
+:Tag baseline (echobot-vN);
+partition "Brownfield entry (run 3)" {
+  :RED-TEAM first: stale one source byte\n-> phase-0 MUST go red -> restore -> green;
+  note right
+    a protective gate is trusted only
+    after it has been seen failing
+  end note
+  :phase-0: re-run the verification\nrecord's checks verbatim;
+  :Extend via brief-as-index navigation:\ntask carries DELTA contract +\nmap-pointer only (**F22**);
+  note right
+    measured 3/3: model read the
+    handoff first, opened only
+    mapped files, never touched
+    the frozen core signature
+  end note
+  :Old test suite rides along\nas free regression gate;
+}
+:Re-extract + reuse-staleness screen:\nevery REUSED prose section is re-asked\niff the delta touches its subject (**F24**);
+:PROJECT_STATE.md vN+1 -> fact-check -> tag;
+stop
+@enduml

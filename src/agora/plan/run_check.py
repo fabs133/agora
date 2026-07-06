@@ -18,6 +18,13 @@ Design constraints:
 
 Registered via the standard ``@register_predicate`` decorator; imported by the
 registry at its module bottom, exactly like ``probe_predicates``.
+
+Findings: the bounded capture keeps the informative tail of a failure so the
+repair oracle isn't starved (**F11** — head+tail, not head-only). This same
+predicate is the round-trip target of a handoff Verification record: **F20**
+serializes each gate as a COMPLETE ``run_check`` spec (cmd + stdin + expectation)
+precisely so a future phase-0 re-validation can feed it straight back into
+``build_predicate("run_check", spec)`` and re-execute it verbatim.
 """
 
 from __future__ import annotations

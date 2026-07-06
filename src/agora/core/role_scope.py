@@ -1,11 +1,23 @@
 """Role write-scope rules — the single source of truth for who may write where.
 
-Used by two call sites so they can never drift:
-  - :func:`agora.fleet.inner_tools._enforce_path_scope` (runtime write guard).
-  - flow validation (:func:`agora.core.flow.load_flow`) — a load-time lint that
-    refuses a flow whose task is assigned to a role that cannot write its own
-    declared output (the integration-run-1 T5.1 bug: an implementer task whose
-    output_path was ``tests/test_core.py``, silently rejected 17× at runtime).
+Position: the write-permission oracle both the runtime guard and flow validation
+consult. Deliberately import-light (only :class:`AgentRole`) so it can be called
+from either layer without a cycle.
+
+Invariant (why it exists as one module): two independent call sites must apply
+the SAME rule, or a flow that lints clean can still be rejected at runtime —
+    - :func:`agora.fleet.inner_tools._enforce_path_scope` (runtime write guard);
+    - flow validation (:func:`agora.core.flow.load_flow`), a load-time lint that
+      refuses a task assigned to a role that cannot write its own declared output.
+
+Findings this encodes:
+  - **F1** — two role systems collided: this v2.7 "turf" rule (legacy
+    architect/implementer/tester/reviewer pipeline) silently rejected all 17
+    write_file calls of the integration-run-1 T5.1 task, whose output_path was
+    ``tests/test_core.py`` — an implementer writing the tester's turf.
+  - **F2** — that feasibility (can this role write its declared output?) is
+    statically checkable, so the collision is now caught at LOAD time by the
+    lint above rather than as invisible runtime rejections.
 
 Scope rules (v2.7):
   - ``implementer`` may not write ``tests/**`` (tests are the tester's turf).

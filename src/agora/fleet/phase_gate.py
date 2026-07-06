@@ -4,14 +4,19 @@ A run-1 flow tags each task with a ``phase`` (e.g. ``"P3"``). The runner execute
 phases in DECLARED order and pauses at each boundary (the staged-pause discipline
 from ``scripts/run_sweep_staged.py``, applied to phases within one run). A phase's
 GATE is green iff every BLOCKING task in the phase had all its postconditions
-pass; non-blocking tasks (verifiers) are recorded but never gate. A red gate
-stops the run before the next phase — repair happens against that boundary.
+pass; non-blocking tasks (verifiers) are recorded but never gate (the blocking
+distinction pairs with **F5**: a verifier is ordered after a blocking task via
+``order_after`` so it still runs at gate time even when that task failed). A red
+gate stops the run before the next phase — repair happens against that boundary.
 
 This module is pure: it turns ``(tasks, per-task postcondition results)`` into an
 ordered list of :class:`PhaseGateResult`. The live runner supplies the results
 (from postcondition evaluation) and consults :func:`first_red_phase` to decide
 whether to advance. Provenance is emitted via :class:`PhaseGateRecord`
-(see :mod:`agora.observe.jsonl`).
+(see :mod:`agora.observe.jsonl`). The MECHANICAL gate re-eval that repair uses
+(``scripts/run_phased.py:reevaluate_phase_gate`` — **F17b** persists its captures,
+**F23** makes same-phase repair re-check the whole gate) re-runs these same
+postconditions over the workspace and feeds the results straight back here.
 """
 
 from __future__ import annotations

@@ -21,6 +21,15 @@ The factory built by :func:`build_llm_factory` returns an
 ``LLMProtocol`` adapter and is what
 :func:`agora.plan.harness.build_orchestrator` uses when a profile is
 supplied. Legacy (no-profile) callers keep working unchanged.
+
+Finding: the profile is the MODEL-IDENTITY half of the axis-1 orthogonality —
+a campaign's ``params`` layer as explicit OVERRIDES on top of it (profile = who
+the model is; campaign = the experiment's conditions). **F19** ("wire, don't
+delete") is the rule that such a parameter surface must actually reach the model
+AND be logged as the effective set: an inert config knob that silently does
+nothing is worse than a missing one, because it fakes provenance. The override
+wiring + effective-param logging live in the phased runner
+(``scripts/run_phased.py:apply_campaign_params`` / ``format_effective_params``).
 """
 
 from __future__ import annotations

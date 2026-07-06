@@ -1,4 +1,11 @@
-"""Chronological timeline derived from the Matrix event stream."""
+"""Chronological timeline derived from the Matrix event stream.
+
+Position: one of the read-side projections over the observer's Matrix events
+(alongside :mod:`kanban` and :mod:`export`). Pure: folds the append-only event
+log into an ordered list of :class:`TimelineEntry`, categorised by event kind,
+for the HTML report and audit views. No IO, no Matrix client — events in,
+entries out.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +25,10 @@ from agora.matrix.events import (
 
 @dataclass(frozen=True)
 class TimelineEntry:
+    """One dated row of the timeline: an event reduced to a ``category`` bucket
+    and a one-line ``summary``, keeping ``event_id``/``sender`` for provenance so
+    a rendered entry links back to its source event."""
+
     timestamp: str
     room_id: str
     category: str       # "phase" | "task" | "result" | "learning" | "other"

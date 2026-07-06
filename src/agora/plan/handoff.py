@@ -16,6 +16,21 @@ sections, and assembles ``PROJECT_STATE.md`` deterministically in the eight
 mandatory headers' canonical order. Everything here is pure over its inputs
 (workspace tree, gate commands, prose text) so it is unit-testable against a real
 workspace fixture and re-runnable in any future phase-0 re-validation.
+
+Findings this module carries (the machine-consumable-handoff doctrine):
+  - **F18‴** — why FACT is mechanical: the open-ended reflective ask ("write the
+    8-section doc") hit the termination-before-emission floor, so the split is a
+    task-design dodge, not a prompt trick.
+  - **F20 / F20b** — the Verification record serializes COMPLETE re-runnable
+    ``run_check`` specs (cmd + stdin + expectation, not bare argv), round-trippable
+    via :func:`parse_verification_run_checks`; assembler writes are utf-8-pinned.
+    The record must derive from the PRODUCING flow's FULL gate set (the v2.1 C3
+    completeness fix — a coverage regression test guards it).
+  - **F21** — prose micro-asks must CITE code/spec anchors, not invent conventions
+    (a fact-check caught an invented rule); enforced by task design, not here.
+  - **F24** — reuse is not revalidation: at re-handoff a reused prose section goes
+    stale exactly where the delta touched its subject, so each is staleness-screened
+    against the change rather than carried forward because its file is unchanged.
 """
 
 from __future__ import annotations

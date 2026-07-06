@@ -1,4 +1,14 @@
-"""Project state machine with the approve/loop-back gate."""
+"""Project state machine with the approve/loop-back gate.
+
+Position: the project-level state above individual tasks. Where :mod:`task`
+tracks one unit's status, this tracks the whole project's phase and the
+approve/loop-back decision — the gate that either advances the project or sends
+a phase back for re-work (feeding the retry that the learning flywheel annotates).
+
+Invariant: phase changes go through the validated :class:`PhaseTransition` set;
+an illegal jump raises :class:`~agora.core.errors.InvalidTransition` rather than
+being silently applied.
+"""
 
 from __future__ import annotations
 

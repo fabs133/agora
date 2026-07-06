@@ -137,6 +137,11 @@ class TypeRef:
 
 @dataclass(frozen=True)
 class MethodSignature:
+    """One function/method signature as a comparable value (name, typed params
+    excluding ``self``, return type). Equality drives cross-layer drift detection,
+    so params carry :class:`TypeRef` rather than raw strings — an unresolved type
+    compares as unknown instead of falsely differing."""
+
     name: str
     params: tuple[tuple[str, TypeRef], ...] = ()  # excludes self
     return_type: TypeRef = field(default_factory=TypeRef.unknown)
@@ -145,6 +150,9 @@ class MethodSignature:
 
 @dataclass(frozen=True)
 class ClassModel:
+    """A class as its name + method signatures, for structural comparison
+    (implementation vs. plan/spec). :meth:`find_method` resolves by name."""
+
     name: str
     methods: tuple[MethodSignature, ...] = ()
 
@@ -157,6 +165,11 @@ class ClassModel:
 
 @dataclass(frozen=True)
 class ModuleModel:
+    """A module's structural surface — its classes and top-level functions — as
+    extracted from one layer (source AST, plan, or api_spec). Comparing two
+    ModuleModels is how the framework catches a tester and implementer drifting
+    onto different APIs. :meth:`find_class` resolves by name."""
+
     path: str
     classes: tuple[ClassModel, ...] = ()
     functions: tuple[MethodSignature, ...] = ()
@@ -209,11 +222,19 @@ class Violation:
 
 
 class Mode(str, Enum):
+    """Drift-report strictness. ``PERMISSIVE`` reports only ``certain`` violations
+    (both sides resolved to concrete, differing types); ``STRICT`` also reports
+    ``unresolved`` ones (a type that could not be resolved, so the mismatch is
+    suspected not proven). Lets a caller choose false-positive vs. false-negative
+    risk without re-running the comparison."""
+
     PERMISSIVE = "permissive"   # report only certain violations
     STRICT = "strict"            # report both certain and unresolved
 
 
 def filter_by_mode(violations: list[Violation], mode: Mode) -> list[Violation]:
+    """Filter a violation list by report :class:`Mode`: STRICT returns all,
+    PERMISSIVE keeps only ``certain`` ones. Pure; does not reorder."""
     if mode is Mode.STRICT:
         return list(violations)
     return [v for v in violations if v.severity == "certain"]

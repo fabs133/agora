@@ -1,12 +1,19 @@
 """Manifold Specification Pattern.
 
+Position: the ground-truth layer of the whole framework. A task's postconditions —
+not the model's ``mark_complete`` self-report — decide whether it passed; the
+orchestrator and the phase gate evaluate these predicates after the agent's turn.
+Every downstream verification (local gates F10, re-runnable ``run_check`` records
+F20, phase-0 re-validation) is a predicate evaluated through this shape.
+
 A ``Specification`` combines preconditions (must hold before execution) and
 postconditions (must hold after). Each specification has a deterministic
 fingerprint derived from its content; identical fingerprints drive retry
 deduplication in later sprints.
 
 Predicates are callables of shape ``(context: dict) -> (passed: bool, reason: str)``.
-They are pure — they do not mutate the context.
+They are pure — they do not mutate the context (so re-evaluating a spec over a
+workspace is side-effect-free, which is what makes mechanical gate re-eval safe).
 """
 
 from __future__ import annotations

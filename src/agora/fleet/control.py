@@ -49,6 +49,12 @@ class AbortedError(AgoraError):
 
 @dataclass
 class OrchestratorControl:
+    """Mutable control surface for one project's orchestrator run — the bridge
+    between the Matrix human-observer room and the run loop. Holds the pause /
+    abort events the loop polls at turn boundaries, plus the redirect / note /
+    comment channels a human uses to steer a live run (keyed so a reaction or
+    reply on a posted write-event card resolves back to its task)."""
+
     project_room_id: RoomId
     matrix_client: MatrixClientProtocol
     pause_event: asyncio.Event = field(default_factory=asyncio.Event)

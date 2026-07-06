@@ -29,6 +29,11 @@ logger = logging.getLogger(__name__)
 
 
 class SyncService:
+    """Owns the Matrix sync loop: repeatedly calls ``sync_once`` and feeds each
+    batch to the :class:`EventDispatcher`. :meth:`start` runs it as a background
+    task, :meth:`run` in the foreground; :meth:`stop` cancels cleanly (the loop
+    is cancellation-safe, so an in-flight sync won't leak)."""
+
     def __init__(
         self,
         client: MatrixClientProtocol,

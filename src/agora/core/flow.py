@@ -1,4 +1,21 @@
-"""Reusable flow/package definitions — YAML-declared agent team + task graph templates."""
+"""Reusable flow/package definitions — YAML-declared agent team + task graph templates.
+
+Position: the on-disk (YAML) form of a project. :func:`load_flow` parses and
+validates the YAML (with recursive ``include`` resolution) into an immutable
+:class:`Flow`; :func:`instantiate_flow` then materialises runtime
+:class:`~agora.core.agent.AgentConfig` + :class:`~agora.core.task.Task` objects the
+orchestrator executes. Templates are serializable and finding-annotated; the live
+objects are not.
+
+Load-time lints (fail early, before any model runs):
+  - :func:`_lint_role_write_scope` — **F2**: fatally rejects a task assigned to a
+    role that cannot write its own ``output_path`` (delegates to
+    :mod:`agora.core.role_scope`, the same oracle the runtime guard uses, so a
+    clean lint guarantees a runnable write — the F1 collision cannot reach runtime).
+  - :func:`_lint_spec_channel` — **F6**: warns loudly when a task description CITES
+    an external spec/doc the runtime will not deliver into the prompt (the
+    specification-channel starvation that made a tester fabricate an API).
+"""
 
 from __future__ import annotations
 
@@ -78,6 +95,13 @@ class StageTemplate:
 
 @dataclass(frozen=True)
 class TaskTemplate:
+    """Serializable YAML row for one task; :func:`instantiate_flow` turns it into
+    a runtime :class:`~agora.core.task.Task`. Postconditions are carried as
+    :class:`PostconditionRef` (resolved against the plan registry at instantiate
+    time), so validation can happen before any predicate object exists. The
+    ``phase`` / ``blocking`` / ``order_after`` fields mirror :class:`Task`'s
+    phase-gate semantics (see that class for F5)."""
+
     id: str
     assigned_to: str
     description: str
@@ -100,6 +124,13 @@ class TaskTemplate:
 
 @dataclass(frozen=True)
 class Flow:
+    """A whole project template: the agent team plus its task graph, with two
+    optional embedded contracts (``brief``, ``api_spec``) that a plan-builder
+    authors ONCE and propagates so downstream executors — which start in a fresh
+    work_dir — ground on the same source of truth rather than re-imagining it
+    (the coordination failure the ``api_spec`` field kills). ``probe_version``
+    stamps experiment provenance for probe flows."""
+
     name: str
     description: str
     agents: tuple[AgentConfig, ...]

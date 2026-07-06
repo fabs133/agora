@@ -1,4 +1,11 @@
-"""Standalone HTML report generation from the Matrix event graph."""
+"""Standalone HTML report generation from the Matrix event graph.
+
+Position: the terminal read-side sink of the observer layer — it consumes the
+same event stream :mod:`kanban` and :mod:`timeline` project over and writes a
+single self-contained HTML file. Standalone by design: it takes an event
+iterable + a :class:`ReportContext`, so a report can be regenerated from the
+JSONL/event log after a run without a live Matrix connection.
+"""
 
 from __future__ import annotations
 
@@ -38,6 +45,11 @@ code { background: #f3f3f3; padding: 0.05rem 0.3rem; border-radius: 3px; font-fa
 
 @dataclass(frozen=True)
 class ReportContext:
+    """Run-level header facts for a report — identity, phase, wall-clock span, and
+    per-model token totals — that the event stream itself doesn't carry. Supplied
+    by the caller so :func:`render_report` stays a pure function of (context,
+    events)."""
+
     project_name: str
     project_id: str
     phase: str
@@ -81,6 +93,9 @@ def write_report(
     events: Iterable[tuple[str, dict[str, Any]]],
     learnings_by_agent: dict[str, list[dict[str, Any]]] | None = None,
 ) -> str:
+    """Render the report and write it to ``path`` as UTF-8, creating parent dirs.
+    Returns the rendered HTML string. Thin IO wrapper over :func:`render_report`
+    (the pure renderer) so callers can either write-to-disk or render-in-memory."""
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(

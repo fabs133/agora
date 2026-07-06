@@ -127,6 +127,11 @@ COST_ESTIMATES_USD = {
 
 @dataclass
 class TaskRecord:
+    """Per-task metrics scraped from one run's log (iterations, tool-call count,
+    auto-hook pass/fail). ``tool_call_count`` prefers per-call log lines and
+    falls back to ``_inferred_tool_calls`` (from ``llm return: tool_calls=N``) for
+    older log formats; the two are reconciled at the end of parsing."""
+
     name: str
     agent: str | None = None
     iterations: int = 0
@@ -141,6 +146,10 @@ class TaskRecord:
 
 @dataclass
 class CostRecord:
+    """A run's dollar cost with its PROVENANCE (``source``: recorded from the API,
+    estimated, or unknown) — so a derived cost total can be honest about which
+    figures are measured vs. inferred rather than presenting all as equal."""
+
     value_usd: float | None = None
     source: str = "unknown"  # recorded | estimated | unknown
     note: str = ""
@@ -148,6 +157,11 @@ class CostRecord:
 
 @dataclass
 class RunRecord:
+    """One run's row in the registry: identity + workspace path + git provenance
+    (commit count and first/last commit ISO timestamps, read from the workspace's
+    own git history). The git dates are what ``check_date_provenance.py`` audits
+    the human-written run dates against, so they are filesystem-derived facts."""
+
     run_id: str
     project: str
     suffix: str
@@ -236,6 +250,10 @@ def discover_runs() -> list[RunRecord]:
 
 @dataclass
 class LogSummary:
+    """Timespan + model scraped from one run.log file: the first/last event ISO
+    timestamps (the log's own wall-clock span) and the model id if the log
+    recorded one. Feeds the registry when a run has a log but no richer record."""
+
     path: Path
     first_iso: str
     last_iso: str

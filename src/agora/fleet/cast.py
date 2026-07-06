@@ -16,6 +16,12 @@ would consume; the ``resident``/``keep_alive`` fields are advisory to the
 eviction protocol. Deliberately small: schema + four rules + loud failures.
 Model-size lookup is injected so the validator stays pure and testable — the
 CLI supplies the live Ollama probe, tests supply a static map.
+
+Finding: rule 3's ``evidence`` requirement is where **F12** lands — a binding's
+evidence key is per-(model × TOOL SURFACE), not per-model alone. A model measured
+reliable on one tool family has not been shown reliable casting onto a seat that
+uses a different, unmeasured one (the run-1.3 add_function wall). So "cite
+evidence" means cite a row for the seat's actual tools, not a generic 9/9.
 """
 
 from __future__ import annotations

@@ -1,0 +1,65 @@
+@startuml tool_call_turn
+' Diagram 2/5 — the tool-call turn: manifest shaping, validation, dispatch,
+' rendering, loop decisions. Constraints carry their finding numbers.
+' Source of truth: src/agora/fleet/{agent_runtime,inner_tools,llm_adapter}.py
+' Render: scripts/render_diagrams.py (PlantUML server, docker: plantuml-server)
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+participant "AgentRuntime\n_run_loop" as RT
+participant "Manifest\nshaping" as MAN
+participant "LLM adapter\n(v7 rendering)" as AD
+participant "Ollama\ndaemon" as OL
+participant "validate_call\n+ dispatch" as VD
+participant "Tool\n(inner_tools)" as TOOL
+participant "Provenance\nrun.log / tasks.jsonl" as PROV
+
+RT -> MAN : build tool manifest for seat
+note right of MAN
+  allowlist filter (AgentConfig.allowed_tools)
+  **F12**: tool surface is casting evidence
+  overwrite guard hides write_file on
+  non-empty output — **unless** post-hide
+  manifest has zero mutation tools (**F13**)
+  every delta logged (**manifest-delta rule**)
+end note
+MAN -> PROV : manifest deltas (INFO)
+
+RT -> AD : messages + system + tools
+AD -> OL : /api/chat
+note right of AD
+  tool results delivered verbatim,
+  one message per result, no markers,
+  no re-encoding (**v5–v7**: byte-transparent
+  observation channel; models copy
+  exactly what they are shown)
+end note
+OL --> AD : response (tool_calls | content | thinking)
+AD --> RT : LLMResponse (thinking surfaced, **S7**)
+
+alt turn has tool calls
+  RT -> VD : validate_call(call, schema)
+  note right of VD
+    **S1** corrective errors: schema echo
+    + hint; raw tracebacks never reach
+    the model. Role scope enforced here
+    and at load-time lint (**F1/F2**)
+  end note
+  VD -> TOOL : dispatch (validated)
+  TOOL --> VD : result string (errors propagate — **F17**)
+  VD -> PROV : tool call + result (**F3**: observer always on)
+  VD --> RT : rendered result (next turn)
+else turn is empty / reasoning-only
+  note right of RT
+    empty turn + postconditions unmet
+    + nudge budget → **S2** nudge (stalls only)
+    reasoning-only + salvage budget →
+    **S7** re-prompt with own draft
+    (scoped: termination-decided turns
+    are immune — **F18‴**)
+  end note
+end
+
+RT -> PROV : TaskRecord (nudges, salvages,\nreviews, run_check captures **F11**)
+@enduml

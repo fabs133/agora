@@ -204,6 +204,13 @@ def reevaluate_phase_gate(project_work_dir: Path, phase: str, flow_tasks: list[A
     already satisfied — the task completed in its prior run; we re-check its
     ARTIFACTS, not its completion signal) and ``artifacts`` is seeded with the
     real on-disk file list so ``file_exists`` reflects the workspace.
+
+    Findings: this is the shared engine of the two repair fixes. **F23** — a
+    same-phase repair routes through here too (see :func:`repair_gate_is_mechanical`),
+    so re-running one task re-checks the WHOLE phase's postconditions and a
+    still-failing blocker keeps the gate red (no false green). **F17b** — the
+    captures produced here must be PERSISTED (see :func:`build_mechanical_task_records`)
+    or a later oracle would read stale pre-repair output.
     """
     from types import SimpleNamespace
 

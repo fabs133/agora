@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 class Renderer:
+    """Subscribes to the event dispatcher and posts a formatted message back to
+    the project room for each domain event, delegating the HTML to
+    :mod:`agora.observe.formatters`. Echo-safe: it ignores events from its own
+    sender so its posts don't re-trigger it."""
+
     def __init__(
         self,
         matrix_client: MatrixClientProtocol,

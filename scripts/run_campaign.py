@@ -53,6 +53,11 @@ EVICTION_POLL_CAP_SECONDS = 30.0
 
 
 class Arm(BaseModel):
+    """One A/B condition: the two experiment knobs a run varies while the model,
+    params, and probe are held fixed. ``scaffolding`` controls prompt richness,
+    ``strictness`` the drift-report mode. ``extra: forbid`` so a typo'd knob in
+    the YAML fails at load, not silently at run."""
+
     model_config = {"extra": "forbid"}
 
     scaffolding: Literal["lean", "rich"] = "rich"
@@ -76,6 +81,11 @@ class Harness(BaseModel):
 
 
 class CampaignDefaults(BaseModel):
+    """Campaign-wide settings each :class:`CampaignRun` inherits and may override:
+    baseline inference ``params``, the output dir, resume behaviour, and the v3
+    :class:`Harness` knobs. Kept separate from the run list so the common case
+    (all runs share params) isn't repeated per run."""
+
     model_config = {"extra": "forbid"}
 
     params: dict[str, Any] = Field(default_factory=dict)
@@ -91,6 +101,12 @@ class CampaignDefaults(BaseModel):
 
 
 class CampaignRun(BaseModel):
+    """One cell of the campaign grid: a (probe × profile × arm) tuple run
+    ``repeat`` times. ``params``/``strategy``/``harness`` are per-run overrides
+    field-merged over the campaign defaults (``strategy=None`` is the control
+    cell — no wrapper, byte-identical to v1; non-null names validate against the
+    strategy registry at load)."""
+
     model_config = {"extra": "forbid"}
 
     id: str
@@ -110,6 +126,10 @@ class CampaignRun(BaseModel):
 
 
 class Campaign(BaseModel):
+    """A whole pre-registered sweep: schema-versioned so old campaign YAML stays
+    parseable, with campaign-wide ``defaults`` and the explicit list of ``runs``.
+    This is the committed experiment spec — the unit provenance is tied back to."""
+
     model_config = {"extra": "forbid"}
 
     schema_version: Literal[1] = 1
@@ -120,6 +140,10 @@ class Campaign(BaseModel):
 
 
 def load_campaign(path: str | Path) -> Campaign:
+    """Load + validate a campaign YAML into a :class:`Campaign`. Raises
+    ``ValidationError`` on a schema mismatch and ``ValueError`` on an unknown
+    strategy name — both at LOAD time, so a typo fails before run 1 rather than
+    at run 23 of 40 (the fail-early discipline the whole schema is built around)."""
     import yaml
 
     from agora.fleet.strategies import STRATEGIES
