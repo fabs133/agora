@@ -1875,6 +1875,8 @@ def _reject_return_type_drift(
     all_violations = check_usage_matches_contract(traces, contract)
     mode = (
         Mode.STRICT
+        # Registered debug-flag (integration-hardening 2B.3 allowlist): env-only,
+        # exempt from the "no os.getenv outside config.py" rule. Default off.
         if os.getenv("AGORA_STRUCTURE_STRICT", "").lower() in ("1", "true", "yes")
         else Mode.PERMISSIVE
     )

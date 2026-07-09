@@ -523,6 +523,9 @@ class RunObserver:
 
         if override is not None:
             return Path(override)
+        # Registered debug-flag (integration-hardening 2B.3 allowlist): env-only.
+        # CANDIDATE FOR PROMOTION to Settings — it's a run-output path, not a pure
+        # debug toggle; kept env-only for now to preserve the campaign's emission.
         env = os.getenv("AGORA_RUN_OUTPUT_DIR", "").strip()
         if env:
             return Path(env)

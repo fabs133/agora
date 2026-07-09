@@ -26,7 +26,7 @@ from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator
 from agora.matrix.client import AgoraMatrixClient
 from agora.matrix.room_manager import RoomManager
-from tests.conftest import FakeLLM, tool_call
+from tests.conftest import TEST_OLLAMA_URL, FakeLLM, tool_call
 
 pytestmark = pytest.mark.skipif(
     os.getenv("AGORA_E2E") != "1",
@@ -100,6 +100,7 @@ async def test_solo_flow_end_to_end(tmp_path: Path) -> None:
             max_parallel_agents=1,
             enable_observer=True,
             skip_warmup=True,
+            ollama_base_url=TEST_OLLAMA_URL,
             review_timeout_seconds=1.0,
             repo_root=str(tmp_path / "repos"),
         )
@@ -138,6 +139,7 @@ async def test_architect_implementer_end_to_end(tmp_path: Path) -> None:
             max_parallel_agents=2,
             enable_observer=True,
             skip_warmup=True,
+            ollama_base_url=TEST_OLLAMA_URL,
             review_timeout_seconds=1.0,
             repo_root=str(tmp_path / "repos"),
         )

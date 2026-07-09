@@ -60,12 +60,18 @@ logging.getLogger("nio").setLevel(logging.WARNING)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from agora.config import get_settings
 from agora.core.agent import AgentConfig
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task
 from agora.core.types import AgentRole, TaskStatus
 from agora.fleet.orchestrator import Orchestrator
-from agora.fleet.profiles import apply_env_overrides, build_llm_factory, load_profiles
+from agora.fleet.profiles import (
+    apply_env_overrides,
+    build_llm_factory,
+    load_profiles,
+    resolve_base_url,
+)
 from agora.fleet.runtime_postconditions import (
     postcond_bot_calls_tree_sync,
     postcond_no_code_after_main_block,
@@ -85,14 +91,17 @@ from agora.observe.jsonl import (
 )
 from agora.plan.harness import preflight_vram
 
-HOMESERVER = os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167")
-SERVER_NAME = "agora.local"
-SYSTEM_USER = "@agora:agora.local"
-SYSTEM_PASSWORD = os.getenv("AGORA_MATRIX_PASSWORD", "agora-dev-pass")
-OBSERVER_USER = os.getenv("AGORA_OBSERVER_USER", "@fabs:agora.local")
-REVIEW_TIMEOUT = float(os.getenv("AGORA_REVIEW_TIMEOUT_SECONDS", "300"))
-MAX_PARALLEL = int(os.getenv("AGORA_MAX_PARALLEL_AGENTS", "2"))
-MAX_TASK_RETRIES = int(os.getenv("AGORA_MAX_TASK_RETRIES", "2"))
+# Config comes from one source: Settings (env is read only in config.py). This
+# script is a composition root — it reads Settings once and injects typed values.
+_settings = get_settings()
+HOMESERVER = _settings.matrix_homeserver
+SERVER_NAME = _settings.matrix_server_name
+SYSTEM_USER = _settings.matrix_user_id
+SYSTEM_PASSWORD = _settings.matrix_password
+OBSERVER_USER = _settings.observer_user
+REVIEW_TIMEOUT = _settings.review_timeout_seconds
+MAX_PARALLEL = _settings.max_parallel_agents
+MAX_TASK_RETRIES = _settings.max_task_retries
 # The orchestrator places each project at ``WORK_DIR / <project_name>`` and uses
 # that same directory as the git working tree, so we set WORK_DIR to the
 # workspace root. Project "discord-bot" will materialise at workspace/discord-bot/.
@@ -840,9 +849,13 @@ async def main() -> None:
         f"keep_alive={profile.keep_alive}"
     )
 
+    # Resolve the profile's optional endpoint override against the single-source
+    # Settings endpoint (profile.ollama.base_url is None ⇒ inherit).
+    ollama_base_url = resolve_base_url(profile, _settings.ollama_base_url)
+
     await preflight_vram(
         profile.model,
-        profile.ollama.base_url,
+        ollama_base_url,
         safety_margin_mib=profile.vram.safety_margin_mib,
     )
 
@@ -867,7 +880,7 @@ async def main() -> None:
         print(f"[*] Auto-inviting {OBSERVER_USER} to every created room")
 
     room_manager = RoomManager(client, homeserver_name=SERVER_NAME)
-    llm_factory = build_llm_factory(profile)
+    llm_factory = build_llm_factory(profile, ollama_base_url)
 
     # Structured run logging (JSONL schema v1). Emits run.jsonl + tasks.jsonl
     # into AGORA_RUN_OUTPUT_DIR (default runs_out/_default/<run_id>/). This is
@@ -881,7 +894,7 @@ async def main() -> None:
         flow_path="scripts/run_discord_bot_test.py",
         project_name="discord-bot",
         profile=profile_snapshot_from(profile),
-        ollama_version=query_ollama_version(profile.ollama.base_url),
+        ollama_version=query_ollama_version(ollama_base_url),
         git_commit=git_commit_short(REPO_ROOT),
     )
     print(f"[*] Run observer → {output_dir} (run_id={run_id})")
@@ -896,7 +909,7 @@ async def main() -> None:
         enable_observer=True,
         repo_root=str(REPO_ROOT_DIR),
         knowledge_cache_dir=str(KB_CACHE_DIR),
-        ollama_base_url=profile.ollama.base_url,
+        ollama_base_url=ollama_base_url,
         skip_warmup=False,
         warmup_deadline=600.0,
         keep_alive=profile.keep_alive,

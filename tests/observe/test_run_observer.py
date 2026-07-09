@@ -24,7 +24,7 @@ from agora.observe.jsonl import (
     RunRecord,
     TaskRecord,
 )
-from tests.conftest import FakeLLM, tool_call
+from tests.conftest import TEST_OLLAMA_URL, FakeLLM, tool_call
 
 
 def _profile() -> ProfileSnapshot:
@@ -428,6 +428,7 @@ async def test_observer_integration_via_orchestrator(tmp_path, fake_matrix_clien
         llm_factory=lambda _m: _simple_llm(),
         work_dir=str(tmp_path / "work"),
         skip_warmup=True,  # fake LLM — no real Ollama in unit tests
+        ollama_base_url=TEST_OLLAMA_URL,
         observer=obs,
     )
     agents = [AgentConfig(name="impl", role=AgentRole.IMPLEMENTER)]
@@ -467,6 +468,7 @@ async def test_orchestrator_without_observer_is_backcompat(tmp_path, fake_matrix
         llm_factory=lambda _m: _simple_llm(),
         work_dir=str(tmp_path / "work"),
         skip_warmup=True,  # fake LLM — no real Ollama in unit tests
+        ollama_base_url=TEST_OLLAMA_URL,
     )
     agents = [AgentConfig(name="impl", role=AgentRole.IMPLEMENTER)]
     tasks = [Task(id="t0", spec=_passing_spec(), description="x",
@@ -490,6 +492,7 @@ async def test_observer_smoke_minimal_flow(tmp_path, fake_matrix_client) -> None
         llm_factory=lambda _m: _simple_llm(),
         work_dir=str(tmp_path / "work"),
         skip_warmup=True,  # fake LLM — no real Ollama in unit tests
+        ollama_base_url=TEST_OLLAMA_URL,
         observer=obs,
     )
     agents = [AgentConfig(name="impl", role=AgentRole.IMPLEMENTER)]

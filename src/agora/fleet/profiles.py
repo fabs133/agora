@@ -55,7 +55,11 @@ class OllamaProfile(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    base_url: str = "http://localhost:11434"
+    # Optional per-profile endpoint OVERRIDE. None = inherit the injected
+    # Settings.ollama_base_url (the single source). A profile only sets this to
+    # pin a specific daemon (e.g. a remote GPU box). No localhost default here:
+    # that default lives once, in Settings — see integration-hardening 2B.
+    base_url: str | None = None
     num_parallel: int = 1
 
 
@@ -267,8 +271,21 @@ def apply_env_overrides(
 # ----------------------------- llm factory ------------------------------------
 
 
-def build_llm_factory(profile: ModelProfile) -> Callable[[str], LLMProtocol]:
+def resolve_base_url(profile: ModelProfile, fallback: str) -> str:
+    """The profile's Ollama endpoint override, or the injected ``fallback``.
+
+    ``profile.ollama.base_url`` is an optional pin (None ⇒ inherit). The
+    ``fallback`` is the single-source endpoint from ``Settings.ollama_base_url``.
+    """
+    return profile.ollama.base_url or fallback
+
+
+def build_llm_factory(profile: ModelProfile, base_url: str) -> Callable[[str], LLMProtocol]:
     """Return a factory that resolves ``model_ref`` against ``profile``.
+
+    ``base_url`` is the resolved Ollama endpoint (profile override or the
+    injected Settings default) — passed explicitly because profiles no longer
+    carry a localhost default. Use :func:`resolve_base_url` to compute it.
 
     An empty ``model_ref`` (the v2.3 plan-builder emits agents with
     ``model=""`` because the model can't reliably guess a valid id, so
@@ -287,7 +304,7 @@ def build_llm_factory(profile: ModelProfile) -> Callable[[str], LLMProtocol]:
         chosen = model_ref or profile.model
         kwargs: dict[str, Any] = {"timeout_seconds": profile.timeout_seconds}
         if chosen.startswith("ollama/"):
-            kwargs["base_url"] = profile.ollama.base_url
+            kwargs["base_url"] = base_url
             kwargs["num_ctx"] = profile.num_ctx
             kwargs["max_concurrent"] = profile.ollama.num_parallel
             kwargs["keep_alive"] = profile.keep_alive
@@ -309,4 +326,5 @@ __all__ = [
     "apply_env_overrides",
     "build_llm_factory",
     "load_profiles",
+    "resolve_base_url",
 ]

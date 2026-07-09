@@ -23,7 +23,7 @@ from agora.core.agent import AgentConfig
 from agora.core.task import Task
 from agora.fleet.llm_adapter import create_llm_adapter
 from agora.fleet.orchestrator import Orchestrator, ProjectResult
-from agora.fleet.profiles import ModelProfile, build_llm_factory
+from agora.fleet.profiles import ModelProfile, build_llm_factory, resolve_base_url
 from agora.fleet.vram import check_model_fits, raise_if_wont_fit
 from agora.matrix.client import AgoraMatrixClient
 from agora.matrix.room_manager import RoomManager
@@ -207,8 +207,11 @@ def build_orchestrator(
         )
 
     if profile is not None:
-        built_factory = build_llm_factory(profile)
-        ollama_base_url = profile.ollama.base_url
+        # The profile's Ollama endpoint is an optional override; None inherits
+        # the injected Settings endpoint (cfg.ollama_base_url). Resolve once so
+        # the factory and warmup pin the same daemon.
+        ollama_base_url = resolve_base_url(profile, cfg.ollama_base_url)
+        built_factory = build_llm_factory(profile, ollama_base_url)
         keep_alive = profile.keep_alive
     else:
         ollama_base_url = cfg.ollama_base_url

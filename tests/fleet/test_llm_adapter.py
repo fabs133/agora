@@ -8,12 +8,13 @@ from agora.fleet.llm_adapter import (
     ToolCall,
     create_llm_adapter,
 )
+from tests.conftest import TEST_OLLAMA_URL
 
 
 def test_create_adapter_routes_to_ollama() -> None:
-    adapter = create_llm_adapter("ollama/llama3.1")
+    adapter = create_llm_adapter("ollama/llama3.1", base_url=TEST_OLLAMA_URL)
     assert isinstance(adapter, OllamaAdapter)
-    assert adapter.base_url == "http://localhost:11434"
+    assert adapter.base_url == TEST_OLLAMA_URL
 
 
 def test_create_adapter_forwards_num_ctx_and_max_concurrent() -> None:
@@ -25,6 +26,7 @@ def test_create_adapter_forwards_num_ctx_and_max_concurrent() -> None:
     """
     adapter = create_llm_adapter(
         "ollama/llama3.1",
+        base_url=TEST_OLLAMA_URL,
         num_ctx=32_768,
         max_concurrent=2,
     )
@@ -34,7 +36,7 @@ def test_create_adapter_forwards_num_ctx_and_max_concurrent() -> None:
 
 
 def test_create_adapter_ollama_defaults_preserved_when_kwargs_omitted() -> None:
-    adapter = create_llm_adapter("ollama/llama3.1")
+    adapter = create_llm_adapter("ollama/llama3.1", base_url=TEST_OLLAMA_URL)
     assert isinstance(adapter, OllamaAdapter)
     # Defaults match the pre-fix behaviour exactly.
     assert adapter.num_ctx == 16384
@@ -42,7 +44,7 @@ def test_create_adapter_ollama_defaults_preserved_when_kwargs_omitted() -> None:
 
 
 def test_create_adapter_ollama_accepts_num_ctx_none() -> None:
-    adapter = create_llm_adapter("ollama/llama3.1", num_ctx=None)
+    adapter = create_llm_adapter("ollama/llama3.1", base_url=TEST_OLLAMA_URL, num_ctx=None)
     assert isinstance(adapter, OllamaAdapter)
     assert adapter.num_ctx is None
 
@@ -86,7 +88,7 @@ def test_ollama_adapter_strips_prefix_in_payload(monkeypatch) -> None:
             return None
 
     monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
-    adapter = OllamaAdapter(timeout_seconds=5)
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=5)
     asyncio.run(
         adapter.complete(
             [{"role": "user", "content": "hi"}],
@@ -165,7 +167,7 @@ def test_ollama_text_fallback_fires_callback(monkeypatch) -> None:
 
     monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
     fires: list[int] = []
-    adapter = OllamaAdapter(timeout_seconds=5, on_text_fallback=fires.append)
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=5, on_text_fallback=fires.append)
     tools = [{"name": "write_file", "description": "", "input_schema": {}}]
     resp = asyncio.run(
         adapter.complete(
@@ -218,7 +220,7 @@ def test_ollama_no_fallback_when_structured(monkeypatch) -> None:
 
     monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
     fires: list[int] = []
-    adapter = OllamaAdapter(timeout_seconds=5, on_text_fallback=fires.append)
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=5, on_text_fallback=fires.append)
     tools = [{"name": "write_file", "description": "", "input_schema": {}}]
     asyncio.run(
         adapter.complete(
@@ -233,7 +235,7 @@ def test_ollama_adapter_uses_configured_keep_alive(monkeypatch) -> None:
     import asyncio
 
     captured = _patch_ollama_capture(monkeypatch)
-    adapter = OllamaAdapter(timeout_seconds=5, keep_alive="2h")
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=5, keep_alive="2h")
     asyncio.run(
         adapter.complete(
             [{"role": "user", "content": "hi"}],
@@ -248,7 +250,7 @@ def test_ollama_payload_includes_temperature_and_seed(monkeypatch) -> None:
     import asyncio
 
     captured = _patch_ollama_capture(monkeypatch)
-    adapter = OllamaAdapter(timeout_seconds=5, temperature=0.0, seed=42)
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=5, temperature=0.0, seed=42)
     asyncio.run(
         adapter.complete(
             [{"role": "user", "content": "hi"}],
@@ -265,7 +267,7 @@ def test_ollama_payload_omits_sampling_when_unset(monkeypatch) -> None:
     import asyncio
 
     captured = _patch_ollama_capture(monkeypatch)
-    adapter = OllamaAdapter(timeout_seconds=5)  # defaults None
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=5)  # defaults None
     asyncio.run(
         adapter.complete(
             [{"role": "user", "content": "hi"}],
@@ -282,7 +284,7 @@ def test_ollama_adapter_default_max_tokens_governs_num_predict(monkeypatch) -> N
     import asyncio
 
     captured = _patch_ollama_capture(monkeypatch)
-    adapter = OllamaAdapter(timeout_seconds=5, default_max_tokens=2048)
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=5, default_max_tokens=2048)
     asyncio.run(
         adapter.complete(
             [{"role": "user", "content": "hi"}],
@@ -297,7 +299,7 @@ def test_ollama_adapter_explicit_max_tokens_overrides_default(monkeypatch) -> No
     import asyncio
 
     captured = _patch_ollama_capture(monkeypatch)
-    adapter = OllamaAdapter(timeout_seconds=5, default_max_tokens=2048)
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=5, default_max_tokens=2048)
     asyncio.run(
         adapter.complete(
             [{"role": "user", "content": "hi"}],
@@ -310,7 +312,7 @@ def test_ollama_adapter_explicit_max_tokens_overrides_default(monkeypatch) -> No
 
 def test_create_adapter_forwards_keep_alive_and_default_max_tokens() -> None:
     adapter = create_llm_adapter(
-        "ollama/llama3.1", keep_alive="1h", default_max_tokens=8192
+        "ollama/llama3.1", base_url=TEST_OLLAMA_URL, keep_alive="1h", default_max_tokens=8192
     )
     assert isinstance(adapter, OllamaAdapter)
     assert adapter.keep_alive == "1h"
@@ -404,7 +406,7 @@ def test_ollama_adapter_strips_thinking_in_response(monkeypatch) -> None:
             return None
 
     monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
-    adapter = OllamaAdapter(timeout_seconds=5)
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=5)
     resp = asyncio.run(
         adapter.complete(
             [{"role": "user", "content": "hi"}],
@@ -419,7 +421,7 @@ def test_ollama_adapter_shapes_tool_results_bare_per_result() -> None:
     result VERBATIM, and NO protocol fields (tool_name/tool_call_id), no marker.
     The fields made gemma's renderer escape newlines; a bare message renders
     plainly (rendering arbitration)."""
-    adapter = OllamaAdapter()
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL)
     msgs = adapter.format_tool_results(
         calls=[
             ToolCall(id="0", name="read_file", arguments={}),
@@ -540,7 +542,7 @@ async def test_ollama_adapter_serialises_concurrent_calls(
     monkeypatch.setattr("aiohttp.ClientSession", _SlowSession)
 
     adapter = OllamaAdapter(
-        base_url="http://localhost:11434",
+        base_url=TEST_OLLAMA_URL,
         timeout_seconds=5,
         num_ctx=None,
         max_concurrent=1,
@@ -572,7 +574,7 @@ async def test_ollama_adapter_respects_custom_max_concurrent(
     monkeypatch.setattr("aiohttp.ClientSession", _SlowSession)
 
     adapter = OllamaAdapter(
-        base_url="http://localhost:11434",
+        base_url=TEST_OLLAMA_URL,
         timeout_seconds=5,
         num_ctx=None,
         max_concurrent=2,
@@ -601,10 +603,10 @@ async def test_ollama_semaphore_is_shared_across_adapter_instances(
     monkeypatch.setattr("aiohttp.ClientSession", _SlowSession)
 
     a1 = OllamaAdapter(
-        base_url="http://localhost:11434", timeout_seconds=5, num_ctx=None, max_concurrent=1
+        base_url=TEST_OLLAMA_URL, timeout_seconds=5, num_ctx=None, max_concurrent=1
     )
     a2 = OllamaAdapter(
-        base_url="http://localhost:11434", timeout_seconds=5, num_ctx=None, max_concurrent=1
+        base_url=TEST_OLLAMA_URL, timeout_seconds=5, num_ctx=None, max_concurrent=1
     )
 
     async def _call(ad):

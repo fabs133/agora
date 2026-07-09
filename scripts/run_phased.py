@@ -725,7 +725,7 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
     from agora.config import get_settings
     from agora.core.flow import instantiate_flow, load_flow
     from agora.fleet.cast import load_cast, resolve_cast
-    from agora.fleet.profiles import build_llm_factory, load_profiles
+    from agora.fleet.profiles import build_llm_factory, load_profiles, resolve_base_url
     from agora.plan.harness import HarnessConfig, build_matrix_client, build_orchestrator
 
     # Composition root: the ONE place endpoints are resolved for this run.
@@ -790,9 +790,10 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         enable_observer=False,
     )
 
-    def llm_factory(model_ref: str, _m2p=model_to_profile, _prof=profiles):
+    def llm_factory(model_ref: str, _m2p=model_to_profile, _prof=profiles, _bu=settings.ollama_base_url):
         prof = _m2p.get(model_ref) or _prof.select()
-        return build_llm_factory(prof)(model_ref)
+        # profile.ollama.base_url is None ⇒ inherit the single-source endpoint.
+        return build_llm_factory(prof, resolve_base_url(prof, _bu))(model_ref)
 
     # Attach run.log (per-turn tool results + path-scope rejections) for this
     # phase invocation — the observer campaign runs get for free from subprocess

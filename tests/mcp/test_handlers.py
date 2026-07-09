@@ -17,7 +17,7 @@ from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator
 from agora.matrix.room_manager import RoomManager
 from agora.mcp.handlers import AgoraHandlers
-from tests.conftest import FakeLLM, tool_call
+from tests.conftest import TEST_OLLAMA_URL, FakeLLM, tool_call
 
 
 def _llm_plan_factory():
@@ -44,6 +44,7 @@ def handlers(tmp_path: Path, fake_matrix_client) -> AgoraHandlers:
         llm_factory=lambda _m: _llm_plan_factory(),
         work_dir=str(tmp_path / "work"),
         skip_warmup=True,  # fake LLM — no real Ollama in unit tests
+        ollama_base_url=TEST_OLLAMA_URL,
     )
     (tmp_path / "work").mkdir(parents=True, exist_ok=True)
     return AgoraHandlers(orchestrator, flows_dir=tmp_path / "flows")

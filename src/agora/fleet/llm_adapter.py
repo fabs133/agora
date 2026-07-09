@@ -138,7 +138,7 @@ class OllamaAdapter:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
+        base_url: str,  # required config-shaped endpoint — no localhost default; inject from Settings.ollama_base_url
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         num_ctx: int | None = 16384,
         max_concurrent: int = 1,
@@ -512,8 +512,15 @@ def create_llm_adapter(model: str, **kwargs: Any) -> LLMProtocol:
     timeout = float(kwargs.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS)
 
     if model.startswith("ollama/"):
+        if "base_url" not in kwargs:
+            # Config-shaped endpoint: no localhost default here (that default
+            # lives once, in Settings.ollama_base_url). Composition roots inject it.
+            raise AgoraError(
+                "create_llm_adapter requires an explicit base_url for ollama/* "
+                "models; inject Settings.ollama_base_url from the composition root."
+            )
         ollama_kwargs: dict[str, Any] = {
-            "base_url": kwargs.get("base_url", "http://localhost:11434"),
+            "base_url": kwargs["base_url"],
             "timeout_seconds": timeout,
             "default_model": model,
         }

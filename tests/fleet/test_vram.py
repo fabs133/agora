@@ -8,6 +8,7 @@ import pytest
 
 from agora.core.errors import AgoraError
 from agora.fleet import vram
+from tests.conftest import TEST_OLLAMA_URL
 
 # ------------------------------------------------------------- size heuristics
 
@@ -130,7 +131,7 @@ async def test_fits_when_free_vram_ample(patch_ollama_size, monkeypatch) -> None
     patch_ollama_size(size_bytes=4 * 1024 * 1024 * 1024)  # 4 GB → ~4915 MiB × 1.2 ≈ 5900
     monkeypatch.setattr(vram, "probe_free_vram_mib", AsyncMock(return_value=16_000))
 
-    check = await vram.check_model_fits("qwen2.5-coder:7b", safety_margin_mib=512)
+    check = await vram.check_model_fits("qwen2.5-coder:7b", TEST_OLLAMA_URL, safety_margin_mib=512)
     assert check.fits is True
     assert check.free_mib == 16_000
 
@@ -139,7 +140,7 @@ async def test_refuses_when_model_exceeds_free_vram(patch_ollama_size, monkeypat
     patch_ollama_size(size_bytes=20 * 1024 * 1024 * 1024)  # 20 GB
     monkeypatch.setattr(vram, "probe_free_vram_mib", AsyncMock(return_value=8_000))
 
-    check = await vram.check_model_fits("qwen2.5-coder:32b", safety_margin_mib=512)
+    check = await vram.check_model_fits("qwen2.5-coder:32b", TEST_OLLAMA_URL, safety_margin_mib=512)
     assert check.fits is False
     assert "needs" in check.reason
 
@@ -148,7 +149,7 @@ async def test_unknown_vram_does_not_block(patch_ollama_size, monkeypatch) -> No
     patch_ollama_size(size_bytes=5 * 1024 * 1024 * 1024)
     monkeypatch.setattr(vram, "probe_free_vram_mib", AsyncMock(return_value=None))
 
-    check = await vram.check_model_fits("qwen2.5-coder:7b")
+    check = await vram.check_model_fits("qwen2.5-coder:7b", TEST_OLLAMA_URL)
     assert check.fits is True
     assert check.free_mib is None
     assert "probe unavailable" in check.reason
@@ -181,7 +182,7 @@ async def test_warmup_success(monkeypatch) -> None:
     response = _FakeResponse(status=200, payload={"response": "hi"})
     monkeypatch.setattr("aiohttp.ClientSession", lambda **_k: _FakeSession(response))
     # Returns None on success, does not raise.
-    await vram.warmup("ollama/qwen2.5-coder:7b", deadline_seconds=5)
+    await vram.warmup("ollama/qwen2.5-coder:7b", TEST_OLLAMA_URL, deadline_seconds=5)
 
 
 async def test_warmup_strips_ollama_prefix(monkeypatch) -> None:
@@ -202,7 +203,7 @@ async def test_warmup_strips_ollama_prefix(monkeypatch) -> None:
     monkeypatch.setattr(
         "aiohttp.ClientSession", lambda **_k: _CapturingSession(_CapturingResponse())
     )
-    await vram.warmup("ollama/qwen2.5-coder:7b-instruct", deadline_seconds=5)
+    await vram.warmup("ollama/qwen2.5-coder:7b-instruct", TEST_OLLAMA_URL, deadline_seconds=5)
     assert captured["payload"]["model"] == "qwen2.5-coder:7b-instruct"
     assert captured["payload"]["keep_alive"] == "30m"
 
@@ -232,7 +233,7 @@ async def test_warmup_keep_alive_override(monkeypatch) -> None:
         "aiohttp.ClientSession", lambda **_k: _CapturingSession(_CapturingResponse())
     )
     await vram.warmup(
-        "ollama/qwen2.5-coder:7b-instruct", deadline_seconds=5, keep_alive="1h"
+        "ollama/qwen2.5-coder:7b-instruct", TEST_OLLAMA_URL, deadline_seconds=5, keep_alive="1h"
     )
     assert captured["payload"]["keep_alive"] == "1h"
 
@@ -246,7 +247,7 @@ async def test_warmup_raises_on_http_error(monkeypatch) -> None:
 
     monkeypatch.setattr("aiohttp.ClientSession", lambda **_k: _FakeSession(response))
     with pytest.raises(AgoraError, match="warm-up HTTP 500"):
-        await vram.warmup("ollama/qwen2.5-coder:7b", deadline_seconds=5)
+        await vram.warmup("ollama/qwen2.5-coder:7b", TEST_OLLAMA_URL, deadline_seconds=5)
 
 
 async def test_warmup_raises_on_timeout(monkeypatch) -> None:
@@ -264,7 +265,7 @@ async def test_warmup_raises_on_timeout(monkeypatch) -> None:
 
     monkeypatch.setattr("aiohttp.ClientSession", _HangingSession)
     with pytest.raises(AgoraError, match="timed out"):
-        await vram.warmup("ollama/qwen2.5-coder:7b", deadline_seconds=0.1)
+        await vram.warmup("ollama/qwen2.5-coder:7b", TEST_OLLAMA_URL, deadline_seconds=0.1)
 
 
 async def test_resident_model_skips_free_vram_check(monkeypatch) -> None:
@@ -272,7 +273,7 @@ async def test_resident_model_skips_free_vram_check(monkeypatch) -> None:
     monkeypatch.setattr(vram, "_is_model_resident", AsyncMock(return_value=True))
     # Even with zero free VRAM, a resident model fits.
     monkeypatch.setattr(vram, "probe_free_vram_mib", AsyncMock(return_value=0))
-    check = await vram.check_model_fits("ollama/qwen2.5-coder:7b")
+    check = await vram.check_model_fits("ollama/qwen2.5-coder:7b", TEST_OLLAMA_URL)
     assert check.fits is True
     assert "resident" in check.reason
 
@@ -292,4 +293,4 @@ async def test_warmup_independent_from_llm_timeout(monkeypatch) -> None:
 
     monkeypatch.setattr("aiohttp.ClientSession", lambda **_k: _FakeSession(_SlowResponse()))
     # Works even with a 5-second deadline — warmup only has to finish within its own budget.
-    await vram.warmup("ollama/qwen2.5-coder:7b", deadline_seconds=5)
+    await vram.warmup("ollama/qwen2.5-coder:7b", TEST_OLLAMA_URL, deadline_seconds=5)

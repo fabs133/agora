@@ -16,7 +16,7 @@ from agora.core.types import AgentRole, ProjectPhase
 from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator
 from agora.matrix.room_manager import RoomManager
-from tests.conftest import FakeLLM, tool_call
+from tests.conftest import TEST_OLLAMA_URL, FakeLLM, tool_call
 
 
 def _always_pass() -> Specification:
@@ -51,6 +51,7 @@ def _orchestrator(
         max_parallel_agents=1,
         enable_observer=enable_observer,
         skip_warmup=True,  # no real Ollama in tests
+        ollama_base_url=TEST_OLLAMA_URL,
         repo_root=repo_root,
         review_timeout_seconds=0.5,  # unit tests don't simulate poll votes
     )
@@ -138,6 +139,7 @@ async def test_pause_blocks_task_dispatch_until_resume(tmp_path, fake_matrix_cli
         max_parallel_agents=1,
         enable_observer=True,
         skip_warmup=True,
+        ollama_base_url=TEST_OLLAMA_URL,
         review_timeout_seconds=0.5,
     )
     agents = [AgentConfig(name="w", role=AgentRole.IMPLEMENTER)]
@@ -212,6 +214,7 @@ async def test_abort_transitions_project_to_failed(tmp_path, fake_matrix_client)
         max_parallel_agents=1,
         enable_observer=True,
         skip_warmup=True,
+        ollama_base_url=TEST_OLLAMA_URL,
         review_timeout_seconds=0.5,
     )
     agents = [AgentConfig(name="w", role=AgentRole.IMPLEMENTER)]

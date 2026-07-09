@@ -1,6 +1,6 @@
 """Auto-vote on plan-builder decisions in a fixed order.
 
-Logs in as the observer user (@fabs:agora.local), finds the plan-builder
+Logs in as the observer user (from Settings), finds the plan-builder
 project room by substring, and posts ``/agora decision <answer>`` for each
 decision as it becomes pending. Used to unblock live runs without human
 clicks when the answers are already known.
@@ -21,13 +21,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import re
 import sys
 import time
 from pathlib import Path
 
 from nio import AsyncClient, LoginResponse, RoomSendResponse
+
+# Repo-relative import so this standalone helper can read the one config source.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from agora.config import get_settings  # noqa: E402
 
 STAGE_RE = re.compile(
     r"stage 1/1 task=(?P<task>\w+) name=(?P<stage>\w+) kind=decision"
@@ -146,19 +151,15 @@ async def tail_and_vote(
 
 
 async def main_async() -> int:
+    # Defaults come from the one config source (Settings); env is read only in
+    # config.py. --homeserver/--user/--password still override on the CLI.
+    _settings = get_settings()
     ap = argparse.ArgumentParser()
     ap.add_argument("--output-file", required=True, type=Path)
     ap.add_argument("--answers", nargs="+", required=True)
-    ap.add_argument(
-        "--homeserver",
-        default=os.getenv("AGORA_HOMESERVER", "http://localhost:6167"),
-    )
-    ap.add_argument(
-        "--user", default=os.getenv("AGORA_OBSERVER_USER", "@fabs:agora.local")
-    )
-    ap.add_argument(
-        "--password", default=os.getenv("AGORA_OBSERVER_PASSWORD", "fabs-dev-pass")
-    )
+    ap.add_argument("--homeserver", default=_settings.matrix_homeserver)
+    ap.add_argument("--user", default=_settings.observer_user)
+    ap.add_argument("--password", default=_settings.observer_password)
     ap.add_argument(
         "--room-id",
         default=None,

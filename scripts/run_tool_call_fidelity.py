@@ -29,7 +29,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from agora.fleet.profiles import apply_env_overrides, build_llm_factory, load_profiles
+from agora.fleet.profiles import (
+    apply_env_overrides,
+    build_llm_factory,
+    load_profiles,
+    resolve_base_url,
+)
 from agora.fleet.strategies import StrategyAdapter, resolve
 from agora.observe.jsonl import (
     ArmSpec,
@@ -132,12 +137,16 @@ async def main() -> None:
     # mark_complete, no auto git_commit) so the signal is the model's own calls.
     cfg.auto_hooks_enabled = False
 
+    # Resolve the profile's optional endpoint override against the single-source
+    # Settings endpoint (profile.ollama.base_url is None ⇒ inherit).
+    ollama_base_url = resolve_base_url(profile, cfg.ollama_base_url)
+
     project_dir = seed_probe_files(cfg.work_dir, PROJECT_NAME)
     print(f"[*] Seeded {len(SEED_FILES)} fixtures under {project_dir / 'plan'}")
 
     await preflight_vram(
         profile.model,
-        profile.ollama.base_url,
+        ollama_base_url,
         safety_margin_mib=profile.vram.safety_margin_mib,
     )
 
@@ -167,7 +176,7 @@ async def main() -> None:
         project_name=PROJECT_NAME,
         profile=profile_snapshot_from(profile),
         arm=arm,
-        ollama_version=query_ollama_version(profile.ollama.base_url),
+        ollama_version=query_ollama_version(ollama_base_url),
         git_commit=git_commit_short(REPO_ROOT),
         log_path=output_dir / "run.log",
         strategy=strategy_name,
@@ -192,7 +201,7 @@ async def main() -> None:
     # factory path in build_orchestrator is untouched.
     llm_factory = None
     if strategy is not None:
-        _base_factory = build_llm_factory(profile)
+        _base_factory = build_llm_factory(profile, ollama_base_url)
 
         def llm_factory(model_ref: str, _f=_base_factory, _s=strategy):
             return StrategyAdapter(_f(model_ref), _s)

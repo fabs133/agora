@@ -118,7 +118,7 @@ class Orchestrator:
         enable_observer: bool = False,
         repo_root: str | None = None,
         knowledge_cache_dir: str | None = None,
-        ollama_base_url: str = "http://localhost:11434",
+        ollama_base_url: str,  # required config-shaped endpoint — no localhost default; inject from Settings.ollama_base_url
         skip_warmup: bool = False,
         warmup_deadline: float = 600.0,
         keep_alive: str = "30m",
@@ -791,6 +791,7 @@ class Orchestrator:
             # AGORA_SERIAL_TASKS (debug, default off): dispatch ready tasks
             # sequentially instead of concurrently, to isolate scheduling/batching
             # as a non-determinism source. Off ⇒ the concurrent gather, unchanged.
+            # Registered debug-flag (integration-hardening 2B.3 allowlist): env-only.
             if os.getenv("AGORA_SERIAL_TASKS", "").strip().lower() in ("1", "true", "yes", "on"):
                 outcomes = [await _execute(t) for t in ready]
             else:

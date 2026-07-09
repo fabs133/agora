@@ -7,7 +7,7 @@ from agora.core.types import AgentRole, ProjectPhase, TaskStatus
 from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator, ReviewDecision
 from agora.matrix.room_manager import RoomManager
-from tests.conftest import FakeLLM, tool_call
+from tests.conftest import TEST_OLLAMA_URL, FakeLLM, tool_call
 
 
 def _always_pass_spec() -> Specification:
@@ -55,6 +55,7 @@ def _make_orchestrator(tmp_path: Path, fake_matrix_client, llm_plan_factory):
         llm_factory=factory,
         work_dir=str(tmp_path),
         skip_warmup=True,  # fake LLM — no real Ollama in unit tests
+        ollama_base_url=TEST_OLLAMA_URL,
     )
 
 
