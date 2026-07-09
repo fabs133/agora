@@ -88,7 +88,7 @@ from agora.observe.jsonl import (
     profile_snapshot_from,
     query_ollama_version,
 )
-from agora.plan.harness import preflight_vram
+from agora.plan.harness import force_utf8_stdio, preflight_vram
 
 # Config comes from one source: Settings (env is read only in config.py). This
 # script is a composition root — it reads Settings once and injects typed values.
@@ -897,7 +897,7 @@ async def main() -> None:
         ollama_version=query_ollama_version(ollama_base_url),
         git_commit=git_commit_short(REPO_ROOT),
     )
-    print(f"[*] Run observer → {output_dir} (run_id={run_id})")
+    print(f"[*] Run observer -> {output_dir} (run_id={run_id})")
 
     orchestrator = Orchestrator(
         matrix_client=client,
@@ -955,4 +955,8 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    # ASCII/console safety: force UTF-8 stdio so the demo (and any model output
+    # it prints) never crashes a bare cp1252 Windows console — the run_phased
+    # ascii-safety precedent, applied to the stranger-facing demo script.
+    force_utf8_stdio()
     asyncio.run(main())

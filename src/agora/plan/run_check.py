@@ -30,6 +30,7 @@ precisely so a future phase-0 re-validation can feed it straight back into
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -103,9 +104,16 @@ def postcond_run_check(
             "expect_exit": expect_exit,
             "expect_stdout_contains": expect_stdout_contains,
         }
+        # Resolve a bare ``python``/``python3`` to THIS interpreter, so a flow's
+        # run_check gate runs the same venv Agora runs — not whatever ``python``
+        # PATH happens to resolve to on a stranger's box (py2, absent, or a
+        # different environment). The record above keeps the portable original.
+        argv = list(cmd)
+        if argv[0] in ("python", "python3"):
+            argv[0] = sys.executable
         try:
             proc = subprocess.run(
-                cmd,
+                argv,
                 cwd=str(run_cwd),
                 input=stdin if stdin else None,
                 capture_output=True,

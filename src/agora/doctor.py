@@ -117,12 +117,12 @@ async def check_conduit(homeserver: str, user_id: str, password: str) -> CheckRe
     except TimeoutError:
         return CheckResult(
             "conduit", False, f"login to {homeserver} timed out (8s)",
-            hint="is Conduit up (docker compose up -d)?",
+            hint="is Conduit up (docker compose up -d), or is port 6167 taken by another process?",
         )
     except Exception as exc:  # noqa: BLE001
         return CheckResult(
             "conduit", False, f"login failed for {user_id} at {homeserver} ({type(exc).__name__})",
-            hint="is Conduit up (docker compose up -d) and the account registered?",
+            hint="is Conduit up (docker compose up -d) and the account registered? (or port 6167 in use)",
         )
     finally:
         try:

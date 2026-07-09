@@ -32,6 +32,25 @@ def test_run_check_happy_path(tmp_path) -> None:
     assert rec["stdout"].strip() == "pong"
 
 
+def test_run_check_resolves_bare_python_to_this_interpreter(tmp_path) -> None:
+    """A flow's ``["python", ...]`` gate must run THIS venv, not whatever
+    ``python`` PATH resolves to on a stranger's box (onboarding pre-mortem A3).
+    The recorded cmd stays the portable original."""
+    sink: list = []
+    # sys.version_info is interpreter-specific; if the bare "python" were run via
+    # PATH it could be a different interpreter (or absent). Asserting the printed
+    # executable matches sys.executable proves the resolution.
+    passed, reason = _run(
+        {
+            "cmd": ["python", "-c", "import sys; print(sys.executable)"],
+            "expect_stdout_contains": sys.executable,
+        },
+        tmp_path, sink,
+    )
+    assert passed is True, reason
+    assert sink[0]["cmd"][0] == "python"  # record keeps the portable original
+
+
 def test_run_check_exit_mismatch_fails(tmp_path) -> None:
     passed, reason = _run({"cmd": [PY, "-c", "import sys; sys.exit(3)"]}, tmp_path)
     assert passed is False

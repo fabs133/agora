@@ -12,6 +12,11 @@ Built on the [Manifold](https://github.com/fabs133/manifold) Specification
 Pattern, with Matrix as the human-observer surface and Git as the artifact
 store.
 
+**Runs locally** on Python ≥3.12 + Docker + Ollama; the demo wants ~6 GB of
+free VRAM (CPU works, slower). New here? → **[docs/SETUP.md](docs/SETUP.md)**
+takes you from clone to a green run. Found a rough edge the docs don't
+anticipate? That's a real signal — please [open an issue](../../issues).
+
 ## Status
 
 Active research code; framework stable at Round 18 of empirical hardening.

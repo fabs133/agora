@@ -1,0 +1,25 @@
+# Line-ending policy for cross-platform reproducibility
+# (integration-hardening onboarding pre-mortem, A6).
+#
+# Text is normalized to LF in the repository. Byte-exact fixtures are pinned so
+# no core.autocrlf variant (true on Windows, input on Linux) can alter them at
+# checkout — the byte-equality gates must round-trip unchanged. The live probe
+# seed files are written at runtime with explicit LF bytes (write_bytes), so
+# they never pass through git checkout and need no attribute here.
+
+* text=auto
+
+# Byte-exact fixtures — recorded JSONL the tests read and round-trip.
+tests/observe/fixtures/** -text
+
+# Formats where LF is load-bearing regardless of platform.
+*.sh   text eol=lf
+*.txt  text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+
+# Binaries — never apply eol or diff conversion.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

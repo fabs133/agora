@@ -9,13 +9,33 @@ anything is misconfigured.
 > Windows note: commands are shown for POSIX shells. On Windows use
 > `.venv\Scripts\activate` and Git Bash (or adapt the `cp`/`source` lines).
 
+## Hardware & what to expect
+
+The demo runs the default model `ollama/qwen2.5:7b-instruct` entirely on your
+machine:
+
+| | |
+|---|---|
+| **VRAM** | ~6 GB free (GPU strongly recommended; CPU-only works but is slow) |
+| **Model download** | ~4.7 GB, one time (`agora setup-ollama`) |
+| **Demo runtime** | ~6 minutes on the reference box (RTX 3060 Ti) |
+| **Success looks like** | the run ends `DONE 12/12` — all 12 tasks green |
+
+No GPU? `agora doctor` reports VRAM as a non-blocking note (never a red) and
+the run still executes on CPU, just slower.
+
 ## Prerequisites
 
 - **Python ≥ 3.12**
-- **Docker** — runs the [Conduit](https://conduit.rs) Matrix homeserver
+- **Docker** (Compose v2 — the `docker compose` subcommand) — runs the
+  [Conduit](https://conduit.rs) Matrix homeserver
 - **Ollama** — the local LLM backend (<https://ollama.com>). See `OLLAMA.md`
   for the daemon settings this project expects.
 - **git**
+
+> **WSL:** if you run the code inside WSL but Ollama on the Windows host, point
+> the code at the host: set `AGORA_OLLAMA_BASE_URL=http://<windows-host-ip>:11434`
+> in `.env` (the WSL `localhost` is not the host's).
 
 ---
 
@@ -78,8 +98,14 @@ ollama serve &                     # if it is not already running
 agora setup-ollama                 # VRAM pre-flight + pull + warm-up of the default model
 ```
 
-This pulls `ollama/qwen2.5:7b-instruct` (the default in `.env` /
-`profiles.yaml`) and pins it resident so the first real turns are fast.
+This pulls the exact tag **`ollama/qwen2.5:7b-instruct`** (the default in
+`.env` / `profiles.yaml`) and pins it resident so the first real turns are fast.
+
+> Same tag ≠ same weights. An Ollama tag can be re-pushed, so a fresh pull may
+> differ from the one the reference `DONE 12/12` was measured on. Record your
+> pulled digest with `ollama show qwen2.5:7b-instruct` (look for `digest:`); if
+> your demo scores differently from the reference, a digest mismatch is the
+> first thing to check.
 
 ## 5. Preflight — everything green before you run
 
@@ -99,9 +125,22 @@ Do not proceed until it is all green.
 python scripts/run_discord_bot_test.py
 ```
 
+**No Discord account needed, and nothing leaves your machine.** Despite the
+name, the demo *builds* a Discord bot's code and verifies it in a sandbox — it
+never connects to Discord and touches no network beyond `localhost` (Ollama +
+Conduit). The `DISCORD_TOKEN` the generated code reads is stubbed to a dummy.
+
 A greenfield build: the agents drive `qwen2.5:7b-instruct` through a 12-task DAG
 to a working Discord bot, hitting `DONE 12/12` in ~6 minutes on the default
-model. That is your green run — setup is complete.
+model. The tail of a successful run looks like:
+
+```text
+[phase] DONE
+  [OK] task 12/12 ...
+Success: True  Duration: 3xx.xs
+```
+
+That `DONE 12/12` is your green run — setup is complete.
 
 To watch it live, open Element on `http://localhost:6167` and join the project
 room; phase banners, per-task write-event cards, and the review poll all stream
