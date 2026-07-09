@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
 from typer.testing import CliRunner
 
 from agora import __version__
@@ -26,21 +24,33 @@ def test_recommend_model_tiers() -> None:
     assert "VRAM too low" in _recommend_model(1_000)
 
 
-def test_doctor_reports_backend_status() -> None:
-    """Doctor reports ollama + VRAM without crashing when the service is missing."""
-    # Make ollama unreachable and the VRAM probe fail.
-    with patch("agora.fleet.vram.probe_free_vram_mib", AsyncMock(return_value=None)), \
-         patch("aiohttp.ClientSession") as _session:
-        session_instance = MagicMock()
-        session_instance.__aenter__ = AsyncMock(return_value=session_instance)
-        session_instance.__aexit__ = AsyncMock(return_value=None)
-        session_instance.get = MagicMock(side_effect=OSError("unreachable"))
-        _session.return_value = session_instance
+def test_doctor_exits_nonzero_when_a_check_is_red(monkeypatch) -> None:
+    """The CLI wires agora.doctor and exits non-zero on any red (Stage 4)."""
+    from agora import doctor
 
-        result = runner.invoke(app, ["doctor"])
-    assert result.exit_code == 0
+    async def _fake_run_checks(**_kw):
+        return [
+            doctor.CheckResult("ollama", False, "unreachable at ...", hint="start `ollama serve`"),
+            doctor.CheckResult("workspace", True, "git work tree OK"),
+        ]
+
+    monkeypatch.setattr(doctor, "run_checks", _fake_run_checks)
+    result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 1
     assert "ollama" in result.stdout
-    assert "vram" in result.stdout
+    assert "FAIL" in result.stdout
+
+
+def test_doctor_exits_zero_when_all_green(monkeypatch) -> None:
+    from agora import doctor
+
+    async def _fake_run_checks(**_kw):
+        return [doctor.CheckResult("ollama", True, "reachable"), doctor.CheckResult("vram", True, "ok")]
+
+    monkeypatch.setattr(doctor, "run_checks", _fake_run_checks)
+    result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 0
+    assert "all checks passed" in result.stdout
 
 
 def test_build_adapter_routes_ollama(monkeypatch) -> None:

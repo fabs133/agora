@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     arm_strictness: str = "strict"
     strategy: str = ""
 
+    # Dev tooling: the PlantUML render server (agora doctor --dev checks it). The
+    # standalone render_diagrams.py reads the same AGORA_PLANTUML_URL directly (it
+    # is stdlib-only by contract and cannot import Settings).
+    plantuml_url: str = "http://localhost:18080"
+
     # Web fetch (fetch_url tool) — legacy integration, OFF by default. Only the
     # plan-builder / fastapi-crud flows use it; opt in with AGORA_ENABLE_WEB_FETCH=1.
     enable_web_fetch: bool = False

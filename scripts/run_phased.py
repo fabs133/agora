@@ -22,7 +22,6 @@ import argparse
 import json
 import logging
 import sys
-import urllib.request
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -32,6 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from agora import doctor  # noqa: E402
 from agora.config import env_layer  # noqa: E402
 from agora.core.types import AgentRole  # noqa: E402
 from agora.fleet.phase_gate import (  # noqa: E402
@@ -705,35 +705,8 @@ def detach_run_log(state: tuple[logging.Handler, int]) -> None:
 
 
 # ------------------------------------------------------------------ ollama health
-
-def ollama_missing_models(tags: dict[str, Any], required: list[str]) -> list[str]:
-    """Return the required model tags (``name:tag``) absent from ``/api/tags``."""
-    present = {m.get("name", "") for m in (tags.get("models") or [])}
-    return [m for m in required if m not in present]
-
-
-def ollama_health_or_die(base_url: str, required: list[str]) -> None:
-    """Fail loudly (SystemExit) if the daemon is down or a model is missing
-    (OLLAMA.md: bare `serve` from D:\\ollama\\models, one model at a time)."""
-    try:
-        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/version", timeout=3) as resp:
-            json.loads(resp.read())
-    except Exception as exc:  # noqa: BLE001
-        raise SystemExit(
-            f"[FATAL] Ollama daemon unreachable at {base_url} ({type(exc).__name__}). "
-            f"Start it per OLLAMA.md (bare `ollama serve`, OLLAMA_MODELS=D:\\ollama\\models)."
-        ) from exc
-    try:
-        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=5) as resp:
-            tags = json.loads(resp.read())
-    except Exception as exc:  # noqa: BLE001
-        raise SystemExit(f"[FATAL] Ollama /api/tags failed: {exc}") from exc
-    missing = ollama_missing_models(tags, required)
-    if missing:
-        raise SystemExit(
-            f"[FATAL] required model(s) not present in Ollama: {missing}. "
-            f"Pull them or check OLLAMA_MODELS points at D:\\ollama\\models."
-        )
+# Health checks live in ONE place (agora.doctor); this runner calls that module
+# and holds no private health logic (integration-hardening Stage 4).
 
 
 # ------------------------------------------------------------------ campaign load
@@ -787,7 +760,10 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         for rb in resolve_cast(cast, profiles)
         if not rb.is_human and rb.model.startswith("ollama/") and rb.resident
     ]
-    ollama_health_or_die(settings.ollama_base_url, required)
+    doctor.preflight_or_die([
+        doctor.check_ollama_reachable(settings.ollama_base_url),
+        doctor.check_ollama_models(settings.ollama_base_url, required),
+    ])
 
     flow = load_flow(campaign["flow"])
     agents, tasks = instantiate_flow(flow, "echobot", id_strategy="preserve")

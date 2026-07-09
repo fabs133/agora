@@ -173,14 +173,6 @@ def test_report_is_ascii_safe() -> None:
     report.encode("ascii")  # must not raise
 
 
-# --------------------------------------------------------------- ollama health
-
-def test_ollama_missing_models() -> None:
-    tags = {"models": [{"name": "gemma4:e4b"}, {"name": "nomic-embed-text:latest"}]}
-    assert rp.ollama_missing_models(tags, ["gemma4:e4b"]) == []
-    assert rp.ollama_missing_models(tags, ["gemma4:e4b", "qwen2.5:7b-instruct"]) == ["qwen2.5:7b-instruct"]
-
-
 # --------------------------------------------------------------- cast/agent resolution
 
 def test_resolve_agent_models_maps_roles_to_cast() -> None:
