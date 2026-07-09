@@ -65,5 +65,5 @@ carries its full key.
   5 MB compressed.
 - Do not hand-edit `manifest.yaml` or `index/`; the manifest is derived and the
   index is CI-built.
-- Data license: **MIT** (owner decision) — the exchange repo ships an MIT
-  `LICENSE`, matching the framework.
+- Data license: **Apache-2.0** (owner decision) — the exchange repo ships an
+  Apache-2.0 `LICENSE`, matching the framework.

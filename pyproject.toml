@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Multi-agent orchestration framework built on Matrix + Manifold contracts."
 requires-python = ">=3.12"
 readme = "README.md"
+license = "Apache-2.0"
 dependencies = [
     "pydantic>=2.7",
     "pyyaml>=6.0",

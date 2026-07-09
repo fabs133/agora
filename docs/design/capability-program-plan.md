@@ -202,10 +202,12 @@ mirror. Machine-readable index is canonical; these are cosmetic/reach.
    re-run: no-op, replace, or append a dated reproduction row? *Recommendation:*
    append dated rows and let reproduction-count logic (L2-2) treat local repeats
    the same as community ones. (Gates L1-B.)
-5. **Exchange data license.** **DECIDED (owner, 2026-07-09): MIT** — for both the
-   framework and the data/exchange repo. (NOTE: the framework's current LICENSE is
-   Apache-2.0; switching it to MIT is a deliberate relicense — flagged, not yet
-   applied.) (Gates L2-0 — RESOLVED for the exchange repo.)
+5. **Exchange data license.** **DECIDED (owner, 2026-07-09): Apache-2.0** — for
+   both the framework and the data/exchange repo (owner reconsidered vs the
+   design's CC0 suggestion; keeps the framework's existing Apache-2.0 and its
+   patent grant, one license across both repos). The framework's LICENSE is
+   unchanged; `pyproject.toml` now declares `license = "Apache-2.0"` explicitly.
+   (Gates L2-0 — RESOLVED.)
 6. **Repo/CI ownership + release cadence.** The exchange CI pins an agora RELEASE
    TAG; that means Layer 2 needs a tagged agora release (ties into the
    `v0.1.0` tag already flagged in the onboarding audit). Confirm the exchange is
