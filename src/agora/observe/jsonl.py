@@ -259,6 +259,13 @@ class RunRecord(BaseModel):
     # Probe design version (findings S4). Carried from the flow file so v3 cells
     # are never silently compared against v1/v2. Additive optional; stays 1.
     probe_version: int | None = None
+    # Capability-matrix key fields (bench pipeline / L1-A). Additive optional,
+    # schema_version stays 1: pre-bench run.jsonl lines lack them and parse with
+    # the empty default. ``model_digest`` = Ollama manifest sha256 (model
+    # IDENTITY, not the mutable tag); ``battery_version`` = the named+versioned
+    # battery this run belongs to ("" for ad-hoc, non-benchmark campaigns).
+    model_digest: str = ""
+    battery_version: str = ""
 
 
 class PhaseTaskOutcome(BaseModel):
@@ -435,6 +442,24 @@ def query_ollama_version(base_url: str = "http://localhost:11434") -> str:
         return "unknown"
 
 
+def query_ollama_digest(model: str, base_url: str = "http://localhost:11434") -> str:
+    """Best-effort model manifest DIGEST (sha256) via ``/api/tags``; ``"unknown"``
+    on failure. This is the model's IDENTITY for the capability key — the tag is
+    mutable (same tag can be re-pushed), the digest is not."""
+    name = model.removeprefix("ollama/")
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        for entry in data.get("models") or []:
+            if entry.get("name") == name or entry.get("model") == name:
+                return str(entry.get("digest") or "unknown")
+        return "unknown"
+    except Exception:  # noqa: BLE001 — telemetry only, never fail a run
+        return "unknown"
+
+
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -474,6 +499,8 @@ class RunObserver:
         strategy: str | None = None,
         harness: dict[str, Any] | None = None,
         probe_version: int | None = None,
+        model_digest: str = "",
+        battery_version: str = "",
     ) -> None:
         self.run_id = run_id
         self.output_dir = Path(output_dir)
@@ -491,6 +518,8 @@ class RunObserver:
         self.strategy = strategy
         self.harness = harness
         self.probe_version = probe_version
+        self.model_digest = model_digest
+        self.battery_version = battery_version
         self.started_at = _utc_now_iso()
 
         self._run_path = self.output_dir / "run.jsonl"
@@ -595,6 +624,8 @@ class RunObserver:
         fields.setdefault("strategy", self.strategy)
         fields.setdefault("harness", self.harness)
         fields.setdefault("probe_version", self.probe_version)
+        fields.setdefault("model_digest", self.model_digest)
+        fields.setdefault("battery_version", self.battery_version)
         if "async_leak_hits" not in fields:
             fields["async_leak_hits"] = scan_async_leaks(self.log_path)
         record = RunRecord(**fields)
@@ -759,6 +790,7 @@ __all__ = [
     "derive_status",
     "git_commit_short",
     "profile_snapshot_from",
+    "query_ollama_digest",
     "query_ollama_version",
     "scan_async_leaks",
 ]
