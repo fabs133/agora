@@ -557,5 +557,34 @@ def _build_adapter(model: str, settings):
     )
 
 
+exchange_app = typer.Typer(help="Capability exchange commands")
+app.add_typer(exchange_app, name="exchange")
+
+
+@exchange_app.command("index")
+def exchange_index(
+    contributions: str = typer.Argument(..., help="A tree of submission dirs (each with manifest.yaml)."),
+    out: str = typer.Option(".", "--out", help="Where to write index/matrix.csv + index/conflicts.md."),
+) -> None:
+    """Build the derived index (matrix.csv + conflicts.md) from all submissions.
+
+    The same aggregation the exchange CI runs — reproduction counts across
+    agreeing submissions, conflicts surfaced (never averaged).
+    """
+    from pathlib import Path
+
+    from agora.exchange.index import build_index, write_index
+
+    dirs = sorted(p.parent for p in Path(contributions).rglob("manifest.yaml"))
+    if not dirs:
+        typer.echo(f"no submissions (manifest.yaml) found under {contributions}")
+        raise typer.Exit(code=1)
+    result = build_index(dirs)  # type: ignore[arg-type]
+    index_dir = write_index(out, result)
+    typer.echo(
+        f"index -> {index_dir}  ({len(result.matrix)} rows, {len(result.conflicts)} conflict(s))"
+    )
+
+
 if __name__ == "__main__":
     app()
