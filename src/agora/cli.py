@@ -361,6 +361,50 @@ def bench(
     typer.echo(f"appended {len(rows)} rows -> {matrix}  ({len(combined)} total)")
 
 
+@app.command()
+def contribute(
+    output_dir: str = typer.Argument(..., help="A completed bench run directory."),
+    digest: str = typer.Option(..., "--digest", help="Model manifest digest (sha256:...)."),
+    battery: str = typer.Option("standard-v1", "--battery", help="battery_version this run measured."),
+    contributor: str = typer.Option("", "--contributor", help="Your GitHub user or a label."),
+    dest: str = typer.Option("dist/exchange", "--dest", help="Where to write the submission."),
+    gpu: str = typer.Option("", "--gpu", help="Attestation: GPU model."),
+    os_name: str = typer.Option("", "--os", help="Attestation: OS."),
+    write: bool = typer.Option(False, "--write", help="Write it (default: dry-run only)."),
+) -> None:
+    """Package a bench run into an exchange submission (dry-run by default).
+
+    Derives the manifest, gathers the attestation, SANITIZES machine-private
+    strings (with a printed scrub report), then runs the SAME validator the
+    exchange CI runs — failing early, locally. ``--write`` materializes the files.
+    """
+    from agora.exchange.package import package_submission
+    from agora.exchange.sanitize import scrub_report_lines
+
+    extra = {k: v for k, v in {"gpu": gpu, "os": os_name}.items() if v}
+    result = package_submission(
+        output_dir, model_digest=digest, battery_version=battery, contributor=contributor,
+        dest=dest, attestation_extra=extra, dry_run=not write,
+    )
+    typer.echo(f"submission: {result.submission_dir}")
+    typer.echo(
+        f"rows {len(result.manifest.rows)}  battery {result.manifest.battery_version}  "
+        f"probe {result.manifest.probe_version}"
+    )
+    for line in scrub_report_lines(result.scrub_report):
+        typer.echo(f"  scrub: {line}")
+    if result.problems:
+        typer.echo(f"INVALID ({len(result.problems)} problem(s)):")
+        for p in result.problems:
+            typer.echo(f"  - {p}")
+        raise typer.Exit(code=1)
+    typer.echo(
+        "written. review it, then open a PR against the exchange repo."
+        if result.written
+        else "dry-run OK. re-run with --write to materialize the submission."
+    )
+
+
 cast_app = typer.Typer(help="Cast (role→profile binding) commands")
 app.add_typer(cast_app, name="cast")
 
