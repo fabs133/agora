@@ -130,9 +130,8 @@ async def preflight_vram(
     (the June 30 incident-debugging case). This is the policy layer; the math in
     :mod:`agora.fleet.vram` is unaware of the env var.
 
-    Skipped for non-Ollama models (API-backed providers like openai/*,
-    anthropic/*, gemini/*, claude-*, claude-code/*) — there's no local GPU
-    memory to budget against.
+    Skipped for non-Ollama models — there's no local GPU memory to budget against
+    (Ollama is the only backend today, so this is effectively always active).
 
     ``safety_margin_mib`` is sourced from ``profile.vram.safety_margin_mib``
     in the standard call path. The estimation formula itself is unchanged
@@ -221,17 +220,10 @@ def build_orchestrator(
             # valid model id); the harness owns the runtime model choice anyway.
             if not model_ref:
                 model_ref = model
-            # Build adapter-specific kwargs. Only Ollama needs our base_url;
-            # LiteLLM providers pick up auth from env vars; Anthropic direct
-            # reads ANTHROPIC_API_KEY when present (kept for back-compat with
-            # scripts that set it explicitly).
+            # Build adapter kwargs. Ollama is the only backend; it needs our base_url.
             kwargs: dict[str, Any] = {"timeout_seconds": 600.0}
             if model_ref.startswith("ollama/"):
                 kwargs["base_url"] = cfg.ollama_base_url
-            if model_ref.startswith("claude-") and not model_ref.startswith("claude-code/"):
-                api_key = os.getenv("ANTHROPIC_API_KEY", "")
-                if api_key:
-                    kwargs["api_key"] = api_key
             return create_llm_adapter(model_ref, **kwargs)
 
     # Caller-supplied factory (e.g. a strategy-wrapped one) wins; else use the
@@ -393,8 +385,8 @@ def _print_summary(result: ProjectResult) -> None:
         f"Tokens: in={int(result.total_tokens.get('input_tokens', 0))}, "
         f"out={int(result.total_tokens.get('output_tokens', 0))}"
     )
-    # Per-run USD cost surfaces only for LiteLLM-backed runs; Ollama +
-    # direct Anthropic adapters don't populate cost_usd.
+    # Per-run USD cost only appears if a metered backend sets cost_usd; the
+    # Ollama adapter does not.
     cost = result.total_tokens.get("cost_usd", 0.0)
     if cost:
         # Sub-cent values still useful for cross-provider comparison.

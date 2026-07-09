@@ -43,6 +43,7 @@ def handlers(tmp_path: Path, fake_matrix_client) -> AgoraHandlers:
         room_manager=room_manager,
         llm_factory=lambda _m: _llm_plan_factory(),
         work_dir=str(tmp_path / "work"),
+        skip_warmup=True,  # fake LLM — no real Ollama in unit tests
     )
     (tmp_path / "work").mkdir(parents=True, exist_ok=True)
     return AgoraHandlers(orchestrator, flows_dir=tmp_path / "flows")

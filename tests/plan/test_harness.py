@@ -98,7 +98,7 @@ def test_preflight_vram_passes_safety_margin_mib(monkeypatch) -> None:
 
 
 def test_preflight_vram_skips_for_non_ollama(monkeypatch) -> None:
-    """API-backed providers (openai/*, anthropic/*) skip the local VRAM check."""
+    """Non-Ollama models (e.g. openai/*) skip the local VRAM check."""
 
     async def _explode(*_a, **_k):
         raise AssertionError("check_model_fits must not be called for remote providers")

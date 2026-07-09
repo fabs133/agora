@@ -46,6 +46,7 @@ def _orchestrator(tmp_path: Path, fake_matrix_client) -> Orchestrator:
         llm_factory=lambda _m: _make_llm_plan(),
         work_dir=str(tmp_path),
         max_parallel_agents=1,
+        skip_warmup=True,  # fake LLM — no real Ollama in unit tests
     )
 
 

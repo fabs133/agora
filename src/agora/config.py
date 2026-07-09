@@ -20,19 +20,13 @@ class Settings(BaseSettings):
     matrix_password: str = ""
     matrix_registration_token: str = "dev_only_CHANGE_ME"
 
-    # LLM
+    # LLM (Ollama is the only backend; other backends re-enter via the bench pipeline)
     llm_model: str = "ollama/qwen2.5:7b-instruct"
-    anthropic_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
     llm_timeout_seconds: float = 600.0
     max_parallel_agents: int = 3
     llm_warmup_seconds: float = 600.0
     skip_llm_warmup: bool = False
-
-    # Claude Code subprocess (ToS-grey subscription path)
-    allow_claude_subprocess: bool = False
-    claude_code_binary: str = "claude"
-    claude_code_timeout_seconds: float = 300.0
 
     # VRAM pre-flight
     skip_vram_check: bool = False

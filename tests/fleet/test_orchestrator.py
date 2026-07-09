@@ -54,6 +54,7 @@ def _make_orchestrator(tmp_path: Path, fake_matrix_client, llm_plan_factory):
         room_manager=mgr,
         llm_factory=factory,
         work_dir=str(tmp_path),
+        skip_warmup=True,  # fake LLM — no real Ollama in unit tests
     )
 
 

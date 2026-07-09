@@ -36,7 +36,7 @@ def build_server(handlers: AgoraHandlers, name: str = "agora") -> FastMCP:
         Args:
             name: Agent display name. Must be unique.
             role: One of architect, implementer, reviewer, tester.
-            model: LLM model identifier (defaults to claude-sonnet-4).
+            model: LLM model identifier (defaults to the Ollama default model).
             instructions: Base system prompt for the agent.
             knowledge_files: Optional list of file paths to upload as knowledge.
         """

@@ -32,7 +32,7 @@ def test_agent_config_roundtrip() -> None:
     cfg = AgentConfig(
         name="alice",
         role=AgentRole.ARCHITECT,
-        model="claude-opus-4-6",
+        model="ollama/qwen2.5:7b-instruct",
         instructions="design carefully",
         knowledge_files=("a.md", "b.md"),
     )

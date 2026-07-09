@@ -363,10 +363,9 @@ def test_build_llm_factory_passes_num_ctx_none_through() -> None:
     assert adapter.num_ctx is None
 
 
-def test_build_llm_factory_unknown_model_raises(monkeypatch) -> None:
-    """A claude-* model with no API key in env should propagate the existing error."""
-    p = ModelProfile(model="claude-haiku-4-5")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+def test_build_llm_factory_unknown_model_raises() -> None:
+    """A non-Ollama model has no adapter (Ollama is the only backend)."""
+    p = ModelProfile(model="openai/gpt-4o")
     factory = build_llm_factory(p)
-    with pytest.raises(AgoraError, match="api_key|subscription|ollama"):
+    with pytest.raises(AgoraError, match="no adapter"):
         factory("")

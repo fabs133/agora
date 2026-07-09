@@ -280,15 +280,9 @@ def build_llm_factory(profile: ModelProfile) -> Callable[[str], LLMProtocol]:
     keep_alive, max_concurrent, timeout — so a mixed-model run inherits
     the profile's tuning rather than reverting to adapter defaults.
 
-    For ``ollama/*``: passes base_url, num_ctx, max_concurrent
-    (=``ollama.num_parallel``), keep_alive, default_max_tokens.
-
-    For ``claude-*`` (direct Anthropic, non-``claude-code/*``): picks up
-    ``ANTHROPIC_API_KEY`` from the env, mirroring the historical harness
-    closure.
-
-    For any other provider (LiteLLM, claude-code subprocess): just the
-    timeout.
+    For ``ollama/*`` (the only supported backend): passes base_url, num_ctx,
+    max_concurrent (=``ollama.num_parallel``), keep_alive, default_max_tokens,
+    and the sampling controls.
     """
 
     def factory(model_ref: str) -> LLMProtocol:
@@ -304,10 +298,6 @@ def build_llm_factory(profile: ModelProfile) -> Callable[[str], LLMProtocol]:
             # recorded in run.jsonl are the ones the daemon actually applied.
             kwargs["temperature"] = profile.temperature
             kwargs["seed"] = profile.seed
-        elif chosen.startswith("claude-") and not chosen.startswith("claude-code/"):
-            api_key = os.getenv("ANTHROPIC_API_KEY", "")
-            if api_key:
-                kwargs["api_key"] = api_key
         return create_llm_adapter(chosen, **kwargs)
 
     return factory

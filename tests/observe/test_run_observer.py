@@ -427,6 +427,7 @@ async def test_observer_integration_via_orchestrator(tmp_path, fake_matrix_clien
         room_manager=mgr,
         llm_factory=lambda _m: _simple_llm(),
         work_dir=str(tmp_path / "work"),
+        skip_warmup=True,  # fake LLM — no real Ollama in unit tests
         observer=obs,
     )
     agents = [AgentConfig(name="impl", role=AgentRole.IMPLEMENTER)]
@@ -465,6 +466,7 @@ async def test_orchestrator_without_observer_is_backcompat(tmp_path, fake_matrix
         room_manager=mgr,
         llm_factory=lambda _m: _simple_llm(),
         work_dir=str(tmp_path / "work"),
+        skip_warmup=True,  # fake LLM — no real Ollama in unit tests
     )
     agents = [AgentConfig(name="impl", role=AgentRole.IMPLEMENTER)]
     tasks = [Task(id="t0", spec=_passing_spec(), description="x",
@@ -487,6 +489,7 @@ async def test_observer_smoke_minimal_flow(tmp_path, fake_matrix_client) -> None
         room_manager=mgr,
         llm_factory=lambda _m: _simple_llm(),
         work_dir=str(tmp_path / "work"),
+        skip_warmup=True,  # fake LLM — no real Ollama in unit tests
         observer=obs,
     )
     agents = [AgentConfig(name="impl", role=AgentRole.IMPLEMENTER)]

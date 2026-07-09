@@ -76,7 +76,7 @@ class ProjectResult:
     ``success`` is the conjunction of every task's postcondition outcome
     plus the review approval. ``task_results`` is in execution order;
     ``total_tokens`` aggregates input/output token counts (and ``cost_usd``
-    when the LiteLLM adapter is in use) across all agents.
+    if a metered backend sets it) across all agents.
     """
 
     project: Project

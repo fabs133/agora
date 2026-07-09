@@ -4,7 +4,7 @@ Subcommands:
 - ``agora mcp``           — run the outer MCP server over stdio.
 - ``agora watch``         — attach to a project room and stream events into the terminal.
 - ``agora setup-ollama``  — VRAM-check then pull the default Ollama model.
-- ``agora doctor``        — probe Ollama, claude CLI, GPU, and report status.
+- ``agora doctor``        — probe Ollama, GPU, and report status.
 - ``agora version``       — print the package version.
 """
 
@@ -238,8 +238,6 @@ def watch(
 @app.command()
 def doctor() -> None:
     """Report which LLM backends are available on this machine."""
-    import shutil
-
     import aiohttp
 
     from agora.fleet.vram import probe_free_vram_mib
@@ -257,19 +255,6 @@ def doctor() -> None:
                 typer.echo(f"ollama  : OK (HTTP {resp.status}) at {settings.ollama_base_url}")
         except Exception as exc:  # noqa: BLE001
             typer.echo(f"ollama  : unreachable ({type(exc).__name__})")
-
-        # claude CLI
-        claude_path = shutil.which(settings.claude_code_binary)
-        if claude_path:
-            typer.echo(f"claude  : found at {claude_path}")
-            typer.echo(
-                f"          subprocess enabled: {settings.allow_claude_subprocess}"
-            )
-        else:
-            typer.echo("claude  : not on PATH")
-
-        # Anthropic API key
-        typer.echo(f"api-key : {'set' if settings.anthropic_api_key else 'unset'}")
 
         # VRAM
         free = await probe_free_vram_mib()
@@ -352,29 +337,17 @@ def _recommend_model(free_mib: int) -> str:
         return "ollama/qwen2.5:7b-instruct"
     if free_mib >= 4_000:
         return "ollama/qwen2.5:3b-instruct"
-    return "claude-code/subscription (VRAM too low for local models)"
+    return "none — VRAM too low for the local models; free VRAM or pick a smaller one"
 
 
 def _build_adapter(model: str, settings):
-    """Route a model string to the right adapter with settings-aware kwargs."""
+    """Route a model string to its adapter with settings-aware kwargs. Ollama is
+    the only backend; other model strings are rejected by ``create_llm_adapter``."""
     from agora.fleet.llm_adapter import create_llm_adapter
 
-    if model.startswith("ollama/"):
-        return create_llm_adapter(
-            model,
-            base_url=settings.ollama_base_url,
-            timeout_seconds=settings.llm_timeout_seconds,
-        )
-    if model.startswith("claude-code/"):
-        return create_llm_adapter(
-            model,
-            binary=settings.claude_code_binary,
-            allow=settings.allow_claude_subprocess,
-            timeout_seconds=settings.claude_code_timeout_seconds,
-        )
     return create_llm_adapter(
         model,
-        api_key=settings.anthropic_api_key,
+        base_url=settings.ollama_base_url,
         timeout_seconds=settings.llm_timeout_seconds,
     )
 

@@ -10,7 +10,9 @@ from agora.core.types import AgentId, AgentRole, RoomId
 if TYPE_CHECKING:
     from agora.core.learning import Learning
 
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+#: Fallback model id when an AgentConfig / event / request omits one. Ollama is
+#: the only backend; the real default lives in ``agora.config.Settings.llm_model``.
+DEFAULT_MODEL = "ollama/qwen2.5:7b-instruct"
 
 
 @dataclass(frozen=True)

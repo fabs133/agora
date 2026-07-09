@@ -231,17 +231,25 @@ class FakeLLM:
         self._idx = 0
         self.calls: list[dict[str, Any]] = []
 
-    # Delegate shaping to the Anthropic-style helper so FakeLLM satisfies the
-    # new LLMProtocol (which now includes format_assistant_turn / _tool_results).
+    # Block-array shaping (one dict per turn) so FakeLLM satisfies LLMProtocol's
+    # optional format hooks. Kept inline (not imported from an adapter) so the
+    # fake stays self-contained.
     def format_assistant_turn(self, response):
-        from agora.fleet.llm_adapter import _AnthropicShape
-
-        return _AnthropicShape().format_assistant_turn(response)
+        blocks: list[dict[str, Any]] = []
+        if response.content:
+            blocks.append({"type": "text", "text": response.content})
+        for call in response.tool_calls:
+            blocks.append(
+                {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}
+            )
+        return {"role": "assistant", "content": blocks}
 
     def format_tool_results(self, calls, results):
-        from agora.fleet.llm_adapter import _AnthropicShape
-
-        return _AnthropicShape().format_tool_results(calls, results)
+        blocks = [
+            {"type": "tool_result", "tool_use_id": call.id, "content": result}
+            for call, result in zip(calls, results, strict=True)
+        ]
+        return {"role": "user", "content": blocks}
 
     async def complete(
         self,

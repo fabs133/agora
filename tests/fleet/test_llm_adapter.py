@@ -2,19 +2,12 @@ import pytest
 
 from agora.core.errors import AgoraError
 from agora.fleet.llm_adapter import (
-    AnthropicAdapter,
     LLMProtocol,
     LLMResponse,
     OllamaAdapter,
     ToolCall,
     create_llm_adapter,
 )
-
-
-def test_create_adapter_routes_to_anthropic() -> None:
-    pytest.importorskip("anthropic")
-    adapter = create_llm_adapter("claude-sonnet-4", api_key="sk-test")
-    assert isinstance(adapter, AnthropicAdapter)
 
 
 def test_create_adapter_routes_to_ollama() -> None:
@@ -55,25 +48,11 @@ def test_create_adapter_ollama_accepts_num_ctx_none() -> None:
 
 
 def test_create_adapter_unknown_model_raises() -> None:
+    # Ollama is the only backend; any non-ollama model string is rejected.
     with pytest.raises(AgoraError, match="no adapter"):
         create_llm_adapter("gpt-4")
-
-
-def test_create_adapter_anthropic_without_key_raises() -> None:
-    # Missing-key guard is checked before the import happens; error message
-    # points users at the Ollama / subprocess paths.
-    with pytest.raises(AgoraError, match="api_key|subscription|ollama"):
-        create_llm_adapter("claude-sonnet-4")
-
-
-def test_create_adapter_routes_to_claude_code_subprocess(monkeypatch) -> None:
-    from agora.fleet.claude_code_adapter import ClaudeCodeSubprocessAdapter
-
-    monkeypatch.setattr("shutil.which", lambda _b: "/fake/path/claude")
-    adapter = create_llm_adapter(
-        "claude-code/subscription", binary="claude", allow=True
-    )
-    assert isinstance(adapter, ClaudeCodeSubprocessAdapter)
+    with pytest.raises(AgoraError, match="no adapter"):
+        create_llm_adapter("openai/gpt-4o")
 
 
 def test_ollama_adapter_strips_prefix_in_payload(monkeypatch) -> None:
@@ -347,7 +326,7 @@ def test_strip_thinking_blocks_drops_think_pair() -> None:
 
 
 def test_strip_thinking_blocks_drops_thinking_pair() -> None:
-    """Gemma / Claude convention: ``<thinking>…</thinking>`` (longer tag)."""
+    """Gemma convention: ``<thinking>…</thinking>`` (longer tag)."""
     from agora.fleet.llm_adapter import _strip_thinking_blocks
 
     text = "<thinking>step 1, step 2</thinking>\nDone."
@@ -453,20 +432,6 @@ def test_ollama_adapter_shapes_tool_results_bare_per_result() -> None:
     assert msgs[0] == {"role": "tool", "content": "apple\napricot\n"}
     assert msgs[1] == {"role": "tool", "content": "wrote 3 bytes"}
     assert all("[read_file#" not in m["content"] for m in msgs)
-
-
-def test_anthropic_adapter_shapes_tool_results_as_blocks() -> None:
-    from agora.fleet.llm_adapter import _AnthropicShape
-
-    shape = _AnthropicShape()
-    turn = shape.format_tool_results(
-        calls=[ToolCall(id="call-1", name="write_file", arguments={})],
-        results=["wrote"],
-    )
-    assert turn["role"] == "user"
-    blocks = turn["content"]
-    assert blocks[0]["type"] == "tool_result"
-    assert blocks[0]["tool_use_id"] == "call-1"
 
 
 def test_llm_response_dataclass_defaults() -> None:

@@ -112,14 +112,23 @@ async def test_pause_blocks_task_dispatch_until_resume(tmp_path, fake_matrix_cli
             return LLMResponse(content="[]")
 
         def format_assistant_turn(self, resp):
-            from agora.fleet.llm_adapter import _AnthropicShape
-
-            return _AnthropicShape().format_assistant_turn(resp)
+            blocks = []
+            if resp.content:
+                blocks.append({"type": "text", "text": resp.content})
+            for call in resp.tool_calls:
+                blocks.append(
+                    {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}
+                )
+            return {"role": "assistant", "content": blocks}
 
         def format_tool_results(self, calls, results):
-            from agora.fleet.llm_adapter import _AnthropicShape
-
-            return _AnthropicShape().format_tool_results(calls, results)
+            return {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": c.id, "content": r}
+                    for c, r in zip(calls, results, strict=True)
+                ],
+            }
 
     orch = Orchestrator(
         matrix_client=fake_matrix_client,
@@ -177,14 +186,23 @@ async def test_abort_transitions_project_to_failed(tmp_path, fake_matrix_client)
             return LLMResponse(content="[]")
 
         def format_assistant_turn(self, resp):
-            from agora.fleet.llm_adapter import _AnthropicShape
-
-            return _AnthropicShape().format_assistant_turn(resp)
+            blocks = []
+            if resp.content:
+                blocks.append({"type": "text", "text": resp.content})
+            for call in resp.tool_calls:
+                blocks.append(
+                    {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}
+                )
+            return {"role": "assistant", "content": blocks}
 
         def format_tool_results(self, calls, results):
-            from agora.fleet.llm_adapter import _AnthropicShape
-
-            return _AnthropicShape().format_tool_results(calls, results)
+            return {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": c.id, "content": r}
+                    for c, r in zip(calls, results, strict=True)
+                ],
+            }
 
     orch = Orchestrator(
         matrix_client=fake_matrix_client,
