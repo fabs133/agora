@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     watch_rooms: list[str] = Field(default_factory=list)
     enable_observer: bool = True
 
+    # Harness reliability knobs (v3). Flat fields (owner ruling 2B.1) so the env
+    # names campaigns emit are preserved verbatim: AGORA_HARNESS_TOOL_ERRORS,
+    # AGORA_HARNESS_NUDGE_BUDGET, AGORA_HARNESS_REVIEW_BUDGET,
+    # AGORA_HARNESS_SALVAGE_BUDGET, AGORA_ROUTED_RETRY_BUDGET, AGORA_MAX_TASK_RETRIES.
+    harness_tool_errors: str = "raw"                 # "raw" | "corrective"
+    harness_nudge_budget: int = 0
+    harness_review_budget: int = 0
+    harness_salvage_budget: int = 0
+    routed_retry_budget: int = 2
+    max_task_retries: int = 2
+
     # Web fetch (fetch_url tool) — legacy integration, OFF by default. Only the
     # plan-builder / fastapi-crud flows use it; opt in with AGORA_ENABLE_WEB_FETCH=1.
     enable_web_fetch: bool = False

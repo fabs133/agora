@@ -13,7 +13,6 @@ callers pass the ``(agents, tasks, staged_tasks)`` triple that
 
 from __future__ import annotations
 
-import os
 import sys
 import warnings
 from dataclasses import dataclass, field
@@ -34,26 +33,30 @@ from agora.matrix.room_manager import RoomManager
 class HarnessConfig:
     """Everything a plan runner needs to stand up an Orchestrator.
 
-    Defaults mirror the env knobs used by the hand-written runner scripts
-    (``AGORA_MATRIX_HOMESERVER``, ``AGORA_OLLAMA_BASE_URL`` etc.) so callers
-    who want the same behaviour can just ``HarnessConfig.from_env()``.
+    The config-shaped fields (endpoints + credentials) are REQUIRED (owner ruling
+    2B.2 / Q3): their only default lives in :class:`agora.config.Settings`. Build
+    one with :meth:`from_settings` — the single Settings->HarnessConfig mapping
+    point. This module reads no env and never imports ``agora.config``.
     """
 
-    homeserver: str = "http://localhost:6167"
+    # Required — endpoints + credentials, injected from Settings.
+    homeserver: str
+    system_password: str
+    observer_user: str
+    ollama_base_url: str
+    # Identity with stable non-secret defaults.
     server_name: str = "agora.local"
     system_user: str = "@agora:agora.local"
-    system_password: str = "agora-dev-pass"
-    observer_user: str = "@fabs:agora.local"
-    ollama_base_url: str = "http://localhost:11434"
     review_timeout_seconds: float = 300.0
     max_parallel_agents: int = 2
     max_task_retries: int = 2
     work_dir: Path = field(default_factory=lambda: Path("workspace"))
     knowledge_cache_dir: Path | None = None
     enable_observer: bool = True
-    enable_web_fetch: bool = True
+    enable_web_fetch: bool = False
     fetch_max_text_bytes: int = 65_536
     auto_hooks_enabled: bool = True
+    skip_vram_check: bool = False
     # Opt-in for plan-authoring tools (plan_upsert_agent, plan_add_task_spec,
     # plan_finalize). The plan-builder runner sets this True; run_plan.py and
     # other executors leave it False so emitted plans don't expose the
@@ -81,54 +84,51 @@ class HarnessConfig:
     salvage_budget: int = 0
 
     @classmethod
-    def from_env(cls, work_dir: str | Path = "workspace") -> HarnessConfig:
-        """Pull the same env knobs the existing runners read."""
-        work_dir_path = Path(work_dir)
-        tool_errors = os.getenv("AGORA_HARNESS_TOOL_ERRORS", "raw").strip() or "raw"
+    def from_settings(cls, settings: Any, work_dir: str | Path = "workspace") -> HarnessConfig:
+        """Build from a Settings-like object (the composition root passes
+        ``agora.config.get_settings()``). Duck-typed on purpose: this module imports
+        neither ``os`` nor ``agora.config`` — env is read only in config.py. Campaign
+        params override the behavioural knobs downstream (2B.iii precedence)."""
+        tool_errors = (settings.harness_tool_errors or "raw").strip() or "raw"
         if tool_errors not in ("raw", "corrective"):
             raise ValueError(
-                f"AGORA_HARNESS_TOOL_ERRORS={tool_errors!r} invalid; "
-                "expected 'raw' or 'corrective'"
+                f"harness_tool_errors={tool_errors!r} invalid; expected 'raw' or 'corrective'"
             )
+        work_dir_path = Path(work_dir)
         return cls(
-            homeserver=os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167"),
-            system_password=os.getenv("AGORA_MATRIX_PASSWORD", "agora-dev-pass"),
-            observer_user=os.getenv("AGORA_OBSERVER_USER", "@fabs:agora.local"),
-            ollama_base_url=os.getenv("AGORA_OLLAMA_BASE_URL", "http://localhost:11434"),
-            review_timeout_seconds=float(os.getenv("AGORA_REVIEW_TIMEOUT_SECONDS", "300")),
-            max_parallel_agents=int(os.getenv("AGORA_MAX_PARALLEL_AGENTS", "2")),
-            max_task_retries=int(os.getenv("AGORA_MAX_TASK_RETRIES", "2")),
-            routed_retry_budget=int(os.getenv("AGORA_ROUTED_RETRY_BUDGET", "2")),
+            homeserver=settings.matrix_homeserver,
+            system_password=settings.matrix_password,
+            observer_user=settings.observer_user,
+            ollama_base_url=settings.ollama_base_url,
+            server_name=settings.matrix_server_name,
+            system_user=settings.matrix_user_id,
+            review_timeout_seconds=settings.review_timeout_seconds,
+            max_parallel_agents=settings.max_parallel_agents,
+            max_task_retries=settings.max_task_retries,
+            routed_retry_budget=settings.routed_retry_budget,
             tool_errors=tool_errors,
-            nudge_budget=int(os.getenv("AGORA_HARNESS_NUDGE_BUDGET", "0")),
-            review_budget=int(os.getenv("AGORA_HARNESS_REVIEW_BUDGET", "0")),
-            salvage_budget=int(os.getenv("AGORA_HARNESS_SALVAGE_BUDGET", "0")),
+            nudge_budget=settings.harness_nudge_budget,
+            review_budget=settings.harness_review_budget,
+            salvage_budget=settings.harness_salvage_budget,
+            enable_web_fetch=settings.enable_web_fetch,
+            skip_vram_check=settings.skip_vram_check,
             work_dir=work_dir_path,
             knowledge_cache_dir=work_dir_path / ".knowledge",
         )
-
-
-#: Truthy env-var literals (case-insensitive). Matches the common boolean
-#: spellings; anything else (incl. "0"/"false"/unset) is treated as off.
-_TRUTHY = {"1", "true", "yes", "on"}
-
-
-def _env_truthy(name: str) -> bool:
-    """True iff env var ``name`` is set to a recognised truthy value."""
-    return os.getenv(name, "").strip().lower() in _TRUTHY
 
 
 async def preflight_vram(
     model: str,
     base_url: str,
     safety_margin_mib: int = 512,
+    *,
+    skip: bool = False,
 ) -> None:
     """Best-effort VRAM check + warm-up gate. Prints the reason line, raises on hard fail.
 
-    ``AGORA_SKIP_VRAM_CHECK`` (``1``/``true``/``yes``/``on``) bypasses the check
-    entirely — the escape hatch for when the pre-flight is wrong and you know it
-    (the June 30 incident-debugging case). This is the policy layer; the math in
-    :mod:`agora.fleet.vram` is unaware of the env var.
+    ``skip`` (the composition root passes ``Settings.skip_vram_check``) bypasses the
+    check entirely — the escape hatch for when the pre-flight is wrong and you know
+    it. This is the policy layer; the math in :mod:`agora.fleet.vram` is unaware of it.
 
     Skipped for non-Ollama models — there's no local GPU memory to budget against
     (Ollama is the only backend today, so this is effectively always active).
@@ -137,8 +137,8 @@ async def preflight_vram(
     in the standard call path. The estimation formula itself is unchanged
     (see :func:`agora.fleet.vram.check_model_fits`).
     """
-    if _env_truthy("AGORA_SKIP_VRAM_CHECK"):
-        print(f"[*] VRAM check skipped for {model} (AGORA_SKIP_VRAM_CHECK set)")
+    if skip:
+        print(f"[*] VRAM check skipped for {model} (skip_vram_check set)")
         return
     if not model.startswith("ollama/"):
         print(f"[*] VRAM check skipped for {model} (remote provider)")
@@ -351,7 +351,7 @@ async def run_plan_project(
     :class:`ProjectResult` and prints a one-line summary per task.
     """
     model = model_hint or (agents[0].model if agents else "ollama/qwen2.5:7b-instruct")
-    await preflight_vram(model, cfg.ollama_base_url)
+    await preflight_vram(model, cfg.ollama_base_url, skip=cfg.skip_vram_check)
 
     client = await build_matrix_client(cfg)
     try:

@@ -8,6 +8,27 @@ from typing import Any
 
 import pytest
 
+#: A test Ollama endpoint. Config-shaped params are required in production
+#: (integration-hardening 2B.2 / Q3); tests inject this dummy instead of a
+#: localhost default. One constant so ~15 construction sites don't each hardcode.
+TEST_OLLAMA_URL = "http://ollama.test:11434"
+
+
+def make_harness_config(**overrides: Any):
+    """Test factory for :class:`~agora.plan.harness.HarnessConfig` with the required
+    endpoint/credential fields filled. Consolidates the duplicate constructions the
+    strict-required ruling would otherwise scatter across the suite."""
+    from agora.plan.harness import HarnessConfig
+
+    base: dict[str, Any] = {
+        "homeserver": "http://matrix.test:6167",
+        "system_password": "test-pass",
+        "observer_user": "@observer:test",
+        "ollama_base_url": TEST_OLLAMA_URL,
+    }
+    base.update(overrides)
+    return HarnessConfig(**base)
+
 
 @dataclass
 class _StoredEvent:

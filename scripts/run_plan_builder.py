@@ -196,7 +196,9 @@ async def main() -> None:
         plan, project_name=args.project_name, variables={"model": model}
     )
 
-    cfg = HarnessConfig.from_env(work_dir=REPO_ROOT / "workspace")
+    from agora.config import get_settings
+
+    cfg = HarnessConfig.from_settings(get_settings(), work_dir=REPO_ROOT / "workspace")
     # Plan-builder authors plans; opts in to the plan_authoring tool category
     # (plan_upsert_agent, plan_add_task_spec, plan_finalize). Emitted plans
     # run via scripts/run_plan.py which leaves this False, so executors never

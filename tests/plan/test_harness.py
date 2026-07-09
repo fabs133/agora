@@ -16,14 +16,11 @@ import pytest
 from agora.fleet.llm_adapter import OllamaAdapter
 from agora.fleet.profiles import ModelProfile, OllamaProfile, VRAMProfile
 from agora.plan.harness import HarnessConfig, build_orchestrator, preflight_vram
-from tests.conftest import FakeMatrixClient
+from tests.conftest import FakeMatrixClient, make_harness_config
 
 
 def _cfg(tmp_path: Path) -> HarnessConfig:
-    return HarnessConfig(
-        work_dir=tmp_path / "ws",
-        knowledge_cache_dir=tmp_path / "kb",
-    )
+    return make_harness_config(work_dir=tmp_path / "ws", knowledge_cache_dir=tmp_path / "kb")
 
 
 def test_build_orchestrator_with_profile_uses_profile_factory(tmp_path) -> None:
@@ -159,32 +156,39 @@ async def test_orchestrator_warmup_uses_profile_keep_alive(tmp_path, monkeypatch
     assert captured["keep_alive"] == "2h"
 
 
-def test_from_env_reads_harness_knobs(monkeypatch) -> None:
-    """AGORA_HARNESS_* round-trip into HarnessConfig (v3)."""
-    monkeypatch.setenv("AGORA_HARNESS_TOOL_ERRORS", "corrective")
-    monkeypatch.setenv("AGORA_HARNESS_NUDGE_BUDGET", "2")
-    cfg = HarnessConfig.from_env()
+def test_from_settings_reads_harness_knobs() -> None:
+    """AGORA_HARNESS_* → Settings → HarnessConfig via from_settings (2B: env is
+    read only in config.py; harness maps the built Settings object)."""
+    from agora.config import Settings
+
+    s = Settings(harness_tool_errors="corrective", harness_nudge_budget=2,
+                 matrix_homeserver="http://hs", matrix_password="pw",
+                 observer_user="@o:x", ollama_base_url="http://ol")
+    cfg = HarnessConfig.from_settings(s)
     assert cfg.tool_errors == "corrective"
     assert cfg.nudge_budget == 2
+    assert cfg.homeserver == "http://hs"
+    assert cfg.ollama_base_url == "http://ol"
 
 
-def test_from_env_defaults_are_v2_behavior(monkeypatch) -> None:
-    monkeypatch.delenv("AGORA_HARNESS_TOOL_ERRORS", raising=False)
-    monkeypatch.delenv("AGORA_HARNESS_NUDGE_BUDGET", raising=False)
-    cfg = HarnessConfig.from_env()
+def test_from_settings_defaults_are_v2_behavior() -> None:
+    from agora.config import Settings
+
+    cfg = HarnessConfig.from_settings(Settings())
     assert cfg.tool_errors == "raw" and cfg.nudge_budget == 0
 
 
-def test_salvage_budget_default_off_and_env(monkeypatch) -> None:
-    """S7: salvage_budget defaults to 0 (construct-nothing) and reads its env."""
-    monkeypatch.delenv("AGORA_HARNESS_SALVAGE_BUDGET", raising=False)
-    assert HarnessConfig().salvage_budget == 0
-    assert HarnessConfig.from_env().salvage_budget == 0
-    monkeypatch.setenv("AGORA_HARNESS_SALVAGE_BUDGET", "1")
-    assert HarnessConfig.from_env().salvage_budget == 1
+def test_salvage_budget_default_off_and_from_settings() -> None:
+    """S7: salvage_budget defaults to 0 (construct-nothing) and maps from Settings."""
+    from agora.config import Settings
+
+    assert make_harness_config().salvage_budget == 0
+    assert HarnessConfig.from_settings(Settings()).salvage_budget == 0
+    assert HarnessConfig.from_settings(Settings(harness_salvage_budget=1)).salvage_budget == 1
 
 
-def test_from_env_rejects_invalid_tool_errors(monkeypatch) -> None:
-    monkeypatch.setenv("AGORA_HARNESS_TOOL_ERRORS", "bogus")
-    with pytest.raises(ValueError, match="AGORA_HARNESS_TOOL_ERRORS"):
-        HarnessConfig.from_env()
+def test_from_settings_rejects_invalid_tool_errors() -> None:
+    from agora.config import Settings
+
+    with pytest.raises(ValueError, match="harness_tool_errors"):
+        HarnessConfig.from_settings(Settings(harness_tool_errors="bogus"))

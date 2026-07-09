@@ -88,7 +88,9 @@ async def main() -> None:
         plan, project_name=project_name, variables=variables
     )
 
-    cfg = HarnessConfig.from_env(work_dir=REPO_ROOT / "workspace")
+    from agora.config import get_settings
+
+    cfg = HarnessConfig.from_settings(get_settings(), work_dir=REPO_ROOT / "workspace")
 
     # v2.7: seed the executor workspace with plan-level shared artifacts
     # (brief.md, api_spec.md) BEFORE any task runs. This is how the tester

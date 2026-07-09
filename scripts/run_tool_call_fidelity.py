@@ -125,7 +125,9 @@ async def main() -> None:
         f"num_ctx={profile.num_ctx}, temp={profile.temperature}, seed={profile.seed}"
     )
 
-    cfg = HarnessConfig.from_env()
+    from agora.config import get_settings
+
+    cfg = HarnessConfig.from_settings(get_settings())
     # Atomic tool-call probe: no framework auto-hooks (no synthesized
     # mark_complete, no auto git_commit) so the signal is the model's own calls.
     cfg.auto_hooks_enabled = False

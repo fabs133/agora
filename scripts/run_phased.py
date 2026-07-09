@@ -778,12 +778,14 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
     phase_agents = [a for a in agents if a.name in used_agent_names]
 
     harness = campaign["harness"]
-    cfg = HarnessConfig(
+    # Base config (endpoints/credentials) from Settings; the campaign's harness
+    # block then overrides the behavioural knobs (campaign params win — 2B precedence).
+    cfg = replace(
+        HarnessConfig.from_settings(settings, work_dir=Path(campaign["output_dir"]) / "echobot"),
         tool_errors=harness.get("tool_errors", "corrective"),
         nudge_budget=int(harness.get("nudge_budget", 1)),
         review_budget=int(harness.get("review_budget", 0)),
         salvage_budget=int(harness.get("salvage_budget", 0)),
-        work_dir=Path(campaign["output_dir"]) / "echobot",
         review_timeout_seconds=float(campaign.get("run", {}).get("review_timeout_seconds", 5)),
         enable_observer=False,
     )
