@@ -56,7 +56,7 @@ logging.getLogger("nio").setLevel(logging.WARNING)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from agora.config import get_settings
+from agora.config import get_settings, require_secret
 from agora.core.agent import AgentConfig
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task
@@ -1260,6 +1260,7 @@ async def main() -> None:
 
     print(f"[*] Logging into Conduit as {SYSTEM_USER}")
     client = AgoraMatrixClient(homeserver=HOMESERVER, user_id=SYSTEM_USER)
+    require_secret("AGORA_MATRIX_PASSWORD", SYSTEM_PASSWORD)
     await client.login(SYSTEM_PASSWORD)
 
     if OBSERVER_USER:
@@ -1309,7 +1310,7 @@ async def main() -> None:
     )
 
     print("[*] Running project 'discord-bot-full' (observer enabled)")
-    print("   open Element as @fabs:agora.local to watch and vote on the REVIEW poll")
+    print(f"   open Element as {OBSERVER_USER} to watch and vote on the REVIEW poll")
     print(f"   review_timeout_seconds={REVIEW_TIMEOUT}")
     print(f"   max_task_retries={MAX_TASK_RETRIES}")
     print()

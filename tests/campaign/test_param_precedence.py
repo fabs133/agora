@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import importlib
 
-from agora.config import env_layer, get_settings
+import pytest
+
+from agora.config import env_layer, get_settings, require_secret
 from agora.fleet.profiles import ModelProfile
 from scripts.run_phased import resolve_effective_params
 
@@ -83,6 +85,21 @@ def test_env_layer_process_env_beats_dotenv_beats_absent(monkeypatch, tmp_path) 
     layer = env_layer()
     assert layer["AGORA_LLM_NUM_CTX"] == "2222"  # process env wins
     assert layer["AGORA_LLM_SEED"] == "555"  # .env provides it
+
+
+# ---------------------------------------------------------------- required secrets
+
+
+def test_require_secret_returns_value_when_set() -> None:
+    assert require_secret("AGORA_MATRIX_PASSWORD", "pw") == "pw"
+
+
+def test_require_secret_fails_loudly_with_var_name_and_pointer() -> None:
+    with pytest.raises(SystemExit) as exc:
+        require_secret("AGORA_MATRIX_PASSWORD", "")
+    msg = str(exc.value)
+    assert "AGORA_MATRIX_PASSWORD" in msg
+    assert ".env.example" in msg
 
 
 # ---------------------------------------------------------------- (e) resolution

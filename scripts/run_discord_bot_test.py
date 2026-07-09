@@ -1,7 +1,7 @@
 """Autonomous test run: instruct Agora to build a small Discord bot.
 
 Kicks off an architect → implementer → tester pipeline against the live Conduit +
-Ollama stack. Observer layer is enabled, so open Element as ``@fabs:agora.local``
+Ollama stack. Observer layer is enabled, so open Element as your observer id
 to watch phase banners, task cards, and the REVIEW-phase poll.
 
 Run with:
@@ -59,7 +59,7 @@ logging.getLogger("nio").setLevel(logging.WARNING)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from agora.config import env_layer, get_settings
+from agora.config import env_layer, get_settings, require_secret
 from agora.core.agent import AgentConfig
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task
@@ -860,6 +860,7 @@ async def main() -> None:
 
     print(f"[*] Logging into Conduit as {SYSTEM_USER}")
     client = AgoraMatrixClient(homeserver=HOMESERVER, user_id=SYSTEM_USER)
+    require_secret("AGORA_MATRIX_PASSWORD", SYSTEM_PASSWORD)
     await client.login(SYSTEM_PASSWORD)
 
     # Auto-invite the observer user to every room we create so Element sees the stream.
@@ -922,7 +923,7 @@ async def main() -> None:
     )
 
     print("[*] Running project 'discord-bot' (observer enabled)")
-    print("   open Element as @fabs:agora.local to watch and vote on the REVIEW poll")
+    print(f"   open Element as {OBSERVER_USER} to watch and vote on the REVIEW poll")
     print(f"   review_timeout_seconds={REVIEW_TIMEOUT} (auto-decides if you don't click)")
     print()
     try:

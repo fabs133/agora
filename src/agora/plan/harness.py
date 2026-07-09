@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from agora.core.agent import AgentConfig
+from agora.core.errors import AgoraError
 from agora.core.task import Task
 from agora.fleet.llm_adapter import create_llm_adapter
 from agora.fleet.orchestrator import Orchestrator, ProjectResult
@@ -151,6 +152,15 @@ async def preflight_vram(
 
 async def build_matrix_client(cfg: HarnessConfig) -> AgoraMatrixClient:
     """Log in as the system user and wire the auto-invite shim if observer is set."""
+    # Loud, clear failure when the system agent has no Matrix password — better
+    # than an opaque auth error from Conduit. (harness stays config-free per the
+    # composition-root allowlist, so the message is inlined rather than imported.)
+    if not cfg.system_password:
+        raise AgoraError(
+            "required secret AGORA_MATRIX_PASSWORD is not set (the system agent "
+            "has no Matrix password). Copy .env.example to .env and set it, or "
+            "export AGORA_MATRIX_PASSWORD. See .env.example for the local-dev value."
+        )
     print(f"[*] Logging into Conduit as {cfg.system_user}")
     client = AgoraMatrixClient(homeserver=cfg.homeserver, user_id=cfg.system_user)
     await client.login(cfg.system_password)

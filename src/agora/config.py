@@ -20,7 +20,10 @@ class Settings(BaseSettings):
     matrix_server_name: str = "agora.local"
     matrix_user_id: str = "@agora:agora.local"
     matrix_password: str = ""
-    matrix_registration_token: str = "dev_only_CHANGE_ME"
+    # Documents the env var; the dev value lives in .env.example, and Conduit
+    # reads its own token from conduit.toml — nothing consumes this at runtime,
+    # so no token literal sits in the source (empty default, per Stage 3 hygiene).
+    matrix_registration_token: str = ""
     observer_user: str = "@observer:agora.local"
     observer_password: str = ""
 
@@ -77,6 +80,27 @@ class Settings(BaseSettings):
     flows_dir: Path = Field(default=Path("./flows"))
     git_repo_path: Path = Field(default=Path("./workspace/repo"))
     knowledge_cache_dir: Path = Field(default=Path("./workspace/.knowledge"))
+
+
+#: Pointer appended to every missing-secret message so a new user knows where
+#: the local-dev value lives.
+_ENV_EXAMPLE_HINT = (
+    "Copy .env.example to .env (cp .env.example .env) and set it there, or export "
+    "it in your environment. See .env.example for the local-dev value."
+)
+
+
+def require_secret(env_name: str, value: str) -> str:
+    """Return ``value``, or fail LOUDLY when a required secret is unset.
+
+    The one message shape for a missing secret: names the exact env var and
+    points at .env.example. Called at composition roots (cli, scripts) right
+    before the secret is used, so an unconfigured clone stops with a clear
+    instruction instead of an opaque auth failure deep in the Matrix client.
+    """
+    if not value:
+        raise SystemExit(f"[config] required secret {env_name} is not set.\n{_ENV_EXAMPLE_HINT}")
+    return value
 
 
 def get_settings() -> Settings:
