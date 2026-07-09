@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import os
 import sys
 import uuid
 from pathlib import Path
@@ -60,7 +59,7 @@ logging.getLogger("nio").setLevel(logging.WARNING)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from agora.config import get_settings
+from agora.config import env_layer, get_settings
 from agora.core.agent import AgentConfig
 from agora.core.contract import Specification, make_predicate
 from agora.core.task import Task
@@ -841,8 +840,8 @@ async def main() -> None:
     # AGORA_PROFILE picks a named profile; per-field env overrides
     # (AGORA_LLM_MODEL, AGORA_LLM_NUM_CTX, …) layer on top — see
     # agora.fleet.profiles.apply_env_overrides.
-    profile_set = load_profiles()
-    profile = apply_env_overrides(profile_set.select(os.getenv("AGORA_PROFILE", "")))
+    profile_set = load_profiles(_settings.profiles_file)
+    profile = apply_env_overrides(profile_set.select(_settings.profile), env=env_layer())
     print(
         f"[*] Profile: {profile.name or '<unnamed>'} → model={profile.model}, "
         f"num_ctx={profile.num_ctx}, max_tokens={profile.max_tokens}, "

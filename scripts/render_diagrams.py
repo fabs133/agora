@@ -26,6 +26,11 @@ import zlib
 from pathlib import Path
 
 #: PlantUML server base URL. Port 18080 per mcp-server/docker/plantuml.yml.
+#: Env-only by DESIGN: this script is standalone (stdlib only, no project
+#: imports — see the module docstring) so it can run in a bare checkout with
+#: nothing installed. It therefore CANNOT read Settings; AGORA_PLANTUML_URL is a
+#: dev-tool knob outside the config distributor (candidate 5th allowlist entry,
+#: integration-hardening 2B.3 — flagged for the owner).
 PLANTUML_URL = os.environ.get("AGORA_PLANTUML_URL", "http://localhost:18080").rstrip("/")
 #: Where the .puml sources live (rendered SVGs are written alongside them).
 ARCH_DIR = Path(__file__).resolve().parents[1] / "docs" / "architecture"

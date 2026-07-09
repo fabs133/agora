@@ -122,17 +122,21 @@ def seed_probe_files(work_dir: Path, project_name: str) -> Path:
 
 
 async def main() -> None:
-    import os
+    from agora.config import env_layer, get_settings
 
-    profile = apply_env_overrides(load_profiles().select(os.getenv("AGORA_PROFILE", "")))
+    # Composition root: one config source. Profile selection + the per-field
+    # AGORA_LLM_* overrides both resolve through Settings / env_layer (.env under
+    # process env); no direct os.getenv here.
+    settings = get_settings()
+    profile = apply_env_overrides(
+        load_profiles(settings.profiles_file).select(settings.profile), env=env_layer()
+    )
     print(
         f"[*] Profile: {profile.name or '<unnamed>'} → model={profile.model}, "
         f"num_ctx={profile.num_ctx}, temp={profile.temperature}, seed={profile.seed}"
     )
 
-    from agora.config import get_settings
-
-    cfg = HarnessConfig.from_settings(get_settings())
+    cfg = HarnessConfig.from_settings(settings)
     # Atomic tool-call probe: no framework auto-hooks (no synthesized
     # mark_complete, no auto git_commit) so the signal is the model's own calls.
     cfg.auto_hooks_enabled = False
@@ -155,16 +159,16 @@ async def main() -> None:
 
     run_id = uuid.uuid4().hex
     output_dir = RunObserver.resolve_output_dir(run_id)
-    # Arm is set by the campaign harness via env; a standalone run defaults to
-    # rich/strict (the ArmSpec default) so direct invocation is unchanged.
+    # Arm is set by the campaign harness via env (AGORA_ARM_*), read through
+    # Settings; a standalone run defaults to rich/strict so invocation is unchanged.
     arm = ArmSpec(
-        scaffolding=os.getenv("AGORA_ARM_SCAFFOLDING", "rich"),
-        strictness=os.getenv("AGORA_ARM_STRICTNESS", "strict"),
+        scaffolding=settings.arm_scaffolding,
+        strictness=settings.arm_strictness,
     )
     # Per-model prompting strategy (axis-1 v2). Unset ⇒ control cell: strategy
     # is None and no wrapper is constructed (build_orchestrator builds the bare
     # factory), byte-identical to v1.
-    strategy_name = os.getenv("AGORA_STRATEGY", "").strip() or None
+    strategy_name = settings.strategy.strip() or None
     strategy = resolve(strategy_name)
     if strategy is not None:
         print(f"[*] Strategy: {strategy_name}")

@@ -23,6 +23,7 @@ import json
 import logging
 import sys
 import urllib.request
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -31,12 +32,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from agora.config import env_layer  # noqa: E402
 from agora.core.types import AgentRole  # noqa: E402
 from agora.fleet.phase_gate import (  # noqa: E402
     TaskGateOutcome,
     evaluate_phase_gate,
     ordered_phases,
 )
+from agora.fleet.profiles import apply_env_overrides  # noqa: E402
 
 # ------------------------------------------------------------------ status model
 
@@ -331,6 +334,50 @@ def apply_campaign_params(
     if not overrides:
         return dict(model_to_profile)
     return {m: p.model_copy(update=overrides) for m, p in model_to_profile.items()}
+
+
+#: Each campaign-overridable knob → the env var that ALSO sets it (via
+#: apply_env_overrides). Used to detect an env-vs-campaign conflict.
+_KNOB_ENV = {
+    "num_ctx": "AGORA_LLM_NUM_CTX",
+    "max_tokens": "AGORA_LLM_MAX_TOKENS",
+    "temperature": "AGORA_LLM_TEMPERATURE",
+    "seed": "AGORA_LLM_SEED",
+}
+
+
+def resolve_effective_params(
+    model_to_profile: dict[str, Any],
+    params: dict[str, Any] | None,
+    env: Mapping[str, str],
+) -> tuple[dict[str, Any], list[str]]:
+    """Resolve the four inference knobs with the owner's precedence (2B):
+
+        coded default (profile) < .env < process env (AGORA_LLM_*) < CAMPAIGN PARAMS
+
+    ``env`` is the merged .env-under-process-env mapping (``config.env_layer()``);
+    it carries the ``.env`` and process-env layers already collapsed. The env
+    layer is applied first (:func:`apply_env_overrides`), then the campaign
+    params win on top (:func:`apply_campaign_params`) — pre-registered experiment
+    conditions, F19 doctrine.
+
+    Returns ``(resolved_map, conflict_lines)``. A knob set by BOTH the env layer
+    and the campaign is a conflict: the campaign wins, and a loud line names the
+    overridden env value so it never silently disappears from a run's provenance.
+    """
+    env_applied = {m: apply_env_overrides(p, env) for m, p in model_to_profile.items()}
+    resolved = apply_campaign_params(env_applied, params)
+    campaign_set = {k for k in _PARAM_KEYS if params and k in params}
+    conflicts: list[str] = []
+    for knob in _PARAM_KEYS:
+        env_name = _KNOB_ENV[knob]
+        if knob in campaign_set and env_name in env:
+            conflicts.append(
+                f"CONFLICT: {env_name}={env[env_name]!r} (env) is overridden by "
+                f"campaign param {knob}={params[knob]!r} — campaign wins "
+                f"(pre-registered experiment condition; env value ignored)."
+            )
+    return resolved, conflicts
 
 
 def format_effective_params(
@@ -745,8 +792,14 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
     flow = load_flow(campaign["flow"])
     agents, tasks = instantiate_flow(flow, "echobot", id_strategy="preserve")
     agents, model_to_profile = resolve_agent_models(agents, cast, profiles)
-    # F19: campaign params override the cast-bound profile; log the effective set.
-    model_to_profile = apply_campaign_params(model_to_profile, campaign.get("params"))
+    # Precedence (2B): profile default < .env < process env < CAMPAIGN PARAMS.
+    # env_layer() collapses .env under process env; campaign params win on top,
+    # and any env-vs-campaign conflict is logged loudly (never silently dropped).
+    model_to_profile, _conflicts = resolve_effective_params(
+        model_to_profile, campaign.get("params"), env_layer()
+    )
+    for _line in _conflicts:
+        print(f"[!] {_line}")
     for _line in format_effective_params(model_to_profile, campaign.get("params")):
         print(f"[*] {_line}")
 

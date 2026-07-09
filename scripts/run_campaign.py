@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from agora.config import get_settings  # noqa: E402
 from agora.fleet.profiles import ProfileSet, load_profiles  # noqa: E402
 from agora.plan.harness import force_utf8_stdio  # noqa: E402
 
@@ -316,7 +317,9 @@ class OllamaControl:
     Injectable so the eviction protocol is unit-testable with a fake.
     """
 
-    def __init__(self, base_url: str = "http://localhost:11434") -> None:
+    def __init__(self, base_url: str) -> None:
+        # Required config-shaped endpoint — no localhost default; the composition
+        # root injects Settings.ollama_base_url (integration-hardening 2B).
         self.base_url = base_url.rstrip("/")
 
     def _post(self, path: str, payload: dict[str, Any], timeout: float = 30.0) -> Any:
@@ -442,7 +445,7 @@ def preflight(
     if not live:
         return
     if control is None:
-        control = OllamaControl()
+        control = OllamaControl(get_settings().ollama_base_url)
     if not control.reachable():
         raise RuntimeError("Ollama daemon not reachable — is `ollama serve` running?")
     local = control.list_local()
@@ -563,7 +566,7 @@ def _popen_kwargs_detached() -> dict[str, Any]:
 def run_campaign(path: str | Path, *, dry_run: bool = False) -> int:
     campaign = load_campaign(path)
     profiles = load_profiles()
-    control = OllamaControl()
+    control = OllamaControl(get_settings().ollama_base_url)
     output_dir = Path(campaign.defaults.output_dir)
 
     preflight(campaign, profiles=profiles, control=control, live=not dry_run)

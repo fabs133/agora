@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from pathlib import Path
 
 from pydantic import Field
@@ -54,6 +56,15 @@ class Settings(BaseSettings):
     routed_retry_budget: int = 2
     max_task_retries: int = 2
 
+    # Probe experiment selectors (campaign-emitted, like harness_*; flat fields
+    # so the env names the campaign emits are preserved verbatim —
+    # AGORA_ARM_SCAFFOLDING, AGORA_ARM_STRICTNESS, AGORA_STRATEGY). Only the
+    # axis-1 tool-call-fidelity probe reads these; a standalone run defaults to
+    # the rich/strict control cell with no prompting strategy.
+    arm_scaffolding: str = "rich"
+    arm_strictness: str = "strict"
+    strategy: str = ""
+
     # Web fetch (fetch_url tool) — legacy integration, OFF by default. Only the
     # plan-builder / fastapi-crud flows use it; opt in with AGORA_ENABLE_WEB_FETCH=1.
     enable_web_fetch: bool = False
@@ -70,3 +81,23 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def env_layer() -> Mapping[str, str]:
+    """The effective ``AGORA_*`` environment for consumers that are NOT Settings
+    fields — the per-model profile inference knobs (num_ctx/max_tokens/temperature/
+    seed), resolved at the campaign composition root.
+
+    Applies the SAME precedence pydantic-settings applies to Settings: ``.env``
+    (lowest) merged under the process environment (highest). Reading ``.env``
+    lives here because config.py is the one place environment/.env is read — the
+    profile-knob resolver injects the returned mapping rather than touching
+    ``os.environ`` or ``.env`` itself.
+    """
+    from dotenv import dotenv_values
+
+    merged: dict[str, str] = {
+        k: v for k, v in dotenv_values(".env").items() if v is not None
+    }
+    merged.update(os.environ)
+    return merged
