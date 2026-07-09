@@ -1,0 +1,47 @@
+# Standard capability battery, v1.
+#
+# The fixed measurement every model is put through so its capability vector is
+# comparable to every other's. battery_version = "standard-v1" is part of the
+# matrix key: this file is NEVER mutated in place — a change is standard-v2.
+#
+# v1 = the tool-call-fidelity probe under two harness arms, 3 repeats each:
+#   - production: the v8-validated production harness (corrective tool errors +
+#     the S2 nudge; the S6 review was falsified at v8 and is OFF).
+#   - raw_control: the bare control (no corrective, no nudge, no review).
+# The two arms share model/battery/probe/daemon but differ in harness_hash, so
+# they land in separate, non-pooled capability-matrix keys.
+#
+# NOTE (owner decision pending, capability-program-plan §5.3): the exact v1
+# contents — probe set, arm harness configs, repeat count — are provisional
+# until confirmed. This encodes the current best-validated production config.
+
+schema_version: 1
+name: standard
+version: v1
+probe: flows/tool-call-fidelity.plan.yaml
+repeats: 3
+
+params:
+  temperature: 0.0
+  seed: 42
+  num_ctx: 8192
+  max_tokens: 2048
+
+# The probe completes without a human review; keep the REVIEW phase from idling.
+review_timeout_seconds: 5
+
+arms:
+  - id: production
+    scaffolding: rich
+    strictness: strict
+    harness:
+      tool_errors: corrective
+      nudge_budget: 1
+      review_budget: 0
+  - id: raw_control
+    scaffolding: rich
+    strictness: strict
+    harness:
+      tool_errors: raw
+      nudge_budget: 0
+      review_budget: 0

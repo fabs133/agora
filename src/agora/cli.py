@@ -282,6 +282,85 @@ def doctor() -> None:
     asyncio.run(_probe())
 
 
+@app.command()
+def bench(
+    profile: str = typer.Argument(
+        ..., help="profiles.yaml profile to benchmark (its model is the one measured)."
+    ),
+    battery: str = typer.Option(
+        "benchmarks/standard-v1.yaml", "--battery", help="Battery YAML to run."
+    ),
+    output_dir: str = typer.Option(
+        "", "--output-dir", help="Run output dir (default runs_out/bench/<battery>-<profile>)."
+    ),
+    matrix: str = typer.Option(
+        "capability-matrix.csv", "--matrix", help="Canonical CSV matrix to append to."
+    ),
+    run: bool = typer.Option(
+        True, "--run/--no-run", help="--no-run generates the campaign and stops (no live run)."
+    ),
+) -> None:
+    """Benchmark a profile through a battery and append keyed rows to the matrix.
+
+    One command: generate a campaign from the battery, run it through the existing
+    campaign harness, capture the model's manifest digest, then derive + append
+    the keyed capability-vector rows. ``--no-run`` stops after generating the
+    campaign (offline).
+    """
+    import sys
+    from pathlib import Path
+
+    import yaml
+
+    from agora.bench.battery import battery_to_campaign, load_battery
+    from agora.fleet.profiles import load_profiles
+
+    settings = get_settings()
+    bat = load_battery(battery)
+    prof = load_profiles().select(profile)
+
+    out = Path(output_dir or f"runs_out/bench/{bat.battery_version}-{profile}")
+    out.mkdir(parents=True, exist_ok=True)
+    campaign = battery_to_campaign(bat, profile, str(out))
+    campaign_path = out / "campaign.yaml"
+    campaign_path.write_text(yaml.safe_dump(campaign, sort_keys=False), encoding="utf-8")
+    typer.echo(f"battery {bat.battery_version}  profile {profile}  model {prof.model}")
+    typer.echo(f"campaign -> {campaign_path}  ({len(campaign['runs'])} runs)")
+
+    if not run:
+        typer.echo(f"--no-run: launch it with  python scripts/run_campaign.py {campaign_path}")
+        return
+
+    from agora.observe.jsonl import query_ollama_digest
+
+    digest = query_ollama_digest(prof.model, settings.ollama_base_url)
+    if digest == "unknown":
+        typer.echo(
+            f"could not read a manifest digest for {prof.model} from Ollama at "
+            f"{settings.ollama_base_url} — is it pulled and the daemon up?"
+        )
+        raise typer.Exit(code=1)
+    typer.echo(f"digest {digest}")
+
+    # Live run via the existing campaign harness (repo checkout only).
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    try:
+        from scripts.run_campaign import run_campaign
+    except ImportError as exc:
+        typer.echo("agora bench must be run from the repo checkout (scripts/ not importable).")
+        raise typer.Exit(code=1) from exc
+    run_campaign(str(campaign_path))
+
+    from agora.bench.ingest import ingest_run_dir
+    from agora.bench.matrix import append_rows
+
+    rows = ingest_run_dir(out, model_digest=digest, battery_version=bat.battery_version)
+    combined = append_rows(matrix, rows)
+    typer.echo(f"appended {len(rows)} rows -> {matrix}  ({len(combined)} total)")
+
+
 cast_app = typer.Typer(help="Cast (role→profile binding) commands")
 app.add_typer(cast_app, name="cast")
 
