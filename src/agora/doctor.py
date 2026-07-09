@@ -12,6 +12,7 @@ roots inject them from Settings). This module never reads ``os.environ`` or
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import urllib.error
@@ -110,7 +111,14 @@ async def check_conduit(homeserver: str, user_id: str, password: str) -> CheckRe
 
     client = AgoraMatrixClient(homeserver=homeserver, user_id=user_id)
     try:
-        await client.login(password)
+        # A preflight must never hang: bound the login so a down homeserver
+        # produces a fast red line instead of blocking on the socket.
+        await asyncio.wait_for(client.login(password), timeout=8.0)
+    except TimeoutError:
+        return CheckResult(
+            "conduit", False, f"login to {homeserver} timed out (8s)",
+            hint="is Conduit up (docker compose up -d)?",
+        )
     except Exception as exc:  # noqa: BLE001
         return CheckResult(
             "conduit", False, f"login failed for {user_id} at {homeserver} ({type(exc).__name__})",

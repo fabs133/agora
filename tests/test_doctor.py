@@ -130,6 +130,24 @@ async def test_check_conduit_login_ok(monkeypatch) -> None:
     assert r.ok
 
 
+async def test_check_conduit_login_timeout_is_red(monkeypatch) -> None:
+    """A down homeserver must produce a fast red line, never hang (Stage 6)."""
+
+    class _FakeClient:
+        def __init__(self, **_kw):
+            pass
+
+        async def login(self, _pw):
+            raise TimeoutError
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr("agora.matrix.client.AgoraMatrixClient", _FakeClient)
+    r = await doctor.check_conduit("http://hs.test:6167", "@agora:test", "pw")
+    assert not r.ok and "timed out" in r.detail
+
+
 async def test_check_conduit_login_failure_is_red(monkeypatch) -> None:
     class _FakeClient:
         def __init__(self, **_kw):
