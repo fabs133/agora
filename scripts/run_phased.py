@@ -722,12 +722,17 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
     in-memory TaskResults (for the console report), and the persistable
     TaskRecords (appended to tasks.jsonl at phase completion). Thin glue —
     paired-session verified (not run by tests)."""
+    from agora.config import get_settings
     from agora.core.flow import instantiate_flow, load_flow
     from agora.fleet.cast import load_cast, resolve_cast
     from agora.fleet.profiles import build_llm_factory, load_profiles
     from agora.plan.harness import HarnessConfig, build_matrix_client, build_orchestrator
 
-    profiles = load_profiles("profiles.yaml")
+    # Composition root: the ONE place endpoints are resolved for this run.
+    settings = get_settings()
+    print(f"[*] effective endpoints: ollama={settings.ollama_base_url}  "
+          f"matrix={settings.matrix_homeserver}  profiles={settings.profiles_file or 'profiles.yaml (cwd)'}")
+    profiles = load_profiles(settings.profiles_file)
     cast = load_cast(campaign["cast"])
     # Health check per OLLAMA.md — the models the cast will actually load.
     required = [
@@ -735,8 +740,7 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         for rb in resolve_cast(cast, profiles)
         if not rb.is_human and rb.model.startswith("ollama/") and rb.resident
     ]
-    base_url = "http://localhost:11434"
-    ollama_health_or_die(base_url, required)
+    ollama_health_or_die(settings.ollama_base_url, required)
 
     flow = load_flow(campaign["flow"])
     agents, tasks = instantiate_flow(flow, "echobot", id_strategy="preserve")

@@ -13,15 +13,21 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="AGORA_", env_file=".env", extra="ignore")
 
-    # Matrix
+    # Matrix (the system agent identity + the human observer identity)
     matrix_homeserver: str = "http://localhost:6167"
     matrix_server_name: str = "agora.local"
     matrix_user_id: str = "@agora:agora.local"
     matrix_password: str = ""
     matrix_registration_token: str = "dev_only_CHANGE_ME"
+    observer_user: str = "@observer:agora.local"
+    observer_password: str = ""
 
     # LLM (Ollama is the only backend; other backends re-enter via the bench pipeline)
     llm_model: str = "ollama/qwen2.5:7b-instruct"
+    #: Named profile to select from ``profiles.yaml`` ("" = the file's default).
+    profile: str = ""
+    #: Explicit profiles.yaml location ("" = ./profiles.yaml at CWD, then packaged default).
+    profiles_file: str = ""
     ollama_base_url: str = "http://localhost:11434"
     llm_timeout_seconds: float = 600.0
     max_parallel_agents: int = 3
@@ -37,8 +43,9 @@ class Settings(BaseSettings):
     watch_rooms: list[str] = Field(default_factory=list)
     enable_observer: bool = True
 
-    # Web fetch (fetch_url tool)
-    enable_web_fetch: bool = True
+    # Web fetch (fetch_url tool) — legacy integration, OFF by default. Only the
+    # plan-builder / fastapi-crud flows use it; opt in with AGORA_ENABLE_WEB_FETCH=1.
+    enable_web_fetch: bool = False
     fetch_timeout_seconds: float = 30.0
     fetch_max_bytes: int = 1_048_576
     fetch_max_text_bytes: int = 16_384

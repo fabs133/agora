@@ -423,8 +423,11 @@ def git_commit_short(repo_dir: str | Path | None = None) -> str:
     return sha or "unknown"
 
 
-def query_ollama_version(base_url: str = "http://localhost:11434") -> str:
-    """Best-effort Ollama daemon version via ``/api/version``; ``"unknown"`` on failure."""
+def query_ollama_version(base_url: str) -> str:
+    """Best-effort Ollama daemon version via ``/api/version``; ``"unknown"`` on failure.
+
+    ``base_url`` is required (Q3: no config-shaped default outside Settings) — the
+    caller passes the run's resolved Ollama endpoint."""
     try:
         import urllib.request
 

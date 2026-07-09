@@ -164,7 +164,11 @@ profiles:
         load_profiles(bad)
 
 
-def test_load_profiles_uses_env_var(monkeypatch, tmp_path) -> None:
+def test_load_profiles_via_settings_profiles_file(monkeypatch, tmp_path) -> None:
+    """AGORA_PROFILES_FILE is read by Settings (config.py), not by load_profiles;
+    the composition root passes Settings.profiles_file as the explicit path."""
+    from agora.config import get_settings
+
     f = tmp_path / "custom.yaml"
     f.write_text(
         """
@@ -177,8 +181,7 @@ profiles:
         encoding="utf-8",
     )
     monkeypatch.setenv("AGORA_PROFILES_FILE", str(f))
-    monkeypatch.chdir(tmp_path)
-    s = load_profiles()
+    s = load_profiles(get_settings().profiles_file)
     assert s.select().model == "ollama/qwen2.5-coder:14b"
 
 

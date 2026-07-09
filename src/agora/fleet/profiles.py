@@ -154,21 +154,19 @@ def load_profiles(path: str | Path | None = None) -> ProfileSet:
     """Load a :class:`ProfileSet` from disk, or fall back to the packaged default.
 
     Precedence:
-      1. ``path`` argument when supplied
-      2. ``AGORA_PROFILES_FILE`` env var
-      3. ``./profiles.yaml`` in the current working directory
-      4. Packaged default (so tests and fresh clones work with no file).
+      1. ``path`` argument when supplied (composition roots pass
+         ``Settings.profiles_file``, which is sourced from ``AGORA_PROFILES_FILE``;
+         this library never reads the env itself)
+      2. ``./profiles.yaml`` in the current working directory
+      3. Packaged default (so tests and fresh clones work with no file).
 
     YAML parse errors and pydantic validation failures both surface as
     :class:`AgoraError` with the offending path attached.
     """
     candidates: list[Path] = []
-    if path is not None:
+    if path:
         candidates.append(Path(path))
     else:
-        env_path = os.getenv("AGORA_PROFILES_FILE", "").strip()
-        if env_path:
-            candidates.append(Path(env_path))
         candidates.append(Path.cwd() / "profiles.yaml")
 
     for candidate in candidates:
