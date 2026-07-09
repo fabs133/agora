@@ -115,11 +115,39 @@ def load_cast(path: str | Path) -> Cast:
         raise AgoraError(f"cast at {p} failed schema validation:\n{exc}") from exc
 
 
+def _is_matrix_citation(evidence: Any) -> bool:
+    """A binding's evidence is a MATRIX-ROW citation (vs free-text) when it names a
+    ``model_digest`` — the row identity. Free-text ``{campaign, gate}`` is not."""
+    return isinstance(evidence, dict) and "model_digest" in evidence
+
+
+def _verify_matrix_citation(role: str, binding: CastBinding, matrix: Any, roles: Any, errors: list[str]) -> None:
+    """A cited model must be ELIGIBLE for the role at the role's harness key."""
+    from agora.bench.eligibility import eligible_digests
+
+    role_obj = getattr(roles, "roles", {}).get(role)
+    if role_obj is None:
+        errors.append(f"{role}: cites matrix evidence but is absent from roles.yaml")
+        return
+    if role_obj.measured is None:
+        errors.append(f"{role}: role is unmeasured/task_specific — cite a waiver, not matrix evidence")
+        return
+    digest = binding.evidence.get("model_digest") if binding.evidence else None
+    probe_version = binding.evidence.get("probe_version") if binding.evidence else None
+    if digest not in eligible_digests(matrix, role_obj, probe_version=probe_version):
+        errors.append(
+            f"{role}: cited model {digest!r} has no passing measurement for role "
+            f"{role!r} at its harness key — not eligible"
+        )
+
+
 def validate_cast(
     cast: Cast,
     profiles: ProfileSet,
     *,
     sizes_gb: Mapping[str, float] | None = None,
+    matrix: Any = None,
+    roles: Any = None,
 ) -> list[str]:
     """Check a cast against the four casting rules; return a list of problems.
 
@@ -128,9 +156,17 @@ def validate_cast(
     manifest store) to enable the residency-budget rule. When it is None, the
     residency sum is not checkable and is reported as a single skip note rather
     than silently passing.
+
+    Rule 3 is dual-accept (L1-C): free-text ``evidence`` or a ``waiver`` satisfies
+    it as before. A MATRIX-ROW citation (evidence naming a ``model_digest``) is
+    additionally VERIFIED when both ``matrix`` (the capability matrix DataFrame)
+    and ``roles`` (a :class:`~agora.fleet.roles.RoleSet`) are supplied — the cited
+    model must be eligible for the role. Absent those, a citation is accepted with
+    a single skip note (never silently passed as verified).
     """
     errors: list[str] = []
     resident: list[tuple[str, str]] = []  # (role, model)
+    citation_skips: list[str] = []
 
     for role, b in cast.bindings.items():
         is_human = b.binding == HUMAN_BINDING
@@ -154,9 +190,15 @@ def validate_cast(
                 f"(available: {sorted(profiles.profiles)})"
             )
 
-        # Rule 3: evidence OR waiver.
+        # Rule 3: evidence OR waiver (free-text still satisfies — dual-accept). A
+        # matrix-row citation is verified when a matrix + roles are supplied.
         if not b.evidence and not b.waiver:
             errors.append(f"{role}: binding cites neither evidence nor waiver")
+        elif _is_matrix_citation(b.evidence):
+            if matrix is None or roles is None:
+                citation_skips.append(role)
+            else:
+                _verify_matrix_citation(role, b, matrix, roles, errors)
 
         if b.resident and b.profile and known:
             resident.append((role, profiles.profiles[b.profile].model))
@@ -185,6 +227,12 @@ def validate_cast(
                     f"resident total {total:.1f} GB exceeds vram_budget "
                     f"{cast.hardware.vram_budget_gb} GB"
                 )
+
+    if citation_skips:
+        errors.append(
+            f"matrix-citation check skipped for {sorted(set(citation_skips))}: "
+            f"no matrix/roles supplied (pass matrix= and roles= to verify)"
+        )
 
     return errors
 

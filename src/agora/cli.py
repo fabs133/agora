@@ -369,6 +369,12 @@ app.add_typer(cast_app, name="cast")
 def cast_validate(
     cast_path: str = typer.Argument(..., help="Path to a casts/<envelope>.yaml file."),
     profiles_path: str = typer.Option(None, "--profiles", help="Override profiles.yaml path."),
+    matrix: str = typer.Option(
+        "", "--matrix", help="Capability matrix CSV — verifies any matrix-row evidence citations."
+    ),
+    roles_path: str = typer.Option(
+        "", "--roles", help="roles.yaml — required with --matrix to check citations against role requirements."
+    ),
 ) -> None:
     """Validate a cast against the four casting rules; exit 1 if invalid."""
     from agora.core.errors import AgoraError
@@ -383,16 +389,65 @@ def cast_validate(
         typer.echo(f"INVALID: {exc}")
         raise typer.Exit(code=1) from exc
 
+    matrix_df = roles_set = None
+    if matrix:
+        from agora.bench.matrix import load_matrix
+        from agora.fleet.roles import load_roles
+
+        matrix_df = load_matrix(matrix)
+        roles_set = load_roles(roles_path or "roles.yaml")
+
     # Residency sizes from the local Ollama manifest store (best-effort; the
     # size query has its own heuristic fallback when the daemon is unreachable).
     sizes = asyncio.run(ollama_sizes_gb(cast, profiles, settings.ollama_base_url))
-    errors = validate_cast(cast, profiles, sizes_gb=sizes)
+    errors = validate_cast(cast, profiles, sizes_gb=sizes, matrix=matrix_df, roles=roles_set)
     if errors:
         typer.echo(f"INVALID cast {cast.name!r} ({len(errors)} problem(s)):")
         for e in errors:
             typer.echo(f"  - {e}")
         raise typer.Exit(code=1)
     typer.echo(f"OK: cast {cast.name!r} valid ({len(cast.bindings)} bindings).")
+
+
+@cast_app.command("eligible")
+def cast_eligible(
+    role: str = typer.Argument(..., help="Role name from roles.yaml."),
+    matrix: str = typer.Option("capability-matrix.csv", "--matrix", help="Capability matrix CSV."),
+    roles_path: str = typer.Option("roles.yaml", "--roles", help="roles.yaml path."),
+    probe_version: int = typer.Option(None, "--probe-version", help="Restrict to one probe version."),
+) -> None:
+    """List models eligible for a role — those with a passing measurement at the
+    role's harness key in the capability matrix.
+    """
+    from agora.bench.eligibility import evaluate_role
+    from agora.bench.matrix import load_matrix
+    from agora.core.errors import AgoraError
+    from agora.fleet.roles import load_roles
+
+    try:
+        role_obj = load_roles(roles_path).role(role)
+    except AgoraError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    if role_obj.measured is None:
+        typer.echo(
+            f"role {role!r} requires {role_obj.requires!r} - not matrix-measured; "
+            f"cast it with a waiver or a human binding."
+        )
+        raise typer.Exit(code=0)
+
+    results = evaluate_role(load_matrix(matrix), role_obj, probe_version=probe_version)
+    passing = [r for r in results if r.eligible]
+    if not passing:
+        typer.echo(f"No models eligible for {role!r} in {matrix} (at the role's harness key).")
+        for r in results:
+            typer.echo(f"  [--] {r.model} ({r.model_digest[:19]}): {'; '.join(r.failures)}")
+        raise typer.Exit(code=0)
+
+    typer.echo(f"Eligible for {role!r} ({len(passing)}):")
+    for r in sorted(passing, key=lambda x: x.model):
+        typer.echo(f"  [OK] {r.model}  digest={r.model_digest[:19]}  measured={r.date}")
 
 
 @cast_app.command("load")
