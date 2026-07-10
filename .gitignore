@@ -45,3 +45,6 @@ docs/runs/_inventory.csv
 # settings (permission allowlists for the gamedev-mcp doc-gen workflow).
 .claude/*
 !.claude/settings.json
+
+# Runtime run archive (purged from history 2026-07; local-only evidence).
+workspace/
