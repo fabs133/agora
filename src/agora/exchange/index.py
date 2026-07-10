@@ -59,6 +59,28 @@ def load_submission(directory: str | Path) -> tuple[Manifest, Attestation]:
     return manifest, attestation
 
 
+def _read_jsonl_gz(path: Path, model: Any) -> list[Any]:
+    import gzip
+
+    if not path.exists():
+        return []
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        return [model.model_validate_json(line) for line in fh if line.strip()]
+
+
+def load_submission_records(directory: str | Path) -> tuple[Manifest, Attestation, list[Any], list[Any]]:
+    """Load a packaged submission in full — manifest + attestation + the gzipped
+    run/task records — ready for :func:`~agora.exchange.validate.validate_submission`.
+    This is what the exchange CI (and ``agora exchange validate``) run."""
+    from agora.observe.jsonl import RunRecord, TaskRecord
+
+    d = Path(directory)
+    manifest, attestation = load_submission(d)
+    runs = _read_jsonl_gz(d / "runs.jsonl.gz", RunRecord)
+    tasks = _read_jsonl_gz(d / "tasks.jsonl.gz", TaskRecord)
+    return manifest, attestation, runs, tasks
+
+
 def _cluster_key(raw_value: Any) -> Any:
     """Values agree when they round to the same figure at :data:`_TOL`. NaN forms
     its own cluster (an unmeasured cell never 'agrees' with a measured one)."""
@@ -158,4 +180,12 @@ def write_index(dest: str | Path, result: IndexResult) -> Path:
     return index_dir
 
 
-__all__ = ["INDEX_COLUMNS", "IndexResult", "build_index", "load_submission", "render_conflicts", "write_index"]
+__all__ = [
+    "INDEX_COLUMNS",
+    "IndexResult",
+    "build_index",
+    "load_submission",
+    "load_submission_records",
+    "render_conflicts",
+    "write_index",
+]

@@ -561,6 +561,28 @@ exchange_app = typer.Typer(help="Capability exchange commands")
 app.add_typer(exchange_app, name="exchange")
 
 
+@exchange_app.command("validate")
+def exchange_validate(
+    submission: str = typer.Argument(..., help="A packaged submission directory (with manifest.yaml)."),
+) -> None:
+    """Validate a packaged submission — the exact gate the exchange CI runs.
+
+    Loads the manifest + attestation + gzipped records and re-derives the vector
+    from the records; exits non-zero on any problem.
+    """
+    from agora.exchange.index import load_submission_records
+    from agora.exchange.validate import validate_submission
+
+    manifest, attestation, runs, tasks = load_submission_records(submission)
+    problems = validate_submission(manifest, attestation, runs, tasks)
+    if problems:
+        typer.echo(f"INVALID ({len(problems)} problem(s)):")
+        for p in problems:
+            typer.echo(f"  - {p}")
+        raise typer.Exit(code=1)
+    typer.echo(f"OK: {len(manifest.rows)} rows re-derive from the records; attestation consistent.")
+
+
 @exchange_app.command("index")
 def exchange_index(
     contributions: str = typer.Argument(..., help="A tree of submission dirs (each with manifest.yaml)."),

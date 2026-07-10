@@ -57,3 +57,24 @@ def test_written_submission_carries_no_real_machine_host(tmp_path) -> None:
     assert res.scrub_report.get(host, 0) > 0  # it was found + redacted
     body = gzip.open(res.submission_dir / "runs.jsonl.gz", "rt", encoding="utf-8").read()
     assert host not in body  # zero machine-private strings in the written file
+
+
+def test_written_submission_reloads_and_revalidates(tmp_path) -> None:
+    # The CI path: load a packaged submission from disk and re-validate it.
+    from typer.testing import CliRunner
+
+    from agora.cli import app
+    from agora.exchange.index import load_submission_records
+    from agora.exchange.validate import validate_submission
+
+    src = _write_run_dir(tmp_path / "run")
+    res = package_submission(
+        src, model_digest=DIGEST, battery_version=BATTERY, contributor="octocat",
+        dest=tmp_path / "dist", dry_run=False,
+    )
+    m, a, runs, tasks = load_submission_records(res.submission_dir)
+    assert validate_submission(m, a, runs, tasks) == []
+
+    cli = CliRunner().invoke(app, ["exchange", "validate", str(res.submission_dir)])
+    assert cli.exit_code == 0, cli.stdout
+    assert "re-derive" in cli.stdout
