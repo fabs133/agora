@@ -598,14 +598,10 @@ def exchange_index(
     from agora.exchange.index import build_index, write_index
 
     dirs = sorted(p.parent for p in Path(contributions).rglob("manifest.yaml"))
-    if not dirs:
-        typer.echo(f"no submissions (manifest.yaml) found under {contributions}")
-        raise typer.Exit(code=1)
-    result = build_index(dirs)  # type: ignore[arg-type]
+    result = build_index(dirs)  # type: ignore[arg-type]  # empty dirs -> empty (valid) index
     index_dir = write_index(out, result)
-    typer.echo(
-        f"index -> {index_dir}  ({len(result.matrix)} rows, {len(result.conflicts)} conflict(s))"
-    )
+    n = "no submissions yet; wrote an empty index" if not dirs else f"{len(result.matrix)} rows"
+    typer.echo(f"index -> {index_dir}  ({n}, {len(result.conflicts)} conflict(s))")
 
 
 if __name__ == "__main__":

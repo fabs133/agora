@@ -73,6 +73,17 @@ def test_write_index_emits_matrix_and_conflicts(tmp_path) -> None:
     assert "Conflicts" in (index_dir / "conflicts.md").read_text(encoding="utf-8")
 
 
+def test_cli_exchange_index_empty_is_ok(tmp_path) -> None:
+    # A fresh exchange (no submissions) is a valid state — write an empty index, exit 0.
+    (tmp_path / "contributions").mkdir()
+    result = CliRunner().invoke(
+        app, ["exchange", "index", str(tmp_path / "contributions"), "--out", str(tmp_path / "out")]
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "empty index" in result.stdout
+    assert (tmp_path / "out" / "index" / "matrix.csv").exists()
+
+
 def test_cli_exchange_index(tmp_path) -> None:
     root = tmp_path / "contributions"
     _sub(root / "a", "alice", 1.0)
