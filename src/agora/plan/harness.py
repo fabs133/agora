@@ -48,6 +48,8 @@ class HarnessConfig:
     # Identity with stable non-secret defaults.
     server_name: str = "agora.local"
     system_user: str = "@agora:agora.local"
+    # Dataclass default only for hand-built configs; from_settings() always
+    # overrides it from Settings.review_timeout_seconds (the single source).
     review_timeout_seconds: float = 300.0
     max_parallel_agents: int = 2
     max_task_retries: int = 2

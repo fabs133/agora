@@ -4,13 +4,25 @@
 (session log b117471, provenance runs_out/integration-run-1/). Run 1.1
 pre-registration recorded BEFORE its execution, per program practice.*
 
+> **Hash banner (2026-07).** Commit hashes cited **anywhere in this file's
+> historical parts predate the 2026-07 history rewrite** (a `git filter-repo`
+> secret scrub that removed the tracked `workspace/` archive and relativized
+> author paths — it rewrote **every** hash). Those citations are dead as written
+> and are deliberately **left unrewritten**: they are the record as it was
+> authored. To resolve one, use the map:
+> `grep ^<old-hash> docs/history/commit-map.txt`. **Tags survived the rewrite
+> and are the durable anchors** — `echobot-v1` (`957be3f4`), `echobot-v2`
+> (`15edd7c9`), `lifecycle-baseline-1`. Living documents (README, SETUP,
+> OLLAMA.md, arc, design) were remapped to post-rewrite hashes; this findings
+> file was not.
+
 > **Scope note.** Parts 1–17 of this file cover the whole integration
 > program — runs 1.x (repair doctrine), 2.x (greenfield echobot → v1.1,
 > tag `echobot-v1`), 3 (brownfield → v2.1, tag `echobot-v2`), and the
 > 2026-07-15 lifecycle baseline (first clean single-session P3→P9, tag
 > `lifecycle-baseline-1`; session log
 > `docs/runs/lifecycle-baseline/session-log.md`). Findings are numbered
-> F1–F25. Canonical index / narrative: `docs/arc/arc-outline.md`.
+> F1–F26. Canonical index / narrative: `docs/arc/arc-outline.md`.
 
 ## Part 1 — run 1 findings
 
@@ -1375,3 +1387,20 @@ campaign (`integration-run-1.yaml`, no `salvage_budget`, 2048) that disabled the
 very mitigation its repair then needed; a dead Conduit against an unguarded
 `build_matrix_client` await; and a demo path the program never drove. Baseline
 tagged `lifecycle-baseline-1`.
+
+**F26 — a config file is a moving target; only the effective log testifies.**
+Campaign/profile/flow YAML is edited across a program's life, so the file as it
+stands today does **not** record what any past run executed. `integration-run-2.yaml`
+reads `max_tokens: 4096` now, but run 2.0 *executed at 2048* — the 4096 was
+written back after the run-2.3 envelope experiment. Reading the current file as
+run 2.0's conditions inverts the F14-at-P4 evidence entirely. This is not
+hypothetical: on 2026-07-15 an executor picked `integration-run-1.yaml` believing
+it equivalent, thereby silently disabling `salvage_budget` and halving the
+envelope — and the resulting repair failed in exactly the mode the disabled
+mitigation exists to catch. **Doctrine:** every findings entry, report, or
+comparison cites the run's **effective-params provenance** (`[*] effective params
+[...]` in the runner output, mirrored into `run.jsonl`), never the file path.
+Where a claim depends on conditions, quote the log. F19's param wiring is what
+makes this auditable; F26 is the obligation to actually use it. Corollary for
+**executors**: identify a campaign by what it *ran* (provenance), not by a
+filename that looks equivalent.

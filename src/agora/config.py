@@ -44,7 +44,14 @@ class Settings(BaseSettings):
     vram_safety_margin_mib: int = 512
 
     # Observer
-    review_timeout_seconds: float = 86400.0
+    # How long the REVIEW-phase poll waits for a human vote before auto-deciding.
+    # On timeout the coordinator is task-aware (agora.observe.review._auto_fallback):
+    # it approves when every task passed, and otherwise loops back to rework
+    # IMPLEMENTATION — it does NOT blanket-approve. 300s is the single source of
+    # this default; harness/orchestrator inherit it rather than restating it.
+    # Raise it for a supervised run where a human genuinely intends to vote.
+    # (Was 86400 = 24h, which silently hung any unattended run at the poll.)
+    review_timeout_seconds: float = 300.0
     watch_rooms: list[str] = Field(default_factory=list)
     enable_observer: bool = True
 

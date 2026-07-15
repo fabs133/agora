@@ -28,9 +28,17 @@ Per-field env overrides remain as a secondary escape hatch — see
 Other knobs (unchanged):
 
     AGORA_MATRIX_HOMESERVER=http://localhost:6167
-    AGORA_REVIEW_TIMEOUT_SECONDS=300     # auto-approve after 5min if no poll click
+    AGORA_REVIEW_TIMEOUT_SECONDS=300      # see below — default, not set here
     AGORA_MAX_PARALLEL_AGENTS=2
     AGORA_MAX_TASK_RETRIES=2              # in-phase auto-retries per failed task
+
+The REVIEW poll: this run is unattended by default, so nobody clicks. After
+``AGORA_REVIEW_TIMEOUT_SECONDS`` (default 300, from ``Settings``) the coordinator
+decides on its own — and it is **task-aware, not a blanket approve**: it approves
+only if every task passed, and otherwise loops back to rework IMPLEMENTATION
+(``agora.observe.review._auto_fallback``; bounded by ``max_loopbacks``). Open
+Element as the observer to vote sooner. Values above are the DEFAULTS this script
+inherits from the environment/.env — the script sets none of them itself.
 """
 
 from __future__ import annotations

@@ -273,6 +273,24 @@ up to `AGORA_MAX_PARALLEL_AGENTS`.
   model-tier comparison.
 - [docs/runs/publishable.md](docs/runs/publishable.md) — three paper-shaped
   research threads with thesis, evidence, and target venue.
+- [docs/runs/lifecycle-baseline/session-log.md](docs/runs/lifecycle-baseline/session-log.md)
+  — the reference end-to-end run: the full echobot lifecycle (P3→P9) green in a
+  single session with zero repairs, with per-task provenance and the live bot
+  transcript. Tag `lifecycle-baseline-1`.
+
+### A note on commit hashes
+
+This repository's history was **rewritten in 2026-07** (a `git filter-repo`
+secret scrub: the tracked `workspace/` run archive was removed and absolute
+author paths relativized). The rewrite changed **every commit hash**. Any hash
+cited in a document authored before that date — session logs, findings parts,
+older design notes — **will not resolve**. Those historical documents are
+deliberately left as written rather than retroactively edited.
+
+- **Tags survived and are the durable anchors**: `echobot-v1` (`957be3f4`),
+  `echobot-v2` (`15edd7c9`), `lifecycle-baseline-1`.
+- **To resolve an old hash**: `grep ^<old-hash> docs/history/commit-map.txt`
+  ([commit-map.txt](docs/history/commit-map.txt), 133 commits mapped).
 
 ## Known limitations
 

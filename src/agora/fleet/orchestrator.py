@@ -122,7 +122,7 @@ class Orchestrator:
         skip_warmup: bool = False,
         warmup_deadline: float = 600.0,
         keep_alive: str = "30m",
-        review_timeout_seconds: float = 86400.0,
+        review_timeout_seconds: float = 300.0,  # keep in step with Settings.review_timeout_seconds
         enable_web_fetch: bool = False,
         fetch_timeout_seconds: float = 30.0,
         fetch_max_bytes: int = 1_048_576,
