@@ -53,8 +53,10 @@ The 24 GB card is in place; the reference lifecycle run
 
 ## Evidence
 
-Three test-bed projects, four model tiers, 46 archived runs in
-[docs/runs/](docs/runs/). Reference green runs:
+Three test-bed projects, four model tiers, every run archived in
+[docs/runs/](docs/runs/) and ledgered in
+[arc Appendix B](docs/arc/arc.md#appendix-b--runs-ledger-summary).
+Reference green runs:
 
 | Run | Project | Model | Result |
 |-----|---------|-------|--------|
