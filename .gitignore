@@ -41,10 +41,10 @@ docs/runs/_inventory.csv
 .idea/
 .vscode/
 
-# Claude Code state: ignore runtime / local files but ship project-level
-# settings (permission allowlists for the gamedev-mcp doc-gen workflow).
-.claude/*
-!.claude/settings.json
+# Claude Code state — entirely local. The allowlists here name MCP servers and
+# tools that exist on one author's machine, so they are meaningless (and
+# misleading) to anyone cloning: nothing in Agora requires them.
+.claude/
 
 # Personal working notes — not part of the project record.
 INBOX.md
