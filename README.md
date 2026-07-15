@@ -280,6 +280,13 @@ up to `AGORA_MAX_PARALLEL_AGENTS`.
   — the reference end-to-end run: the full echobot lifecycle (P3→P9) green in a
   single session with zero repairs, with per-task provenance and the live bot
   transcript. Tag `lifecycle-baseline-1`.
+- [agora-capability-exchange](https://github.com/fabs133/agora-capability-exchange)
+  — the community half: a shared, keyed record of which local models can
+  actually do what, on whose hardware. **Evidence in, scores derived** — a
+  contribution is raw run records, and CI re-derives the capability vector and
+  rejects any row that doesn't reproduce. *Not open for contributions yet:* the
+  re-derivation trust gate activates with agora `v0.2.0`, and the marketplace
+  does not open before its trust gate does.
 
 ### A note on commit hashes
 
