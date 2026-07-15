@@ -206,6 +206,52 @@ immutable once announced or plausibly consumed. The pre-announcement
 window is minutes, not days; outside it, fixes are new versions,
 always. This precedent expires the moment it is used.
 
+---
+
+## v0.2.0 debt — `feat/capability-bench-matrix` (measured 2026-07-15)
+
+*Recorded here because the branch has no PR yet; copy into the PR
+description when it opens.*
+
+The R1 ruling held the bench branch out of v0.1.0 on the grounds that it
+"forked pre-hardening ... and would regress the Stage-2 invariants on
+contact." That is now measured rather than predicted. Running
+`scripts/check_hardening_invariants.py` (the CI merge gate) against the
+branch:
+
+```
+FAIL (a) env read in one place:   53 violation(s)
+FAIL (b) no hardcoded localhost:  22 violation(s)
+ok   (c) Settings only at a composition root
+                                  -> exit 1
+```
+
+**75 violations across 10 files** — every `scripts/` entrypoint
+(`auto_vote_plan_builder`, `run_campaign`, `run_code_review`,
+`run_discord_bot_full_test`, `run_discord_bot_test`,
+`run_fastapi_crud_test`, `run_phased`, `run_plan`, `run_plan_builder`,
+`run_tool_call_fidelity`). They read `AGORA_MATRIX_HOMESERVER`,
+`AGORA_MATRIX_PASSWORD`, `AGORA_OLLAMA_BASE_URL` and friends straight from
+the environment, because at the fork point (`8bc8e00`) that was still how
+the project worked.
+
+**Position:** 24 commits behind `main`, 10 ahead, forked at `8bc8e00`.
+
+**Merge sequence (binding):**
+1. Rebase onto the hardened `main`. Most of the 75 disappear with the
+   rebase — those files were rewritten by Stage 2B; the conflicts ARE the
+   hardening, and resolving them by keeping the branch's side is how the
+   regression happens. Keep `main`'s side and re-apply the branch's intent
+   on top.
+2. `python scripts/check_hardening_invariants.py` -> exit 0.
+3. Full suite + ruff green on the rebased branch.
+4. Then open the PR. CI's `invariants` job enforces this regardless — the
+   gate exists so the branch cannot land the regression by accident, but
+   discovering it at PR time wastes a review cycle.
+
+Only then does `agora exchange` exist in a tag, which is what the
+capability exchange's re-derivation trust gate is pinned to (`v0.2.0`).
+
 Ratified from the smoke: the SKIP fix + deliberate inversion of the
 mandatory-Matrix test (the old test encoded the contract this release
 overturns); the ASCII-not-cp1252 output test (cp1252 would have passed
