@@ -76,7 +76,7 @@ class ProjectResult:
     ``success`` is the conjunction of every task's postcondition outcome
     plus the review approval. ``task_results`` is in execution order;
     ``total_tokens`` aggregates input/output token counts (and ``cost_usd``
-    when the LiteLLM adapter is in use) across all agents.
+    if a metered backend sets it) across all agents.
     """
 
     project: Project
@@ -118,11 +118,11 @@ class Orchestrator:
         enable_observer: bool = False,
         repo_root: str | None = None,
         knowledge_cache_dir: str | None = None,
-        ollama_base_url: str = "http://localhost:11434",
+        ollama_base_url: str,  # required config-shaped endpoint — no localhost default; inject from Settings.ollama_base_url
         skip_warmup: bool = False,
         warmup_deadline: float = 600.0,
         keep_alive: str = "30m",
-        review_timeout_seconds: float = 86400.0,
+        review_timeout_seconds: float = 300.0,  # keep in step with Settings.review_timeout_seconds
         enable_web_fetch: bool = False,
         fetch_timeout_seconds: float = 30.0,
         fetch_max_bytes: int = 1_048_576,
@@ -791,6 +791,7 @@ class Orchestrator:
             # AGORA_SERIAL_TASKS (debug, default off): dispatch ready tasks
             # sequentially instead of concurrently, to isolate scheduling/batching
             # as a non-determinism source. Off ⇒ the concurrent gather, unchanged.
+            # Registered debug-flag (integration-hardening 2B.3 allowlist): env-only.
             if os.getenv("AGORA_SERIAL_TASKS", "").strip().lower() in ("1", "true", "yes", "on"):
                 outcomes = [await _execute(t) for t in ready]
             else:
@@ -985,6 +986,10 @@ class Orchestrator:
             matrix_client=self._matrix,
             agent_room_id=identity.room_id,
             project_room_id=project_room,
+            # No observer => no room anyone reads and no human to answer. Tools
+            # that inform must say "recorded to log"; tools that block on a
+            # person must refuse loudly. Neither may post into the void.
+            matrix_live=self._enable_observer,
             git_repo=repo,
             knowledge_refs=list(identity.knowledge_refs),
             knowledge_fetcher=fetcher,

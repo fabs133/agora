@@ -55,7 +55,11 @@ class OllamaProfile(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    base_url: str = "http://localhost:11434"
+    # Optional per-profile endpoint OVERRIDE. None = inherit the injected
+    # Settings.ollama_base_url (the single source). A profile only sets this to
+    # pin a specific daemon (e.g. a remote GPU box). No localhost default here:
+    # that default lives once, in Settings — see integration-hardening 2B.
+    base_url: str | None = None
     num_parallel: int = 1
 
 
@@ -154,21 +158,19 @@ def load_profiles(path: str | Path | None = None) -> ProfileSet:
     """Load a :class:`ProfileSet` from disk, or fall back to the packaged default.
 
     Precedence:
-      1. ``path`` argument when supplied
-      2. ``AGORA_PROFILES_FILE`` env var
-      3. ``./profiles.yaml`` in the current working directory
-      4. Packaged default (so tests and fresh clones work with no file).
+      1. ``path`` argument when supplied (composition roots pass
+         ``Settings.profiles_file``, which is sourced from ``AGORA_PROFILES_FILE``;
+         this library never reads the env itself)
+      2. ``./profiles.yaml`` in the current working directory
+      3. Packaged default (so tests and fresh clones work with no file).
 
     YAML parse errors and pydantic validation failures both surface as
     :class:`AgoraError` with the offending path attached.
     """
     candidates: list[Path] = []
-    if path is not None:
+    if path:
         candidates.append(Path(path))
     else:
-        env_path = os.getenv("AGORA_PROFILES_FILE", "").strip()
-        if env_path:
-            candidates.append(Path(env_path))
         candidates.append(Path.cwd() / "profiles.yaml")
 
     for candidate in candidates:
@@ -269,8 +271,21 @@ def apply_env_overrides(
 # ----------------------------- llm factory ------------------------------------
 
 
-def build_llm_factory(profile: ModelProfile) -> Callable[[str], LLMProtocol]:
+def resolve_base_url(profile: ModelProfile, fallback: str) -> str:
+    """The profile's Ollama endpoint override, or the injected ``fallback``.
+
+    ``profile.ollama.base_url`` is an optional pin (None ⇒ inherit). The
+    ``fallback`` is the single-source endpoint from ``Settings.ollama_base_url``.
+    """
+    return profile.ollama.base_url or fallback
+
+
+def build_llm_factory(profile: ModelProfile, base_url: str) -> Callable[[str], LLMProtocol]:
     """Return a factory that resolves ``model_ref`` against ``profile``.
+
+    ``base_url`` is the resolved Ollama endpoint (profile override or the
+    injected Settings default) — passed explicitly because profiles no longer
+    carry a localhost default. Use :func:`resolve_base_url` to compute it.
 
     An empty ``model_ref`` (the v2.3 plan-builder emits agents with
     ``model=""`` because the model can't reliably guess a valid id, so
@@ -280,22 +295,16 @@ def build_llm_factory(profile: ModelProfile) -> Callable[[str], LLMProtocol]:
     keep_alive, max_concurrent, timeout — so a mixed-model run inherits
     the profile's tuning rather than reverting to adapter defaults.
 
-    For ``ollama/*``: passes base_url, num_ctx, max_concurrent
-    (=``ollama.num_parallel``), keep_alive, default_max_tokens.
-
-    For ``claude-*`` (direct Anthropic, non-``claude-code/*``): picks up
-    ``ANTHROPIC_API_KEY`` from the env, mirroring the historical harness
-    closure.
-
-    For any other provider (LiteLLM, claude-code subprocess): just the
-    timeout.
+    For ``ollama/*`` (the only supported backend): passes base_url, num_ctx,
+    max_concurrent (=``ollama.num_parallel``), keep_alive, default_max_tokens,
+    and the sampling controls.
     """
 
     def factory(model_ref: str) -> LLMProtocol:
         chosen = model_ref or profile.model
         kwargs: dict[str, Any] = {"timeout_seconds": profile.timeout_seconds}
         if chosen.startswith("ollama/"):
-            kwargs["base_url"] = profile.ollama.base_url
+            kwargs["base_url"] = base_url
             kwargs["num_ctx"] = profile.num_ctx
             kwargs["max_concurrent"] = profile.ollama.num_parallel
             kwargs["keep_alive"] = profile.keep_alive
@@ -304,10 +313,6 @@ def build_llm_factory(profile: ModelProfile) -> Callable[[str], LLMProtocol]:
             # recorded in run.jsonl are the ones the daemon actually applied.
             kwargs["temperature"] = profile.temperature
             kwargs["seed"] = profile.seed
-        elif chosen.startswith("claude-") and not chosen.startswith("claude-code/"):
-            api_key = os.getenv("ANTHROPIC_API_KEY", "")
-            if api_key:
-                kwargs["api_key"] = api_key
         return create_llm_adapter(chosen, **kwargs)
 
     return factory
@@ -321,4 +326,5 @@ __all__ = [
     "apply_env_overrides",
     "build_llm_factory",
     "load_profiles",
+    "resolve_base_url",
 ]

@@ -9,6 +9,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from agora.fleet import vram
+from tests.conftest import TEST_OLLAMA_URL
 
 
 def _nvidia_proc(stdout: bytes):
@@ -152,7 +153,7 @@ async def test_check_model_fits_queries_ollamas_device(monkeypatch) -> None:
 
     monkeypatch.setattr(vram, "probe_free_vram_mib", _probe)
 
-    check = await vram.check_model_fits("ollama/qwen2.5:7b-instruct", safety_margin_mib=512)
+    check = await vram.check_model_fits("ollama/qwen2.5:7b-instruct", TEST_OLLAMA_URL, safety_margin_mib=512)
     assert seen["device_index"] == 0
     assert check.fits is True
     assert check.free_mib == 20000
@@ -164,5 +165,5 @@ async def test_check_model_fits_reason_names_summed_fallback(monkeypatch) -> Non
     monkeypatch.setattr(vram, "_is_model_resident", AsyncMock(return_value=False))
     monkeypatch.setattr(vram, "get_model_size_mib", AsyncMock(return_value=5000))
     monkeypatch.setattr(vram, "probe_free_vram_mib", AsyncMock(return_value=25000))
-    check = await vram.check_model_fits("ollama/qwen2.5:7b-instruct")
+    check = await vram.check_model_fits("ollama/qwen2.5:7b-instruct", TEST_OLLAMA_URL)
     assert "all visible devices (summed)" in check.reason

@@ -12,6 +12,11 @@ Built on the [Manifold](https://github.com/fabs133/manifold) Specification
 Pattern, with Matrix as the human-observer surface and Git as the artifact
 store.
 
+**Runs locally** on Python ≥3.12 + Docker + Ollama; the demo wants ~6 GB of
+free VRAM (CPU works, slower). New here? → **[docs/SETUP.md](docs/SETUP.md)**
+takes you from clone to a green run. Found a rough edge the docs don't
+anticipate? That's a real signal — please [open an issue](../../issues).
+
 ## Status
 
 Active research code; framework stable at Round 18 of empirical hardening.
@@ -86,34 +91,37 @@ The failure-driven rationale and the run that surfaced each is in
 
 ## Quickstart
 
-Prerequisites: Python ≥3.12, Docker (for Conduit homeserver), Ollama
-(for the default local backend).
+**Full walkthrough: [docs/SETUP.md](docs/SETUP.md)** — one document, clone to a
+green run, with a troubleshooting table keyed to `agora doctor`.
+
+Prerequisites: Python ≥3.12, Docker (for the Conduit homeserver), Ollama
+(the local backend).
 
 ```bash
 # 1. Clone, venv, install
 git clone <repo-url> agora && cd agora
 python -m venv .venv
-source .venv/bin/activate            # POSIX
-# .venv\Scripts\activate             # Windows
-pip install -e ".[dev,litellm]"
+source .venv/bin/activate            # POSIX  (Windows: .venv\Scripts\activate)
+pip install -e ".[dev]"
 
-# 2. Configure the Matrix homeserver (one-time)
+# 2. Configure — one source of truth
+cp .env.example .env                 # set AGORA_MATRIX_PASSWORD (required)
 cp conduit/conduit.example.toml conduit/conduit.toml
-# Edit registration_token in conduit/conduit.toml before exposing the port.
+# make conduit.toml's registration_token match AGORA_MATRIX_REGISTRATION_TOKEN
 
-# 3. Start Conduit
+# 3. Start Conduit + register the @agora / @observer accounts (see SETUP.md)
 (cd conduit && docker compose up -d)
 
 # 4. Pull and warm the default Ollama model
 ollama serve &
 agora setup-ollama                   # VRAM pre-flight + pull + warm-up
 
-# 5. Health check
-agora doctor                         # probes Ollama / Conduit / GPU / claude CLI
+# 5. Preflight — everything green before you run
+agora doctor                         # Ollama / VRAM / Conduit / workspace; non-zero on red
 
-# 6. Run a reference project
+# 6. Run the demo flow
 python scripts/run_discord_bot_test.py
-# Hits DONE 12/12 in ~6 minutes on the default model.
+# A greenfield build: DONE 12/12 in ~6 minutes on the default model.
 ```
 
 To watch a run live, log into Element ([docs/element-setup.md](docs/element-setup.md))
@@ -180,8 +188,8 @@ agora setup-ollama        # pulls and warms the configured default model
 The default is `ollama/qwen2.5:7b-instruct` — the model used for every
 empirical reference run above. Override with `AGORA_LLM_MODEL=ollama/<name>`.
 The coder variants (`qwen2.5-coder:*`) tool-call less reliably at 7B
-([Run 6 in lessons-learned](docs/lessons-learned.md)) — `agora doctor`
-recommends instruct for the 7B tier and coder for 14B+.
+([Run 6 in lessons-learned](docs/lessons-learned.md)) — prefer instruct at
+the 7B tier and coder at 14B+.
 
 The VRAM pre-flight refuses to load a model that won't fit instead of
 letting Ollama thrash into CPU offload. Skip with
@@ -193,54 +201,14 @@ letting Ollama thrash into CPU offload. Skip with
 | ≥ 10 GB | `ollama/qwen2.5-coder:14b` |
 | ≥ 6 GB  | **`ollama/qwen2.5:7b-instruct`** *(default — empirically validated)* |
 | ≥ 4 GB  | `ollama/qwen2.5:3b-instruct` |
-| < 4 GB  | Use the LiteLLM path with a hosted provider |
+| < 4 GB  | `ollama/qwen2.5:3b-instruct` is the practical floor (smaller models tool-call unreliably) |
 
-### Multi-provider via LiteLLM
-
-```bash
-pip install -e ".[dev,litellm]"
-export OPENAI_API_KEY=...
-export AGORA_LLM_MODEL=openai/gpt-4o-mini
-python scripts/run_discord_bot_test.py
-```
-
-Routes any `provider/model-id` through a single normalised interface —
-OpenAI, Anthropic, Gemini, Mistral, Together, Bedrock, and others. Cost
-tracking is automatic via `litellm.completion_cost()`. Empirical numbers
-from the URL-shortener test bed: gpt-4o-mini ran the executor for
-~$0.025/run; gpt-4o for ~$0.40/run (estimated, not log-recorded — see
-[docs/runs/findings.md §6.4](docs/runs/findings.md)).
-
-### Anthropic API directly
-
-```bash
-pip install -e ".[dev,llm]"
-export ANTHROPIC_API_KEY=sk-ant-...
-export AGORA_LLM_MODEL=anthropic/claude-haiku-4-5
-agora mcp
-```
-
-The dedicated `anthropic/*` adapter exists alongside the LiteLLM path and
-is preferred for tool-use reliability when you only need Anthropic.
-
-### Claude Code subprocess *(experimental, ToS-grey, opt-in)*
-
-```bash
-export AGORA_ALLOW_CLAUDE_SUBPROCESS=1
-export AGORA_LLM_MODEL=claude-code/subscription
-agora mcp
-```
-
-Uses the local `claude` CLI's subscription session. **Anthropic explicitly
-discourages third-party products that drive claude.ai login**; this adapter
-is a pragmatic workaround, not a sanctioned integration. Tool calls are
-simulated by prompting for strict JSON, not native `tool_use` blocks —
-reliability is lower than the API or Ollama paths. Subprocess startup
-overhead also dominates short turns. Provided for users who want to
-experiment without an API key.
-
-You can mix backends per agent role (architect on the API, implementer on
-Ollama) via `AgentConfig.model`.
+**Ollama is the only backend.** The former multi-provider adapters (LiteLLM,
+the Anthropic API, and the Claude Code subprocess) were removed — the model
+factory is now a single live seam (`create_llm_adapter` → `ollama/<name>`),
+not a menu of untested paths. A new backend re-enters through the bench
+pipeline *with evidence*, not as kept dead code. Per-role model overrides
+(`AgentConfig.model`) still work across Ollama model tiers.
 
 ## Matrix observer
 
@@ -287,8 +255,6 @@ during debugging, set `AGORA_SKIP_VRAM_CHECK=1`.
 | `AGORA_PROFILES_FILE` | `./profiles.yaml` | Point at an alternate profile file |
 | `AGORA_MAX_PARALLEL_AGENTS` | `3` | Concurrent task executions per phase |
 | `AGORA_SKIP_VRAM_CHECK` | `false` | Force-skip the VRAM pre-flight (honored: `1`/`true`/`yes`/`on`) |
-| `AGORA_ALLOW_CLAUDE_SUBPROCESS` | `false` | Enable `claude-code/*` adapter |
-| `AGORA_CLAUDE_CODE_TIMEOUT_SECONDS` | `300` | Subprocess call timeout |
 | `AGORA_REVIEW_TIMEOUT_SECONDS` | `86400` | Auto-approve after N seconds |
 | `AGORA_MAX_TASK_RETRIES` | (per runner) | In-phase auto-retries per failed task |
 
@@ -307,6 +273,24 @@ up to `AGORA_MAX_PARALLEL_AGENTS`.
   model-tier comparison.
 - [docs/runs/publishable.md](docs/runs/publishable.md) — three paper-shaped
   research threads with thesis, evidence, and target venue.
+- [docs/runs/lifecycle-baseline/session-log.md](docs/runs/lifecycle-baseline/session-log.md)
+  — the reference end-to-end run: the full echobot lifecycle (P3→P9) green in a
+  single session with zero repairs, with per-task provenance and the live bot
+  transcript. Tag `lifecycle-baseline-1`.
+
+### A note on commit hashes
+
+This repository's history was **rewritten in 2026-07** (a `git filter-repo`
+secret scrub: the tracked `workspace/` run archive was removed and absolute
+author paths relativized). The rewrite changed **every commit hash**. Any hash
+cited in a document authored before that date — session logs, findings parts,
+older design notes — **will not resolve**. Those historical documents are
+deliberately left as written rather than retroactively edited.
+
+- **Tags survived and are the durable anchors**: `echobot-v1` (`957be3f4`),
+  `echobot-v2` (`15edd7c9`), `lifecycle-baseline-1`.
+- **To resolve an old hash**: `grep ^<old-hash> docs/history/commit-map.txt`
+  ([commit-map.txt](docs/history/commit-map.txt), 133 commits mapped).
 
 ## Known limitations
 

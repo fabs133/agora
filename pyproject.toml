@@ -24,16 +24,6 @@ dependencies = [
 agora = "agora.cli:app"
 
 [project.optional-dependencies]
-llm = [
-    "anthropic>=0.40",
-]
-# Multi-provider adapter: one SDK routes to OpenAI, Anthropic, Gemini,
-# Mistral, Groq, Bedrock, etc. via a single normalised interface. Pick
-# the provider via the model-string prefix: "openai/gpt-4o-mini",
-# "anthropic/claude-haiku-4-5", "gemini/gemini-1.5-flash", etc.
-litellm = [
-    "litellm>=1.52",
-]
 # Layer-1 analysis pipeline: load the campaign's JSONL output into tidy
 # pandas DataFrames. Kept out of the core deps so the framework's runtime
 # install stays slim — only the analysis tooling needs pandas.

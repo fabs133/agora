@@ -4,7 +4,7 @@ Subcommands:
 - ``agora mcp``           — run the outer MCP server over stdio.
 - ``agora watch``         — attach to a project room and stream events into the terminal.
 - ``agora setup-ollama``  — VRAM-check then pull the default Ollama model.
-- ``agora doctor``        — probe Ollama, claude CLI, GPU, and report status.
+- ``agora doctor``        — probe Ollama, GPU, and report status.
 - ``agora version``       — print the package version.
 """
 
@@ -101,8 +101,8 @@ def setup_ollama(
     """Probe VRAM, pull the model, and warm it up so first turns are fast."""
     import aiohttp
 
+    from agora import doctor
     from agora.core.errors import AgoraError
-    from agora.fleet.vram import check_model_fits, raise_if_wont_fit
 
     settings = get_settings()
     target = model or settings.llm_model
@@ -112,36 +112,23 @@ def setup_ollama(
         target_name = target
 
     async def _setup() -> None:
-        typer.echo(f"→ Checking Ollama at {settings.ollama_base_url}...")
-        try:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=5, sock_connect=2)
-            ) as s, s.get(f"{settings.ollama_base_url}/api/tags") as resp:
-                if resp.status != 200:
-                    raise AgoraError(f"Ollama returned HTTP {resp.status}")
-        except (TimeoutError, aiohttp.ClientError) as exc:
+        # Health checks come from agora.doctor — cli holds no private health logic.
+        r = doctor.check_ollama_reachable(settings.ollama_base_url)
+        typer.echo(doctor.format_line(r))
+        if not r.ok:
             raise AgoraError(
                 f"Cannot reach Ollama at {settings.ollama_base_url} — run `ollama serve`?"
-            ) from exc
-        typer.echo("  ok.")
+            )
 
         if settings.skip_vram_check:
             typer.echo("→ VRAM check skipped (AGORA_SKIP_VRAM_CHECK=1).")
         else:
-            typer.echo(f"→ VRAM check for {target_name}...")
-            check = await check_model_fits(
-                model=target_name,
-                base_url=settings.ollama_base_url,
-                safety_margin_mib=settings.vram_safety_margin_mib,
+            v = await doctor.check_vram(
+                target_name, settings.ollama_base_url, settings.vram_safety_margin_mib
             )
-            if check.free_mib is None:
-                typer.echo(f"  {check.reason}")
-            else:
-                typer.echo(
-                    f"  free={check.free_mib} MiB, needed≈{check.required_mib} MiB"
-                )
-            raise_if_wont_fit(check, target_name)
-            typer.echo("  ok.")
+            typer.echo(doctor.format_line(v))
+            if not v.ok:
+                raise AgoraError(f"VRAM pre-flight failed: {v.detail}")
 
         typer.echo(f"→ Pulling {target_name}...")
         async with aiohttp.ClientSession(
@@ -236,50 +223,53 @@ def watch(
 
 
 @app.command()
-def doctor() -> None:
-    """Report which LLM backends are available on this machine."""
-    import shutil
+def doctor(
+    cast: str = typer.Option(
+        None, "--cast", help="casts/<name>.yaml — also check its models are present in Ollama."
+    ),
+    dev: bool = typer.Option(False, "--dev", help="Also check the PlantUML dev-tooling server."),
+) -> None:
+    """Preflight every external dependency (Ollama, VRAM, Conduit, workspace).
 
-    import aiohttp
+    Composition root: reads Settings and injects endpoints into agora.doctor
+    (the one place health checks live). Non-zero exit on any red.
+    """
+    from pathlib import Path
 
-    from agora.fleet.vram import probe_free_vram_mib
+    from agora import doctor as doc
 
     settings = get_settings()
 
-    async def _probe() -> None:
-        typer.echo("== agora doctor ==")
+    required: list[str] = []
+    if cast:
+        from agora.fleet.cast import load_cast, resolve_cast
+        from agora.fleet.profiles import load_profiles
 
-        # Ollama
-        try:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=3, sock_connect=2)
-            ) as s, s.get(f"{settings.ollama_base_url}/api/tags") as resp:
-                typer.echo(f"ollama  : OK (HTTP {resp.status}) at {settings.ollama_base_url}")
-        except Exception as exc:  # noqa: BLE001
-            typer.echo(f"ollama  : unreachable ({type(exc).__name__})")
+        profiles = load_profiles(settings.profiles_file)
+        resolved = resolve_cast(load_cast(cast), profiles)
+        required = [
+            rb.model.removeprefix("ollama/")
+            for rb in resolved
+            if not rb.is_human and rb.model.startswith("ollama/") and rb.resident
+        ]
 
-        # claude CLI
-        claude_path = shutil.which(settings.claude_code_binary)
-        if claude_path:
-            typer.echo(f"claude  : found at {claude_path}")
-            typer.echo(
-                f"          subprocess enabled: {settings.allow_claude_subprocess}"
-            )
-        else:
-            typer.echo("claude  : not on PATH")
-
-        # Anthropic API key
-        typer.echo(f"api-key : {'set' if settings.anthropic_api_key else 'unset'}")
-
-        # VRAM
-        free = await probe_free_vram_mib()
-        if free is None:
-            typer.echo("vram    : probe unavailable (nvidia-smi / rocm-smi not found)")
-        else:
-            rec = _recommend_model(free)
-            typer.echo(f"vram    : {free} MiB free → recommended model: {rec}")
-
-    asyncio.run(_probe())
+    repo_root = Path(__file__).resolve().parents[2]  # src/agora/cli.py → repo root
+    results = asyncio.run(
+        doc.run_checks(
+            ollama_base_url=settings.ollama_base_url,
+            required_models=required,
+            vram_model=settings.llm_model,
+            vram_safety_margin_mib=settings.vram_safety_margin_mib,
+            repo_root=repo_root,
+            work_dir=settings.work_dir,
+            homeserver=settings.matrix_homeserver,
+            matrix_user_id=settings.matrix_user_id,
+            matrix_password=settings.matrix_password,
+            dev=dev,
+            plantuml_url=settings.plantuml_url,
+        )
+    )
+    raise typer.Exit(code=doc.report(results, echo=typer.echo))
 
 
 cast_app = typer.Typer(help="Cast (role→profile binding) commands")
@@ -352,29 +342,17 @@ def _recommend_model(free_mib: int) -> str:
         return "ollama/qwen2.5:7b-instruct"
     if free_mib >= 4_000:
         return "ollama/qwen2.5:3b-instruct"
-    return "claude-code/subscription (VRAM too low for local models)"
+    return "none — VRAM too low for the local models; free VRAM or pick a smaller one"
 
 
 def _build_adapter(model: str, settings):
-    """Route a model string to the right adapter with settings-aware kwargs."""
+    """Route a model string to its adapter with settings-aware kwargs. Ollama is
+    the only backend; other model strings are rejected by ``create_llm_adapter``."""
     from agora.fleet.llm_adapter import create_llm_adapter
 
-    if model.startswith("ollama/"):
-        return create_llm_adapter(
-            model,
-            base_url=settings.ollama_base_url,
-            timeout_seconds=settings.llm_timeout_seconds,
-        )
-    if model.startswith("claude-code/"):
-        return create_llm_adapter(
-            model,
-            binary=settings.claude_code_binary,
-            allow=settings.allow_claude_subprocess,
-            timeout_seconds=settings.claude_code_timeout_seconds,
-        )
     return create_llm_adapter(
         model,
-        api_key=settings.anthropic_api_key,
+        base_url=settings.ollama_base_url,
         timeout_seconds=settings.llm_timeout_seconds,
     )
 

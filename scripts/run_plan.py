@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -78,8 +77,12 @@ async def main() -> None:
     plan = load_plan(args.plan)
     project_name = args.project_name or plan.name
 
-    # Default model comes from env; YAML can reference ${model} to pick it up.
-    model = os.getenv("AGORA_LLM_MODEL", "ollama/qwen2.5:7b-instruct")
+    from agora.config import get_settings
+
+    settings = get_settings()
+    # Default model comes from Settings (env is read only in config.py); YAML can
+    # reference ${model} to pick it up.
+    model = settings.llm_model
     vars_from_cli = _split_vars(args.var)
     variables: dict[str, str] = {"model": model}
     variables.update(vars_from_cli)
@@ -88,7 +91,7 @@ async def main() -> None:
         plan, project_name=project_name, variables=variables
     )
 
-    cfg = HarnessConfig.from_env(work_dir=REPO_ROOT / "workspace")
+    cfg = HarnessConfig.from_settings(settings, work_dir=REPO_ROOT / "workspace")
 
     # v2.7: seed the executor workspace with plan-level shared artifacts
     # (brief.md, api_spec.md) BEFORE any task runs. This is how the tester

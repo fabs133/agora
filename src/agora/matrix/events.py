@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from agora.core.agent import AgentConfig
+from agora.core.agent import DEFAULT_MODEL, AgentConfig
 from agora.core.errors import AgoraError
 from agora.core.learning import Learning
 from agora.core.project import PhaseChange
@@ -67,7 +67,7 @@ def agent_config_from_content(content: dict[str, Any]) -> AgentConfig:
         return AgentConfig(
             name=_require(content, "name", AGENT_CONFIG_EVENT),
             role=AgentRole(_require(content, "role", AGENT_CONFIG_EVENT)),
-            model=content.get("model", "claude-sonnet-4-20250514"),
+            model=content.get("model", DEFAULT_MODEL),
             instructions=content.get("instructions", ""),
             knowledge_files=tuple(content.get("knowledge_files", [])),
         )

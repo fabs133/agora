@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import os
 import sys
 from pathlib import Path
 
@@ -36,6 +35,7 @@ logging.getLogger("nio").setLevel(logging.WARNING)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from agora.config import get_settings, require_secret
 from agora.core.agent import AgentConfig
 from agora.core.contract import Specification
 from agora.core.task import Task
@@ -53,16 +53,19 @@ from agora.fleet.vram import check_model_fits, raise_if_wont_fit
 from agora.matrix.client import AgoraMatrixClient
 from agora.matrix.room_manager import RoomManager
 
-HOMESERVER = os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167")
-SERVER_NAME = "agora.local"
-SYSTEM_USER = "@agora:agora.local"
-SYSTEM_PASSWORD = os.getenv("AGORA_MATRIX_PASSWORD", "agora-dev-pass")
-OBSERVER_USER = os.getenv("AGORA_OBSERVER_USER", "@fabs:agora.local")
-OLLAMA_BASE_URL = os.getenv("AGORA_OLLAMA_BASE_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("AGORA_LLM_MODEL", "ollama/qwen2.5:7b-instruct")
-REVIEW_TIMEOUT = float(os.getenv("AGORA_REVIEW_TIMEOUT_SECONDS", "300"))
-MAX_PARALLEL = int(os.getenv("AGORA_MAX_PARALLEL_AGENTS", "2"))
-MAX_TASK_RETRIES = int(os.getenv("AGORA_MAX_TASK_RETRIES", "2"))
+# Config comes from one source: Settings (env is read only in config.py). This
+# script is a composition root — it reads Settings once and injects typed values.
+_settings = get_settings()
+HOMESERVER = _settings.matrix_homeserver
+SERVER_NAME = _settings.matrix_server_name
+SYSTEM_USER = _settings.matrix_user_id
+SYSTEM_PASSWORD = _settings.matrix_password
+OBSERVER_USER = _settings.observer_user
+OLLAMA_BASE_URL = _settings.ollama_base_url
+LLM_MODEL = _settings.llm_model
+REVIEW_TIMEOUT = _settings.review_timeout_seconds
+MAX_PARALLEL = _settings.max_parallel_agents
+MAX_TASK_RETRIES = _settings.max_task_retries
 WORK_DIR = REPO_ROOT / "workspace"
 REPO_ROOT_DIR = WORK_DIR
 KB_CACHE_DIR = WORK_DIR / ".knowledge"
@@ -789,6 +792,7 @@ async def main() -> None:
 
     print(f"[*] Logging into Conduit as {SYSTEM_USER}")
     client = AgoraMatrixClient(homeserver=HOMESERVER, user_id=SYSTEM_USER)
+    require_secret("AGORA_MATRIX_PASSWORD", SYSTEM_PASSWORD)
     await client.login(SYSTEM_PASSWORD)
 
     if OBSERVER_USER:
@@ -836,7 +840,7 @@ async def main() -> None:
     )
 
     print("[*] Running project 'fastapi-crud' (observer enabled)")
-    print("   open Element as @fabs:agora.local to watch")
+    print(f"   open Element as {OBSERVER_USER} to watch")
     print(f"   review_timeout_seconds={REVIEW_TIMEOUT}")
     print()
     try:

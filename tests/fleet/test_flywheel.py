@@ -15,7 +15,7 @@ from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator
 from agora.matrix.events import LEARNING_EVENT, learning_from_content
 from agora.matrix.room_manager import RoomManager
-from tests.conftest import FakeLLM, tool_call
+from tests.conftest import TEST_OLLAMA_URL, FakeLLM, tool_call
 
 
 def _always_pass() -> Specification:
@@ -46,6 +46,8 @@ def _orchestrator(tmp_path: Path, fake_matrix_client) -> Orchestrator:
         llm_factory=lambda _m: _make_llm_plan(),
         work_dir=str(tmp_path),
         max_parallel_agents=1,
+        skip_warmup=True,  # fake LLM — no real Ollama in unit tests
+        ollama_base_url=TEST_OLLAMA_URL,
     )
 
 

@@ -560,6 +560,8 @@ class StageRunner:
             )
 
         # 3) Await the user's answer via any of the three surfaces.
+        # Registered debug-flag (integration-hardening 2B.3 allowlist): env-only,
+        # exempt from the "no os.getenv outside config.py" rule.
         timeout_env = os.getenv("AGORA_DECISION_TIMEOUT_SECONDS")
         timeout = (
             float(timeout_env) if timeout_env else 300.0

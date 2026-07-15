@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from agora.core.agent import AgentConfig, AgentIdentity
+from agora.core.agent import DEFAULT_MODEL, AgentConfig, AgentIdentity
 from agora.core.contract import Specification, make_predicate
 from agora.core.errors import AgoraError
 from agora.core.flow import Flow, load_flow
@@ -494,7 +494,7 @@ def _parse_agent_config(data: dict[str, Any]) -> AgentConfig:
     return AgentConfig(
         name=name,
         role=role,
-        model=data.get("model") or "claude-sonnet-4-20250514",
+        model=data.get("model") or DEFAULT_MODEL,
         instructions=data.get("instructions", ""),
         knowledge_files=tuple(data.get("knowledge_files", []) or []),
     )

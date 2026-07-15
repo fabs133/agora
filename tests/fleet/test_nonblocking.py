@@ -21,7 +21,7 @@ from agora.core.types import AgentRole, TaskStatus
 from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator
 from agora.matrix.room_manager import RoomManager
-from tests.conftest import tool_call
+from tests.conftest import TEST_OLLAMA_URL, tool_call
 
 
 class _SleepingLLM:
@@ -58,6 +58,8 @@ def _orchestrator(tmp_path: Path, fake_matrix_client, llm_factory) -> Orchestrat
         llm_factory=llm_factory,
         work_dir=str(tmp_path),
         max_parallel_agents=3,
+        skip_warmup=True,  # fake LLM — no real Ollama in unit tests
+        ollama_base_url=TEST_OLLAMA_URL,
     )
 
 
@@ -107,6 +109,6 @@ async def test_ollama_timeout_surfaces_as_task_failure(
 
     monkeypatch.setattr("aiohttp.ClientSession", _HangingSession)
 
-    adapter = OllamaAdapter(base_url="http://localhost:11434", timeout_seconds=0.1)
+    adapter = OllamaAdapter(base_url=TEST_OLLAMA_URL, timeout_seconds=0.1)
     with pytest.raises(AgoraError, match="timed out|Cannot reach"):
         await adapter.complete([{"role": "user", "content": "hi"}])

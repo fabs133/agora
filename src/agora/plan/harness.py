@@ -13,7 +13,8 @@ callers pass the ``(agents, tasks, staged_tasks)`` triple that
 
 from __future__ import annotations
 
-import os
+import asyncio
+import contextlib
 import sys
 import warnings
 from dataclasses import dataclass, field
@@ -21,12 +22,13 @@ from pathlib import Path
 from typing import Any
 
 from agora.core.agent import AgentConfig
+from agora.core.errors import AgoraError
 from agora.core.task import Task
 from agora.fleet.llm_adapter import create_llm_adapter
 from agora.fleet.orchestrator import Orchestrator, ProjectResult
-from agora.fleet.profiles import ModelProfile, build_llm_factory
+from agora.fleet.profiles import ModelProfile, build_llm_factory, resolve_base_url
 from agora.fleet.vram import check_model_fits, raise_if_wont_fit
-from agora.matrix.client import AgoraMatrixClient
+from agora.matrix.client import AgoraMatrixClient, MatrixClientProtocol, NullMatrixClient
 from agora.matrix.room_manager import RoomManager
 
 
@@ -34,26 +36,32 @@ from agora.matrix.room_manager import RoomManager
 class HarnessConfig:
     """Everything a plan runner needs to stand up an Orchestrator.
 
-    Defaults mirror the env knobs used by the hand-written runner scripts
-    (``AGORA_MATRIX_HOMESERVER``, ``AGORA_OLLAMA_BASE_URL`` etc.) so callers
-    who want the same behaviour can just ``HarnessConfig.from_env()``.
+    The config-shaped fields (endpoints + credentials) are REQUIRED (owner ruling
+    2B.2 / Q3): their only default lives in :class:`agora.config.Settings`. Build
+    one with :meth:`from_settings` — the single Settings->HarnessConfig mapping
+    point. This module reads no env and never imports ``agora.config``.
     """
 
-    homeserver: str = "http://localhost:6167"
+    # Required — endpoints + credentials, injected from Settings.
+    homeserver: str
+    system_password: str
+    observer_user: str
+    ollama_base_url: str
+    # Identity with stable non-secret defaults.
     server_name: str = "agora.local"
     system_user: str = "@agora:agora.local"
-    system_password: str = "agora-dev-pass"
-    observer_user: str = "@fabs:agora.local"
-    ollama_base_url: str = "http://localhost:11434"
+    # Dataclass default only for hand-built configs; from_settings() always
+    # overrides it from Settings.review_timeout_seconds (the single source).
     review_timeout_seconds: float = 300.0
     max_parallel_agents: int = 2
     max_task_retries: int = 2
     work_dir: Path = field(default_factory=lambda: Path("workspace"))
     knowledge_cache_dir: Path | None = None
     enable_observer: bool = True
-    enable_web_fetch: bool = True
+    enable_web_fetch: bool = False
     fetch_max_text_bytes: int = 65_536
     auto_hooks_enabled: bool = True
+    skip_vram_check: bool = False
     # Opt-in for plan-authoring tools (plan_upsert_agent, plan_add_task_spec,
     # plan_finalize). The plan-builder runner sets this True; run_plan.py and
     # other executors leave it False so emitted plans don't expose the
@@ -81,65 +89,61 @@ class HarnessConfig:
     salvage_budget: int = 0
 
     @classmethod
-    def from_env(cls, work_dir: str | Path = "workspace") -> HarnessConfig:
-        """Pull the same env knobs the existing runners read."""
-        work_dir_path = Path(work_dir)
-        tool_errors = os.getenv("AGORA_HARNESS_TOOL_ERRORS", "raw").strip() or "raw"
+    def from_settings(cls, settings: Any, work_dir: str | Path = "workspace") -> HarnessConfig:
+        """Build from a Settings-like object (the composition root passes
+        ``agora.config.get_settings()``). Duck-typed on purpose: this module imports
+        neither ``os`` nor ``agora.config`` — env is read only in config.py. Campaign
+        params override the behavioural knobs downstream (2B.iii precedence)."""
+        tool_errors = (settings.harness_tool_errors or "raw").strip() or "raw"
         if tool_errors not in ("raw", "corrective"):
             raise ValueError(
-                f"AGORA_HARNESS_TOOL_ERRORS={tool_errors!r} invalid; "
-                "expected 'raw' or 'corrective'"
+                f"harness_tool_errors={tool_errors!r} invalid; expected 'raw' or 'corrective'"
             )
+        work_dir_path = Path(work_dir)
         return cls(
-            homeserver=os.getenv("AGORA_MATRIX_HOMESERVER", "http://localhost:6167"),
-            system_password=os.getenv("AGORA_MATRIX_PASSWORD", "agora-dev-pass"),
-            observer_user=os.getenv("AGORA_OBSERVER_USER", "@fabs:agora.local"),
-            ollama_base_url=os.getenv("AGORA_OLLAMA_BASE_URL", "http://localhost:11434"),
-            review_timeout_seconds=float(os.getenv("AGORA_REVIEW_TIMEOUT_SECONDS", "300")),
-            max_parallel_agents=int(os.getenv("AGORA_MAX_PARALLEL_AGENTS", "2")),
-            max_task_retries=int(os.getenv("AGORA_MAX_TASK_RETRIES", "2")),
-            routed_retry_budget=int(os.getenv("AGORA_ROUTED_RETRY_BUDGET", "2")),
+            homeserver=settings.matrix_homeserver,
+            system_password=settings.matrix_password,
+            observer_user=settings.observer_user,
+            ollama_base_url=settings.ollama_base_url,
+            server_name=settings.matrix_server_name,
+            system_user=settings.matrix_user_id,
+            review_timeout_seconds=settings.review_timeout_seconds,
+            max_parallel_agents=settings.max_parallel_agents,
+            max_task_retries=settings.max_task_retries,
+            routed_retry_budget=settings.routed_retry_budget,
             tool_errors=tool_errors,
-            nudge_budget=int(os.getenv("AGORA_HARNESS_NUDGE_BUDGET", "0")),
-            review_budget=int(os.getenv("AGORA_HARNESS_REVIEW_BUDGET", "0")),
-            salvage_budget=int(os.getenv("AGORA_HARNESS_SALVAGE_BUDGET", "0")),
+            nudge_budget=settings.harness_nudge_budget,
+            review_budget=settings.harness_review_budget,
+            salvage_budget=settings.harness_salvage_budget,
+            enable_web_fetch=settings.enable_web_fetch,
+            skip_vram_check=settings.skip_vram_check,
             work_dir=work_dir_path,
             knowledge_cache_dir=work_dir_path / ".knowledge",
         )
-
-
-#: Truthy env-var literals (case-insensitive). Matches the common boolean
-#: spellings; anything else (incl. "0"/"false"/unset) is treated as off.
-_TRUTHY = {"1", "true", "yes", "on"}
-
-
-def _env_truthy(name: str) -> bool:
-    """True iff env var ``name`` is set to a recognised truthy value."""
-    return os.getenv(name, "").strip().lower() in _TRUTHY
 
 
 async def preflight_vram(
     model: str,
     base_url: str,
     safety_margin_mib: int = 512,
+    *,
+    skip: bool = False,
 ) -> None:
     """Best-effort VRAM check + warm-up gate. Prints the reason line, raises on hard fail.
 
-    ``AGORA_SKIP_VRAM_CHECK`` (``1``/``true``/``yes``/``on``) bypasses the check
-    entirely — the escape hatch for when the pre-flight is wrong and you know it
-    (the June 30 incident-debugging case). This is the policy layer; the math in
-    :mod:`agora.fleet.vram` is unaware of the env var.
+    ``skip`` (the composition root passes ``Settings.skip_vram_check``) bypasses the
+    check entirely — the escape hatch for when the pre-flight is wrong and you know
+    it. This is the policy layer; the math in :mod:`agora.fleet.vram` is unaware of it.
 
-    Skipped for non-Ollama models (API-backed providers like openai/*,
-    anthropic/*, gemini/*, claude-*, claude-code/*) — there's no local GPU
-    memory to budget against.
+    Skipped for non-Ollama models — there's no local GPU memory to budget against
+    (Ollama is the only backend today, so this is effectively always active).
 
     ``safety_margin_mib`` is sourced from ``profile.vram.safety_margin_mib``
     in the standard call path. The estimation formula itself is unchanged
     (see :func:`agora.fleet.vram.check_model_fits`).
     """
-    if _env_truthy("AGORA_SKIP_VRAM_CHECK"):
-        print(f"[*] VRAM check skipped for {model} (AGORA_SKIP_VRAM_CHECK set)")
+    if skip:
+        print(f"[*] VRAM check skipped for {model} (skip_vram_check set)")
         return
     if not model.startswith("ollama/"):
         print(f"[*] VRAM check skipped for {model} (remote provider)")
@@ -150,11 +154,54 @@ async def preflight_vram(
     raise_if_wont_fit(check, model)
 
 
-async def build_matrix_client(cfg: HarnessConfig) -> AgoraMatrixClient:
-    """Log in as the system user and wire the auto-invite shim if observer is set."""
+async def build_matrix_client(cfg: HarnessConfig) -> MatrixClientProtocol:
+    """Log in as the system user and wire the auto-invite shim if observer is set.
+
+    With ``enable_observer=False`` this returns a :class:`NullMatrixClient` and
+    never touches the network: an unobserved run has no reason to require a
+    homeserver, a password, or rooms nobody opens. Provenance is unaffected —
+    JSONL + run.log are written unconditionally (F3); only the live room view
+    goes away. That makes Python + Ollama the whole dependency set for a phased
+    run, with Conduit an opt-in observation surface.
+    """
+    if not cfg.enable_observer:
+        print(
+            "[*] Matrix surface OFF (enable_observer=False) — no Conduit required.\n"
+            "    Provenance is unaffected: run.log + JSONL are written as always;\n"
+            "    only the live room view is absent. Set enable_observer=True to watch."
+        )
+        return NullMatrixClient(homeserver=cfg.homeserver, user_id=cfg.system_user)
+
+    # Loud, clear failure when the system agent has no Matrix password — better
+    # than an opaque auth error from Conduit. (harness stays config-free per the
+    # composition-root allowlist, so the message is inlined rather than imported.)
+    if not cfg.system_password:
+        raise AgoraError(
+            "required secret AGORA_MATRIX_PASSWORD is not set (the system agent "
+            "has no Matrix password). Copy .env.example to .env and set it, or "
+            "export AGORA_MATRIX_PASSWORD. See .env.example for the local-dev value."
+        )
     print(f"[*] Logging into Conduit as {cfg.system_user}")
     client = AgoraMatrixClient(homeserver=cfg.homeserver, user_id=cfg.system_user)
-    await client.login(cfg.system_password)
+    # Bound the login. An unreachable homeserver must produce a fast, named
+    # failure — never an open-ended await. (2026-07-15: a dead Conduit hung
+    # run_phased here for minutes with zero output and no CPU, looking for all
+    # the world like a model stall; the runner's preflight checked Ollama but
+    # not Conduit, so nothing caught it earlier. agora.doctor.check_conduit has
+    # carried this same bound since the integration-hardening pass — this is the
+    # library path catching up.)
+    try:
+        await asyncio.wait_for(client.login(cfg.system_password), timeout=8.0)
+    except TimeoutError as exc:
+        # Close the half-open session before surfacing, or every timeout leaks an
+        # aiohttp connector ("Unclosed client session").
+        with contextlib.suppress(Exception):
+            await client.close()
+        raise AgoraError(
+            f"Matrix login timed out after 8s against {cfg.homeserver} "
+            f"(as {cfg.system_user}). Is Conduit up? "
+            f"`cd conduit && docker compose up -d`, then `agora doctor`."
+        ) from exc
 
     if cfg.observer_user:
         _orig_create_room = client.create_room
@@ -208,8 +255,11 @@ def build_orchestrator(
         )
 
     if profile is not None:
-        built_factory = build_llm_factory(profile)
-        ollama_base_url = profile.ollama.base_url
+        # The profile's Ollama endpoint is an optional override; None inherits
+        # the injected Settings endpoint (cfg.ollama_base_url). Resolve once so
+        # the factory and warmup pin the same daemon.
+        ollama_base_url = resolve_base_url(profile, cfg.ollama_base_url)
+        built_factory = build_llm_factory(profile, ollama_base_url)
         keep_alive = profile.keep_alive
     else:
         ollama_base_url = cfg.ollama_base_url
@@ -221,17 +271,10 @@ def build_orchestrator(
             # valid model id); the harness owns the runtime model choice anyway.
             if not model_ref:
                 model_ref = model
-            # Build adapter-specific kwargs. Only Ollama needs our base_url;
-            # LiteLLM providers pick up auth from env vars; Anthropic direct
-            # reads ANTHROPIC_API_KEY when present (kept for back-compat with
-            # scripts that set it explicitly).
+            # Build adapter kwargs. Ollama is the only backend; it needs our base_url.
             kwargs: dict[str, Any] = {"timeout_seconds": 600.0}
             if model_ref.startswith("ollama/"):
                 kwargs["base_url"] = cfg.ollama_base_url
-            if model_ref.startswith("claude-") and not model_ref.startswith("claude-code/"):
-                api_key = os.getenv("ANTHROPIC_API_KEY", "")
-                if api_key:
-                    kwargs["api_key"] = api_key
             return create_llm_adapter(model_ref, **kwargs)
 
     # Caller-supplied factory (e.g. a strategy-wrapped one) wins; else use the
@@ -359,7 +402,7 @@ async def run_plan_project(
     :class:`ProjectResult` and prints a one-line summary per task.
     """
     model = model_hint or (agents[0].model if agents else "ollama/qwen2.5:7b-instruct")
-    await preflight_vram(model, cfg.ollama_base_url)
+    await preflight_vram(model, cfg.ollama_base_url, skip=cfg.skip_vram_check)
 
     client = await build_matrix_client(cfg)
     try:
@@ -393,8 +436,8 @@ def _print_summary(result: ProjectResult) -> None:
         f"Tokens: in={int(result.total_tokens.get('input_tokens', 0))}, "
         f"out={int(result.total_tokens.get('output_tokens', 0))}"
     )
-    # Per-run USD cost surfaces only for LiteLLM-backed runs; Ollama +
-    # direct Anthropic adapters don't populate cost_usd.
+    # Per-run USD cost only appears if a metered backend sets cost_usd; the
+    # Ollama adapter does not.
     cost = result.total_tokens.get("cost_usd", 0.0)
     if cost:
         # Sub-cent values still useful for cross-provider comparison.
@@ -408,12 +451,26 @@ def force_utf8_stdio() -> None:
     """Windows cp1252 cannot encode many characters LLMs produce. Force UTF-8.
 
     Call from a runner's top-level before any logging is configured.
+
+    ``line_buffering=True`` is load-bearing. A bare ``TextIOWrapper`` is
+    BLOCK-buffered whenever stdout is a pipe or a file, so a redirected run
+    emits nothing until the process exits — and it silently defeats ``python
+    -u``, because that flag configures the *original* stdout, not the wrapper
+    installed over it. Without this, `run_phased … --auto > run.txt` shows an
+    empty file for the whole run and is indistinguishable from a hang
+    (observed 2026-07-15: multi-minute runs written off as dead purely because
+    nothing streamed). Progress output is a diagnostic surface; buffering it
+    away costs real debugging time.
     """
     import io
 
     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+        )
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True
+        )
 
 
 __all__ = [

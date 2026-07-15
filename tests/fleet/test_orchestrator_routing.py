@@ -16,7 +16,7 @@ from agora.core.types import TaskStatus
 from agora.fleet.llm_adapter import LLMResponse
 from agora.fleet.orchestrator import Orchestrator
 from agora.matrix.room_manager import RoomManager
-from tests.conftest import FakeLLM, tool_call
+from tests.conftest import TEST_OLLAMA_URL, FakeLLM, tool_call
 
 
 def _simple_llm() -> FakeLLM:
@@ -47,6 +47,8 @@ def _orchestrator(tmp_path: Path, fake_matrix_client, *, routed_budget: int = 2)
         llm_factory=factory,
         work_dir=str(tmp_path),
         routed_retry_budget=routed_budget,
+        skip_warmup=True,
+        ollama_base_url=TEST_OLLAMA_URL,
     )
 
 

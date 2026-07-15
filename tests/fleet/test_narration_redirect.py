@@ -22,6 +22,7 @@ from agora.fleet.agent_runtime import TaskResult
 from agora.fleet.control import OrchestratorControl
 from agora.fleet.orchestrator import Orchestrator, _output_path_was_produced
 from agora.matrix.room_manager import RoomManager
+from tests.conftest import TEST_OLLAMA_URL
 
 # =============================================================================
 # _output_path_was_produced — the core detector
@@ -69,6 +70,7 @@ def _make_orchestrator(tmp_path: Path, fake_matrix_client) -> Orchestrator:
         max_parallel_agents=1,
         enable_observer=False,
         skip_warmup=True,
+        ollama_base_url=TEST_OLLAMA_URL,
     )
 
 

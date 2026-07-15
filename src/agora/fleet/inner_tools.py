@@ -67,6 +67,12 @@ class ToolContext:
     matrix_client: MatrixClientProtocol
     agent_room_id: RoomId
     project_room_id: RoomId
+    #: False when the Matrix surface is off (``NullMatrixClient``): no room, no
+    #: human. Tools MUST branch on this rather than posting into the void —
+    #: informational tools say "recorded to log" instead of claiming delivery,
+    #: and tools that block on a person refuse loudly rather than pretend.
+    #: Defaults True so every existing caller/test keeps today's behaviour.
+    matrix_live: bool = True
     git_repo: Any = None  # RepoManager (Sprint 4), wired by orchestrator
     search_fn: Callable[[str], Awaitable[str]] | None = None
     fetch_fn: Callable[[str], Awaitable[str]] | None = None
@@ -1875,6 +1881,8 @@ def _reject_return_type_drift(
     all_violations = check_usage_matches_contract(traces, contract)
     mode = (
         Mode.STRICT
+        # Registered debug-flag (integration-hardening 2B.3 allowlist): env-only,
+        # exempt from the "no os.getenv outside config.py" rule. Default off.
         if os.getenv("AGORA_STRUCTURE_STRICT", "").lower() in ("1", "true", "yes")
         else Mode.PERMISSIVE
     )
@@ -2602,7 +2610,12 @@ def _make_git_log(ctx: ToolContext):
 def _make_report_progress(ctx: ToolContext):
     async def report_progress(args: dict[str, Any]) -> str:
         entry = {"message": args["message"]}
+        # The provenance half is unconditional (F3): progress_log is captured
+        # into the task record either way.
         ctx.progress_log.append(entry)
+        if not ctx.matrix_live:
+            logger.info("progress (observer off): %s", entry["message"])
+            return "progress recorded to log (no live observer — nothing was posted to a room)"
         await ctx.matrix_client.send_event(
             ctx.project_room_id, "m.agora.progress", entry
         )
@@ -2625,7 +2638,19 @@ def _make_request_review(ctx: ToolContext):
                 "when done, or stop calling tools and let the stage finish."
             )
         entry = {"summary": args["summary"]}
-        ctx.reviews_requested.append(entry)
+        ctx.reviews_requested.append(entry)  # provenance regardless (F3)
+        if not ctx.matrix_live:
+            # LOUD, never silent: there is no human on the other end. Saying
+            # "review requested" would leave the model waiting on a reviewer
+            # who does not exist.
+            logger.info("request_review UNAVAILABLE (observer off): %s", entry["summary"])
+            return (
+                "ERROR: request_review is UNAVAILABLE — this run has no live "
+                "observer, so no human can see or answer a review request "
+                "(the request was recorded to the log only). Do not wait for a "
+                "reviewer. Proceed on your own judgement and call mark_complete "
+                "when the task's postconditions are satisfied."
+            )
         await ctx.matrix_client.send_event(
             ctx.project_room_id, "m.agora.review_request", entry
         )
@@ -2681,6 +2706,14 @@ def _make_post_note(ctx: ToolContext):
                 "(args: summary, artifacts). If you want to write a file, "
                 "call write_file (args: path, content)."
             )
+        if not ctx.matrix_live:
+            # Record, then say so plainly. Returning "note posted" here would
+            # tell the model a human can see something nobody can.
+            logger.info("note (observer off): %s", body)
+            return (
+                "recorded to log (no live observer — the note was NOT delivered "
+                "to a room; nobody is watching this run)"
+            )
         try:
             await ctx.matrix_client.send_event(
                 ctx.project_room_id,
@@ -2711,6 +2744,22 @@ def _make_await_user_decision(ctx: ToolContext):
         control = ctx.control
         if control is None:
             return "ERROR: await_user_decision requires an observer-enabled project"
+        if not ctx.matrix_live:
+            # LOUD, and BEFORE the future is registered. `control` is non-None
+            # even with the observer off, so the guard above does not catch this
+            # — without this branch the tool would post a poll into a null
+            # client and then block on a future no human can ever resolve,
+            # burning the whole decision timeout for nothing.
+            logger.info(
+                "await_user_decision UNAVAILABLE (observer off): %s",
+                str(args.get("question", ""))[:200],
+            )
+            return (
+                "ERROR: await_user_decision is UNAVAILABLE — this run has no "
+                "live observer, so no human can see the poll or answer it. "
+                "Nothing was posted. Do NOT wait for a decision: decide "
+                "yourself from the task's brief and proceed."
+            )
 
         question = str(args["question"])
         decision_id = str(args["decision_id"])

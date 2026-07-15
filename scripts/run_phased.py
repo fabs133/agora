@@ -22,7 +22,7 @@ import argparse
 import json
 import logging
 import sys
-import urllib.request
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -31,12 +31,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from agora import doctor  # noqa: E402
+from agora.config import env_layer  # noqa: E402
 from agora.core.types import AgentRole  # noqa: E402
 from agora.fleet.phase_gate import (  # noqa: E402
     TaskGateOutcome,
     evaluate_phase_gate,
     ordered_phases,
 )
+from agora.fleet.profiles import apply_env_overrides  # noqa: E402
 
 # ------------------------------------------------------------------ status model
 
@@ -331,6 +334,50 @@ def apply_campaign_params(
     if not overrides:
         return dict(model_to_profile)
     return {m: p.model_copy(update=overrides) for m, p in model_to_profile.items()}
+
+
+#: Each campaign-overridable knob → the env var that ALSO sets it (via
+#: apply_env_overrides). Used to detect an env-vs-campaign conflict.
+_KNOB_ENV = {
+    "num_ctx": "AGORA_LLM_NUM_CTX",
+    "max_tokens": "AGORA_LLM_MAX_TOKENS",
+    "temperature": "AGORA_LLM_TEMPERATURE",
+    "seed": "AGORA_LLM_SEED",
+}
+
+
+def resolve_effective_params(
+    model_to_profile: dict[str, Any],
+    params: dict[str, Any] | None,
+    env: Mapping[str, str],
+) -> tuple[dict[str, Any], list[str]]:
+    """Resolve the four inference knobs with the owner's precedence (2B):
+
+        coded default (profile) < .env < process env (AGORA_LLM_*) < CAMPAIGN PARAMS
+
+    ``env`` is the merged .env-under-process-env mapping (``config.env_layer()``);
+    it carries the ``.env`` and process-env layers already collapsed. The env
+    layer is applied first (:func:`apply_env_overrides`), then the campaign
+    params win on top (:func:`apply_campaign_params`) — pre-registered experiment
+    conditions, F19 doctrine.
+
+    Returns ``(resolved_map, conflict_lines)``. A knob set by BOTH the env layer
+    and the campaign is a conflict: the campaign wins, and a loud line names the
+    overridden env value so it never silently disappears from a run's provenance.
+    """
+    env_applied = {m: apply_env_overrides(p, env) for m, p in model_to_profile.items()}
+    resolved = apply_campaign_params(env_applied, params)
+    campaign_set = {k for k in _PARAM_KEYS if params and k in params}
+    conflicts: list[str] = []
+    for knob in _PARAM_KEYS:
+        env_name = _KNOB_ENV[knob]
+        if knob in campaign_set and env_name in env:
+            conflicts.append(
+                f"CONFLICT: {env_name}={env[env_name]!r} (env) is overridden by "
+                f"campaign param {knob}={params[knob]!r} — campaign wins "
+                f"(pre-registered experiment condition; env value ignored)."
+            )
+    return resolved, conflicts
 
 
 def format_effective_params(
@@ -658,35 +705,8 @@ def detach_run_log(state: tuple[logging.Handler, int]) -> None:
 
 
 # ------------------------------------------------------------------ ollama health
-
-def ollama_missing_models(tags: dict[str, Any], required: list[str]) -> list[str]:
-    """Return the required model tags (``name:tag``) absent from ``/api/tags``."""
-    present = {m.get("name", "") for m in (tags.get("models") or [])}
-    return [m for m in required if m not in present]
-
-
-def ollama_health_or_die(base_url: str, required: list[str]) -> None:
-    """Fail loudly (SystemExit) if the daemon is down or a model is missing
-    (OLLAMA.md: bare `serve` from D:\\ollama\\models, one model at a time)."""
-    try:
-        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/version", timeout=3) as resp:
-            json.loads(resp.read())
-    except Exception as exc:  # noqa: BLE001
-        raise SystemExit(
-            f"[FATAL] Ollama daemon unreachable at {base_url} ({type(exc).__name__}). "
-            f"Start it per OLLAMA.md (bare `ollama serve`, OLLAMA_MODELS=D:\\ollama\\models)."
-        ) from exc
-    try:
-        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=5) as resp:
-            tags = json.loads(resp.read())
-    except Exception as exc:  # noqa: BLE001
-        raise SystemExit(f"[FATAL] Ollama /api/tags failed: {exc}") from exc
-    missing = ollama_missing_models(tags, required)
-    if missing:
-        raise SystemExit(
-            f"[FATAL] required model(s) not present in Ollama: {missing}. "
-            f"Pull them or check OLLAMA_MODELS points at D:\\ollama\\models."
-        )
+# Health checks live in ONE place (agora.doctor); this runner calls that module
+# and holds no private health logic (integration-hardening Stage 4).
 
 
 # ------------------------------------------------------------------ campaign load
@@ -714,6 +734,14 @@ def _flow_phases(flow_path: str) -> tuple[list[str], list[Any], list[Any]]:
 
 # ------------------------------------------------------------------ orchestration glue
 
+#: The phased runner is headless BY DESIGN: its product is gates + provenance
+#: (phases.jsonl / tasks.jsonl / run.log), not a live room view. One constant
+#: drives BOTH the Conduit preflight and the HarnessConfig below, so the
+#: preflight can never demand a service the run doesn't build — or skip one it
+#: does. Flip this to True only alongside a Conduit that is actually up.
+OBSERVER_ON = False
+
+
 async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001",
                     rerun_task: str | None = None, oracle_phase: str | None = None) -> Any:
     """Execute one phase's tasks via the cast-loaded orchestrator.
@@ -722,12 +750,17 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
     in-memory TaskResults (for the console report), and the persistable
     TaskRecords (appended to tasks.jsonl at phase completion). Thin glue —
     paired-session verified (not run by tests)."""
+    from agora.config import get_settings
     from agora.core.flow import instantiate_flow, load_flow
     from agora.fleet.cast import load_cast, resolve_cast
-    from agora.fleet.profiles import build_llm_factory, load_profiles
+    from agora.fleet.profiles import build_llm_factory, load_profiles, resolve_base_url
     from agora.plan.harness import HarnessConfig, build_matrix_client, build_orchestrator
 
-    profiles = load_profiles("profiles.yaml")
+    # Composition root: the ONE place endpoints are resolved for this run.
+    settings = get_settings()
+    print(f"[*] effective endpoints: ollama={settings.ollama_base_url}  "
+          f"matrix={settings.matrix_homeserver}  profiles={settings.profiles_file or 'profiles.yaml (cwd)'}")
+    profiles = load_profiles(settings.profiles_file)
     cast = load_cast(campaign["cast"])
     # Health check per OLLAMA.md — the models the cast will actually load.
     required = [
@@ -735,14 +768,38 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         for rb in resolve_cast(cast, profiles)
         if not rb.is_human and rb.model.startswith("ollama/") and rb.resident
     ]
-    base_url = "http://localhost:11434"
-    ollama_health_or_die(base_url, required)
+    # Preflight EVERY dependency this run will actually touch — and ONLY those.
+    # Conduit is checked exactly when the run will use it: the observer flag
+    # decides both, so the preflight can never demand a service the run then
+    # doesn't build (or skip one it does). Omitting the Conduit check while
+    # build_matrix_client awaited it unconditionally is what let a dead
+    # homeserver hang the runner for minutes with no output (2026-07-15).
+    # doctor.check_conduit bounds its login at 8s -> named red line, not a hang.
+    checks = [
+        doctor.check_ollama_reachable(settings.ollama_base_url),
+        doctor.check_ollama_models(settings.ollama_base_url, required),
+    ]
+    if OBSERVER_ON:
+        checks.append(
+            await doctor.check_conduit(
+                settings.matrix_homeserver, settings.matrix_user_id, settings.matrix_password
+            )
+        )
+    else:
+        checks.append(doctor.skipped("conduit", "observer off"))
+    doctor.preflight_or_die(checks)
 
     flow = load_flow(campaign["flow"])
     agents, tasks = instantiate_flow(flow, "echobot", id_strategy="preserve")
     agents, model_to_profile = resolve_agent_models(agents, cast, profiles)
-    # F19: campaign params override the cast-bound profile; log the effective set.
-    model_to_profile = apply_campaign_params(model_to_profile, campaign.get("params"))
+    # Precedence (2B): profile default < .env < process env < CAMPAIGN PARAMS.
+    # env_layer() collapses .env under process env; campaign params win on top,
+    # and any env-vs-campaign conflict is logged loudly (never silently dropped).
+    model_to_profile, _conflicts = resolve_effective_params(
+        model_to_profile, campaign.get("params"), env_layer()
+    )
+    for _line in _conflicts:
+        print(f"[!] {_line}")
     for _line in format_effective_params(model_to_profile, campaign.get("params")):
         print(f"[*] {_line}")
 
@@ -774,19 +831,22 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
     phase_agents = [a for a in agents if a.name in used_agent_names]
 
     harness = campaign["harness"]
-    cfg = HarnessConfig(
+    # Base config (endpoints/credentials) from Settings; the campaign's harness
+    # block then overrides the behavioural knobs (campaign params win — 2B precedence).
+    cfg = replace(
+        HarnessConfig.from_settings(settings, work_dir=Path(campaign["output_dir"]) / "echobot"),
         tool_errors=harness.get("tool_errors", "corrective"),
         nudge_budget=int(harness.get("nudge_budget", 1)),
         review_budget=int(harness.get("review_budget", 0)),
         salvage_budget=int(harness.get("salvage_budget", 0)),
-        work_dir=Path(campaign["output_dir"]) / "echobot",
         review_timeout_seconds=float(campaign.get("run", {}).get("review_timeout_seconds", 5)),
-        enable_observer=False,
+        enable_observer=OBSERVER_ON,  # same constant the preflight gated on
     )
 
-    def llm_factory(model_ref: str, _m2p=model_to_profile, _prof=profiles):
+    def llm_factory(model_ref: str, _m2p=model_to_profile, _prof=profiles, _bu=settings.ollama_base_url):
         prof = _m2p.get(model_ref) or _prof.select()
-        return build_llm_factory(prof)(model_ref)
+        # profile.ollama.base_url is None ⇒ inherit the single-source endpoint.
+        return build_llm_factory(prof, resolve_base_url(prof, _bu))(model_ref)
 
     # Attach run.log (per-turn tool results + path-scope rejections) for this
     # phase invocation — the observer campaign runs get for free from subprocess
@@ -939,6 +999,13 @@ def main(argv: list[str] | None = None) -> int:
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--status", action="store_true", help="Print per-phase state and exit.")
     g.add_argument("--next", action="store_true", dest="do_next", help="Run the next pending phase.")
+    g.add_argument(
+        "--auto",
+        action="store_true",
+        help="Deployment mode: advance while green — run phases in order until the "
+             "flow is done or a gate goes RED. A red gate STOPS the run (repairs stay "
+             "operator actions). Same execution path as --next, looped.",
+    )
     g.add_argument("--waive", metavar="REASON", help="Record a waiver on the newest red gate.")
     g.add_argument("--rerun-task", metavar="ID", dest="rerun_task", help="Repair-rerun one task.")
     g.add_argument("--phase0", metavar="ARTIFACT", help="Re-validate a PROJECT_STATE.md's gate checks (brownfield P0).")
@@ -998,6 +1065,49 @@ def main(argv: list[str] | None = None) -> int:
         print(format_gate_report(gate, results_by_id, campaign.get("harness")))
         return 0 if gate.passed else 1
 
+    def _execute(phase: str) -> bool:
+        """Run one phase, persist provenance, print its gate report. -> gate.passed.
+
+        The single execution path shared by --next and --auto: --auto is this
+        function in a while-loop and nothing more, so the two modes can never
+        drift apart.
+        """
+        gate, results_by_id, task_records = asyncio.run(run_phase(campaign, phase, run_id=run_id))
+        append_task_records(out_dir / "tasks.jsonl", task_records)
+        append_phase_record(out_dir / "phases.jsonl", gate, run_id)
+        print(format_gate_report(gate, results_by_id, campaign.get("harness")))
+        return bool(gate.passed)
+
+    if args.auto:
+        # Deployment mode: advance while green. A red gate STOPS the run — that
+        # is the feature, not a limitation: repairs are operator decisions
+        # (--rerun-task ... --oracle ...), never something a loop guesses at.
+        # Waivers stay forbidden here as everywhere.
+        while True:
+            # Re-read the ledger every turn: the phase we just ran wrote to it,
+            # and provenance — not memory — is the source of truth.
+            records = load_jsonl(out_dir / "phases.jsonl")
+            waivers = load_jsonl(out_dir / "waivers.jsonl")
+            kind, phase, msg = next_action(phase_states(phases, records, waivers))
+            if kind == "refuse":
+                print(f"[refuse] {msg}")
+                print("[auto] STOPPED — frontier is red. Inspect the gate report "
+                      "above, then repair with:\n"
+                      f"    python scripts/run_phased.py {args.campaign} "
+                      "--rerun-task <id> --oracle <phase>")
+                return 1
+            if kind == "done":
+                print("done - all phases green or waived.")
+                return 0
+            print(f"\n[auto] ==> {phase}")
+            if not _execute(phase):
+                print(f"\n[auto] STOPPED at {phase} — gate RED (report above). "
+                      "Repairs are operator actions; --auto does not guess.\n"
+                      f"    python scripts/run_phased.py {args.campaign} "
+                      "--rerun-task <id> --oracle {phase}\n"
+                      "Then re-run --auto to continue from the frontier.")
+                return 1
+
     # --next
     kind, phase, msg = next_action(phase_states(phases, records, waivers))
     if kind == "refuse":
@@ -1005,11 +1115,7 @@ def main(argv: list[str] | None = None) -> int:
     if kind == "done":
         print("done - all phases green or waived.")
         return 0
-    gate, results_by_id, task_records = asyncio.run(run_phase(campaign, phase, run_id=run_id))
-    append_task_records(out_dir / "tasks.jsonl", task_records)
-    append_phase_record(out_dir / "phases.jsonl", gate, run_id)
-    print(format_gate_report(gate, results_by_id, campaign.get("harness")))
-    return 0 if gate.passed else 1
+    return 0 if _execute(phase) else 1
 
 
 if __name__ == "__main__":

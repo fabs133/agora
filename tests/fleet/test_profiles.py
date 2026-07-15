@@ -14,7 +14,9 @@ from agora.fleet.profiles import (
     apply_env_overrides,
     build_llm_factory,
     load_profiles,
+    resolve_base_url,
 )
+from tests.conftest import TEST_OLLAMA_URL
 
 # ----------------------------- ModelProfile basics ---------------------------
 
@@ -27,7 +29,9 @@ def test_model_profile_defaults_match_pre_profile_behaviour() -> None:
     assert prof.temperature == 0.0
     assert prof.seed == 42
     assert prof.keep_alive == "30m"
-    assert prof.ollama.base_url == "http://localhost:11434"
+    # base_url now defaults to None = inherit the injected Settings endpoint
+    # (integration-hardening 2B: no localhost default outside config.py).
+    assert prof.ollama.base_url is None
     assert prof.ollama.num_parallel == 1
     assert prof.vram.safety_margin_mib == 1024
 
@@ -164,7 +168,11 @@ profiles:
         load_profiles(bad)
 
 
-def test_load_profiles_uses_env_var(monkeypatch, tmp_path) -> None:
+def test_load_profiles_via_settings_profiles_file(monkeypatch, tmp_path) -> None:
+    """AGORA_PROFILES_FILE is read by Settings (config.py), not by load_profiles;
+    the composition root passes Settings.profiles_file as the explicit path."""
+    from agora.config import get_settings
+
     f = tmp_path / "custom.yaml"
     f.write_text(
         """
@@ -177,8 +185,7 @@ profiles:
         encoding="utf-8",
     )
     monkeypatch.setenv("AGORA_PROFILES_FILE", str(f))
-    monkeypatch.chdir(tmp_path)
-    s = load_profiles()
+    s = load_profiles(get_settings().profiles_file)
     assert s.select().model == "ollama/qwen2.5-coder:14b"
 
 
@@ -210,7 +217,7 @@ def _base_profile() -> ModelProfile:
         max_tokens=4096,
         timeout_seconds=600.0,
         keep_alive="30m",
-        ollama=OllamaProfile(base_url="http://localhost:11434", num_parallel=1),
+        ollama=OllamaProfile(base_url=TEST_OLLAMA_URL, num_parallel=1),
         vram=VRAMProfile(safety_margin_mib=1024),
     )
 
@@ -297,6 +304,23 @@ def test_apply_env_overrides_defaults_to_real_os_environ(monkeypatch) -> None:
     assert out.max_tokens == 2048
 
 
+# ----------------------------- resolve_base_url ------------------------------
+
+
+def test_resolve_base_url_inherits_when_profile_unset() -> None:
+    """None on the profile ⇒ inherit the injected Settings endpoint (the single
+    source). No localhost default lives on the profile (2B)."""
+    p = ModelProfile(model="ollama/x")
+    assert p.ollama.base_url is None
+    assert resolve_base_url(p, "http://injected:11434") == "http://injected:11434"
+
+
+def test_resolve_base_url_profile_override_wins() -> None:
+    """A profile that pins a daemon (e.g. remote GPU) overrides the fallback."""
+    p = ModelProfile(model="ollama/x", ollama=OllamaProfile(base_url="http://gpu:11434"))
+    assert resolve_base_url(p, "http://injected:11434") == "http://gpu:11434"
+
+
 # ----------------------------- build_llm_factory -----------------------------
 
 
@@ -308,7 +332,7 @@ def test_build_llm_factory_empty_model_ref_uses_profile_model() -> None:
         keep_alive="45m",
         ollama=OllamaProfile(base_url="http://gpu:11434", num_parallel=2),
     )
-    factory = build_llm_factory(p)
+    factory = build_llm_factory(p, resolve_base_url(p, TEST_OLLAMA_URL))
     adapter = factory("")  # empty → use profile.model
     assert isinstance(adapter, OllamaAdapter)
     assert adapter.base_url == "http://gpu:11434"
@@ -326,7 +350,7 @@ def test_build_llm_factory_explicit_ollama_model_routes_through_same_params() ->
         keep_alive="15m",
         ollama=OllamaProfile(base_url="http://h:11434", num_parallel=3),
     )
-    factory = build_llm_factory(p)
+    factory = build_llm_factory(p, resolve_base_url(p, TEST_OLLAMA_URL))
     # Per-role AgentConfig.model override (still ollama/*) — must inherit
     # the same base_url + num_ctx + keep_alive + max_concurrent.
     adapter = factory("ollama/llama3.1:8b")
@@ -342,7 +366,7 @@ def test_build_llm_factory_threads_temperature_and_seed() -> None:
     p = ModelProfile(
         model="ollama/qwen2.5-coder:7b", temperature=0.0, seed=42
     )
-    adapter = build_llm_factory(p)("")
+    adapter = build_llm_factory(p, resolve_base_url(p, TEST_OLLAMA_URL))("")
     assert isinstance(adapter, OllamaAdapter)
     assert adapter.temperature == 0.0
     assert adapter.seed == 42
@@ -350,23 +374,22 @@ def test_build_llm_factory_threads_temperature_and_seed() -> None:
 
 def test_build_llm_factory_threads_seed_none() -> None:
     p = ModelProfile(model="ollama/qwen2.5-coder:7b", seed=None)
-    adapter = build_llm_factory(p)("")
+    adapter = build_llm_factory(p, resolve_base_url(p, TEST_OLLAMA_URL))("")
     assert isinstance(adapter, OllamaAdapter)
     assert adapter.seed is None
 
 
 def test_build_llm_factory_passes_num_ctx_none_through() -> None:
     p = ModelProfile(model="ollama/qwen2.5:7b-instruct", num_ctx=None)
-    factory = build_llm_factory(p)
+    factory = build_llm_factory(p, resolve_base_url(p, TEST_OLLAMA_URL))
     adapter = factory("")
     assert isinstance(adapter, OllamaAdapter)
     assert adapter.num_ctx is None
 
 
-def test_build_llm_factory_unknown_model_raises(monkeypatch) -> None:
-    """A claude-* model with no API key in env should propagate the existing error."""
-    p = ModelProfile(model="claude-haiku-4-5")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    factory = build_llm_factory(p)
-    with pytest.raises(AgoraError, match="api_key|subscription|ollama"):
+def test_build_llm_factory_unknown_model_raises() -> None:
+    """A non-Ollama model has no adapter (Ollama is the only backend)."""
+    p = ModelProfile(model="openai/gpt-4o")
+    factory = build_llm_factory(p, resolve_base_url(p, TEST_OLLAMA_URL))
+    with pytest.raises(AgoraError, match="no adapter"):
         factory("")

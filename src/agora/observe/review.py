@@ -83,7 +83,7 @@ class ReviewCoordinator:
         matrix_client: MatrixClientProtocol,
         dispatcher: EventDispatcher,
         project_room_id: RoomId,
-        timeout_seconds: float = 86400.0,
+        timeout_seconds: float = 300.0,  # keep in step with Settings.review_timeout_seconds
         project_work_dir: str | None = None,
         control: Any | None = None,
     ) -> None:

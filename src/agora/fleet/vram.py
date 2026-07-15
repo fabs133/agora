@@ -286,7 +286,7 @@ async def get_model_size_mib(model: str, base_url: str) -> int:
 
 async def check_model_fits(
     model: str,
-    base_url: str = "http://localhost:11434",
+    base_url: str,  # required config-shaped endpoint — no localhost default; inject from Settings.ollama_base_url
     safety_margin_mib: int = 512,
 ) -> VRAMCheck:
     """Decide whether ``model`` will fit in the system's free VRAM.
@@ -389,7 +389,7 @@ def raise_if_wont_fit(check: VRAMCheck, model: str) -> None:
 
 async def warmup(
     model: str,
-    base_url: str = "http://localhost:11434",
+    base_url: str,  # required config-shaped endpoint — no localhost default; inject from Settings.ollama_base_url
     deadline_seconds: float = 600.0,
     keep_alive: str = "30m",
 ) -> None:

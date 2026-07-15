@@ -7,6 +7,7 @@ that delegates to ``nio.AsyncClient``.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -83,6 +84,117 @@ class MatrixClientProtocol(Protocol):
     ) -> SyncBatch: ...
 
     async def close(self) -> None: ...
+
+
+class NullMatrixClient:
+    """A :class:`MatrixClientProtocol` that needs no homeserver.
+
+    Used when the Matrix surface is switched off (``enable_observer=False``):
+    the phased runner drives a whole lifecycle with nobody watching, and
+    demanding a live Conduit for rooms no human will ever open is a hard
+    dependency for nothing. With this client the documented path is Python +
+    Ollama; Conduit becomes the optional live-observation view.
+
+    **This is not a void.** Provenance is unconditional (F3): every call is
+    recorded to ``run.log`` at INFO, so the record of what an agent tried to
+    communicate survives whether or not a homeserver existed. What disappears
+    is only the *delivery* to a room.
+
+    Two things this deliberately does NOT do:
+
+    * It does not fake a human. Tools that block on a person
+      (``request_review``, ``await_user_decision``) must fail LOUDLY rather
+      than receive a synthetic answer — a fabricated approval is worse than no
+      approval. Those tools check ``ToolContext.matrix_live`` and refuse; the
+      client never invents a vote.
+    * It does not silently swallow. Room ids and event ids are synthetic but
+      *marked* (``!null-…``/``$null-…``), so anything that logs or asserts on
+      them shows plainly that no room existed.
+    """
+
+    def __init__(self, *, homeserver: str = "<null>", user_id: str = "@null:local") -> None:
+        self.homeserver = homeserver
+        self.user_id = user_id
+        self._seq = 0
+        self._log = logging.getLogger("agora.matrix.null")
+
+    def _next(self, kind: str) -> str:
+        self._seq += 1
+        return f"{kind}null-{self._seq}"
+
+    async def login(self, password: str) -> None:  # noqa: ARG002
+        self._log.info("matrix: observer off — no login (NullMatrixClient)")
+
+    async def create_room(
+        self,
+        name: str,
+        topic: str = "",
+        invite: list[str] | None = None,
+        initial_state: list[dict[str, Any]] | None = None,
+    ) -> RoomId:
+        room = RoomId(self._next("!"))
+        self._log.info("matrix(null): create_room name=%r -> %s", name, room)
+        return room
+
+    async def send_state_event(
+        self,
+        room_id: RoomId,
+        event_type: str,
+        content: dict[str, Any],
+        state_key: str = "",
+    ) -> EventId:
+        self._log.info("matrix(null): state %s room=%s key=%r", event_type, room_id, state_key)
+        return EventId(self._next("$"))
+
+    async def send_event(
+        self,
+        room_id: RoomId,
+        event_type: str,
+        content: dict[str, Any],
+    ) -> EventId:
+        # The content is the point: this line IS the delivery record.
+        body = content.get("body") or content.get("message") or content.get("summary") or ""
+        self._log.info(
+            "matrix(null): event %s room=%s%s",
+            event_type,
+            room_id,
+            f" :: {str(body)[:200]}" if body else "",
+        )
+        return EventId(self._next("$"))
+
+    async def get_room_state(self, room_id: RoomId) -> list[dict[str, Any]]:  # noqa: ARG002
+        return []
+
+    async def get_room_timeline(
+        self,
+        room_id: RoomId,  # noqa: ARG002
+        limit: int = 100,  # noqa: ARG002
+        since: str | None = None,  # noqa: ARG002
+    ) -> list[dict[str, Any]]:
+        return []
+
+    async def upload_file(self, file_path: str) -> str:
+        self._log.info("matrix(null): upload_file %s (not uploaded)", file_path)
+        return f"mxc://null/{Path(file_path).name}"
+
+    async def download_file(self, mxc_uri: str, dest_dir: str) -> str:
+        raise AgoraError(
+            f"cannot download {mxc_uri}: the Matrix surface is off "
+            "(enable_observer=False). Nothing was ever uploaded to fetch."
+        )
+
+    async def sync_once(
+        self,
+        timeout_ms: int = 30000,  # noqa: ARG002
+        since: str | None = None,
+        rooms: list[RoomId] | None = None,  # noqa: ARG002
+    ) -> SyncBatch:
+        # No events will ever arrive; returning empty forever is honest, and the
+        # sync service is not started when the observer is off anyway.
+        return SyncBatch(events=[], next_since=since)
+
+    async def close(self) -> None:
+        return None
 
 
 @dataclass

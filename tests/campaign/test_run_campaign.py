@@ -384,7 +384,7 @@ def test_eviction_prewarms_with_num_ctx() -> None:
 
 def test_prewarm_payload_carries_num_ctx(monkeypatch) -> None:
     seen: dict = {}
-    ctl = OllamaControl()
+    ctl = OllamaControl("http://ollama.test:11434")
     monkeypatch.setattr(ctl, "_post", lambda path, payload, **k: seen.update(payload=payload))
     ctl.prewarm("m", "30m", num_ctx=8192)
     assert seen["payload"]["options"] == {"num_ctx": 8192}

@@ -833,7 +833,7 @@ def build_output_path_banner(output_path: str) -> str:
 
 
 def _assistant_turn(llm: LLMProtocol, resp: LLMResponse) -> dict[str, Any]:
-    """Ask the adapter to shape the assistant turn; fall back to Anthropic blocks."""
+    """Ask the adapter to shape the assistant turn; fall back to block-array shaping."""
     formatter = getattr(llm, "format_assistant_turn", None)
     if callable(formatter):
         return formatter(resp)
@@ -857,9 +857,9 @@ def _tool_results_turn(
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """Ask the adapter to shape the tool-results message.
 
-    Adapters may return a single dict (Anthropic/Ollama — fold all results
-    into one message) or a list of dicts (strict OpenAI-style — one message
-    per tool_call_id). Callers must handle both: use :func:`_append_turn`
+    Adapters may return a single dict (block-array or Ollama style — fold all
+    results into one message) or a list of dicts (strict OpenAI-style — one
+    message per tool_call_id). Callers must handle both: use :func:`_append_turn`
     to transparently extend ``messages`` regardless of shape.
     """
     formatter = getattr(llm, "format_tool_results", None)
@@ -880,7 +880,7 @@ def _append_turn(
 ) -> None:
     """Append a single turn, or extend with a list of turns, to ``messages``.
 
-    Bridges the Anthropic-shape (one dict per turn) and OpenAI-shape (one
+    Bridges the single-dict shape (one dict per turn) and the OpenAI-shape (one
     tool message per tool_call_id) adapter conventions without either
     caller having to branch on return type.
     """
@@ -1287,9 +1287,9 @@ def _parse_learnings(raw: str, task_ref: TaskId) -> list[Learning]:
 def _merge_usage(total: dict[str, Any], incr: dict[str, Any]) -> None:
     """Accumulate token counts (ints) and cost (float, USD) across turns.
 
-    LiteLLM adapters populate ``cost_usd`` per response; local/direct
-    adapters only populate tokens. Floats are kept as floats so fractional
-    cents aren't truncated; everything else coerces to int.
+    The Ollama adapter populates only tokens; a ``cost_usd`` field (if a future
+    metered backend sets it) is kept as a float so fractional cents aren't
+    truncated, while everything else coerces to int.
     """
     for key, value in incr.items():
         prior = total.get(key, 0)

@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -191,12 +190,17 @@ async def main() -> None:
     print()
 
     plan = load_plan(PLAN_YAML)
-    model = os.getenv("AGORA_LLM_MODEL", "ollama/qwen2.5:7b-instruct")
+
+    from agora.config import get_settings
+
+    settings = get_settings()
+    # Default model comes from Settings (env is read only in config.py).
+    model = settings.llm_model
     agents, tasks, staged_tasks = instantiate_plan(
         plan, project_name=args.project_name, variables={"model": model}
     )
 
-    cfg = HarnessConfig.from_env(work_dir=REPO_ROOT / "workspace")
+    cfg = HarnessConfig.from_settings(settings, work_dir=REPO_ROOT / "workspace")
     # Plan-builder authors plans; opts in to the plan_authoring tool category
     # (plan_upsert_agent, plan_add_task_spec, plan_finalize). Emitted plans
     # run via scripts/run_plan.py which leaves this False, so executors never

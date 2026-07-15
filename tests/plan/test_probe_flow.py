@@ -64,14 +64,14 @@ async def test_probe_end_to_end_emits_jsonl(tmp_path) -> None:
         profile_snapshot_from,
     )
     from agora.plan.harness import (
-        HarnessConfig,
         build_matrix_client,
         build_orchestrator,
     )
+    from tests.conftest import make_harness_config
 
     os.environ.setdefault("AGORA_LLM_MODEL", "ollama/qwen2.5:7b-instruct")
     profile = apply_env_overrides(load_profiles().select(os.getenv("AGORA_PROFILE", "")))
-    cfg = HarnessConfig(work_dir=tmp_path / "work", auto_hooks_enabled=False)
+    cfg = make_harness_config(work_dir=tmp_path / "work", auto_hooks_enabled=False)
 
     from scripts.run_tool_call_fidelity import seed_probe_files
 
