@@ -108,11 +108,24 @@ async def check_vram(model: str, base_url: str, safety_margin_mib: int) -> Check
 
 
 async def check_conduit(homeserver: str, user_id: str, password: str) -> CheckResult:
-    """Conduit is reachable AND the system account can log in."""
+    """Conduit is reachable AND the system account can log in — if you use it.
+
+    **An unset password is a SKIP, not a red.** The Matrix surface is opt-in
+    (C2): the core path is Python + Ollama and needs no homeserver, and you opt
+    in by configuring one. "You never set it up" is not a failure to report; it
+    is a check that does not apply.
+
+    This used to return red, which blocked every Tier-1 newcomer at the doctor
+    gate on a service SETUP.md had just told them they did not need — the doc
+    said "you don't need Matrix", the doctor said FAIL, and the doc also said
+    "do not proceed until nothing is red". Caught by the v0.1.0 front-door smoke
+    on a fresh public clone; invisible on any box that happens to run Conduit.
+    """
     if not password:
-        return CheckResult(
-            "conduit", False, f"cannot verify login for {user_id} (no password set)",
-            hint="set AGORA_MATRIX_PASSWORD (see .env.example)",
+        # ASCII only: this line renders in a bare cp1252 console (see format_line).
+        return skipped(
+            "conduit",
+            "no Matrix password set - the observer surface is opt-in (SETUP.md Tier 2)",
         )
     from agora.matrix.client import AgoraMatrixClient
 

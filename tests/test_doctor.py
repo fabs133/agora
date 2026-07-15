@@ -109,9 +109,19 @@ async def test_check_vram_probe_failure_is_green(monkeypatch) -> None:
 # ------------------------------------------------------------- conduit check
 
 
-async def test_check_conduit_no_password_is_red() -> None:
+async def test_check_conduit_no_password_is_skipped_not_red() -> None:
+    """An unset Matrix password means "not part of this run" — a SKIP, not a red.
+
+    Contract change (v0.1.0, C2): the Matrix surface is opt-in, so the core path
+    needs no homeserver. Reporting red here blocked every Tier-1 newcomer at the
+    doctor gate on a service SETUP.md had just told them they did not need.
+    """
     r = await doctor.check_conduit("http://hs.test:6167", "@agora:test", "")
-    assert not r.ok and "AGORA_MATRIX_PASSWORD" in r.hint
+    assert r.skipped, "no password must SKIP"
+    assert r.ok, "a skip must not fail the preflight"
+    assert "opt-in" in r.detail
+    # ...and it must never read as a verified green.
+    assert "[SKIP]" in doctor.format_line(r)
 
 
 async def test_check_conduit_login_ok(monkeypatch) -> None:
@@ -205,3 +215,27 @@ async def test_run_checks_conduit_only_when_homeserver_given(monkeypatch) -> Non
     }
     assert "conduit" not in names  # no homeserver ⇒ skipped
     assert {"ollama", "ollama-models", "vram", "workspace"} <= names
+
+
+def test_every_check_line_is_ascii_only() -> None:
+    """doctor output must be ASCII.
+
+    The doctor runs BEFORE force_utf8_stdio() is in play, so a stray em-dash or
+    arrow renders as mojibake on a default Windows console — in the one output a
+    newcomer reads first, while they are deciding whether the tool works. The
+    rule was only a comment in format_line and got broken anyway (caught by the
+    v0.1.0 front-door smoke: an em-dash printed as a replacement char), so it is
+    a test now.
+
+    ASCII, not cp1252: an em-dash IS cp1252-encodable (0x97), so a cp1252 check
+    would pass it and miss exactly the character that broke.
+    """
+    from agora.doctor import CheckResult, format_line, skipped
+
+    lines = [
+        format_line(skipped("conduit", "no Matrix password set - the observer surface is opt-in")),
+        format_line(CheckResult("ollama", False, "unreachable at http://x", hint="start it")),
+        format_line(CheckResult("vram", True, "5000 MiB needed, 24466 MiB free")),
+    ]
+    for line in lines:
+        line.encode("ascii")  # raises UnicodeEncodeError on ANY non-ASCII char
