@@ -17,8 +17,11 @@ Built on the [Manifold](https://github.com/fabs133/manifold) Specification
 Pattern, with Matrix as the human-observer surface and Git as the artifact
 store.
 
-**Runs locally** on Python ≥3.12 + Docker + Ollama; the demo wants ~6 GB of
-free VRAM (CPU works, slower). New here? → **[docs/SETUP.md](docs/SETUP.md)**
+**Runs locally** on Python ≥3.12 + Ollama — no Docker, no homeserver, no
+accounts; the demo wants ~6 GB of free VRAM (CPU works, slower). Docker buys
+you one optional extra: the live Matrix view in
+[SETUP §7](docs/SETUP.md#7-conduit--accounts), which the full lifecycle runs
+without. New here? → **[docs/SETUP.md](docs/SETUP.md)**
 takes you from clone to a green run. Found a rough edge the docs don't
 anticipate? That's a real signal — please [open an issue](../../issues).
 
@@ -109,8 +112,8 @@ The failure-driven rationale and the run that surfaced each is in
 **Full walkthrough: [docs/SETUP.md](docs/SETUP.md)** — one document, clone to a
 green run, with a troubleshooting table keyed to `agora doctor`.
 
-Prerequisites: Python ≥3.12, Docker (for the Conduit homeserver), Ollama
-(the local backend).
+Prerequisites: Python ≥3.12 and Ollama (the local backend). Docker is optional
+— it serves only the Conduit homeserver behind the live view.
 
 ```bash
 # 1. Clone, venv, install
@@ -120,28 +123,34 @@ source .venv/bin/activate            # POSIX  (Windows: .venv\Scripts\activate)
 pip install -e ".[dev]"
 
 # 2. Configure — one source of truth
-cp .env.example .env                 # set AGORA_MATRIX_PASSWORD (required)
-cp conduit/conduit.example.toml conduit/conduit.toml
-# make conduit.toml's registration_token match AGORA_MATRIX_REGISTRATION_TOKEN
+cp .env.example .env                 # the Ollama endpoint default is already right
 
-# 3. Start Conduit + register the @agora / @observer accounts (see SETUP.md)
-(cd conduit && docker compose up -d)
-
-# 4. Pull and warm the default Ollama model
+# 3. Start Ollama and pull the cast's models
 ollama serve &
-agora setup-ollama                   # VRAM pre-flight + pull + warm-up
+ollama pull gemma4:e4b               # 9.6 GB — implementer + tester
+ollama pull qwen2.5:7b-instruct      # 4.7 GB — verifier
 
-# 5. Preflight — everything green before you run
-agora doctor                         # Ollama / VRAM / Conduit / workspace; non-zero on red
+# 4. Preflight — everything green before you run
+agora doctor                         # Ollama / VRAM / workspace; non-zero on red
 
-# 6. Run the demo flow
-python scripts/run_discord_bot_test.py
-# A greenfield build: DONE 12/12 in ~6 minutes on the default model.
+# 5. Run the lifecycle
+python scripts/run_phased.py campaigns/integration-run-2.yaml --auto
 ```
 
-To watch a run live, log into Element ([docs/element-setup.md](docs/element-setup.md))
-on `http://localhost:6167` and join the project room — phase banners, per-task
-write-event cards, and the review poll all stream there.
+`--auto` advances phase by phase while each gate stays green, building
+**echobot** from an empty directory. On the reference box that reaches
+`next: done` in ~32 minutes ([session log](docs/runs/lifecycle-baseline/session-log.md),
+tag `lifecycle-baseline-1`). Provenance lands in `runs_out/integration-run-2/`.
+
+**A stopped run is not a broken run** — a red gate means a postcondition caught
+something, which is the framework working. [SETUP §6](docs/SETUP.md#6-a-stopped-run-is-not-a-broken-run)
+covers the repair loop.
+
+To *watch* a run live, add the optional Conduit homeserver
+([SETUP §7](docs/SETUP.md#7-conduit--accounts)) and log into Element
+([docs/element-setup.md](docs/element-setup.md)) — phase banners, per-task
+write-event cards and the review poll stream there. The lifecycle above runs
+identically without it.
 
 The test suite is self-contained (no Conduit / Ollama needed):
 
