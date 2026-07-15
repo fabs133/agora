@@ -234,11 +234,85 @@ Mechanical FACT (extractor, correct-by-construction from the AST):
 ## Reproduction
 
 ```bash
-# stack: Ollama on the cast's endpoint + Conduit up + accounts registered
+# stack: Ollama on the cast's endpoint. (Conduit only if you want the live view —
+# see the C2 verification below: a phased run needs no homeserver.)
 agora doctor                                             # expect all green
 python scripts/run_phased.py campaigns/integration-run-2.yaml --status   # P3..P9 pending
 python scripts/run_phased.py campaigns/integration-run-2.yaml --next     # x6, one gate per invocation
+python scripts/run_phased.py campaigns/integration-run-2.yaml --auto     # or: advance-while-green
 ```
 
 Provenance for this run (untracked, scratchpad clone):
 `runs_out/integration-run-2/` — `phases.jsonl`, `tasks.jsonl`, `run.log`.
+
+---
+
+## Addendum — C2 verification run (2026-07-15, same day, `--auto` + no Matrix)
+
+A second run, executed to accept the C2 ruling (the Matrix surface is optional).
+Same campaign, cast, flow and params; **only `output_dir` and `run.id` differ**
+(F26: the delta is stated rather than implied). Fixture: **Docker entirely down**
+— API dead, `conduit http=000`, the `docker-desktop` WSL distro terminated (the
+container survives killing Docker Desktop's UI and keeps serving 6167, which is
+worth knowing) — and a `.env` containing **only** `AGORA_OLLAMA_BASE_URL`. No
+Matrix password existed anywhere.
+
+**What it proved (the point of the run):**
+
+```
+[ OK ] ollama: reachable at http://localhost:11700 (version 0.31.1)
+[ OK ] ollama-models: all 4 cast model(s) present
+[SKIP] conduit: skipped (observer off)
+all checks passed. (1 skipped)
+[*] Matrix surface OFF (enable_observer=False) — no Conduit required.
+
+matrix(null): create_room name='agent:impl'      -> !null-1
+matrix(null): create_room name='agent:verifier'  -> !null-2
+matrix(null): create_room name='project:echobot' -> !null-3
+```
+
+- **P3 GREEN, P4 GREEN with no homeserver in existence.** Python + Ollama is the
+  whole dependency set for a phased run.
+- **The per-tool null semantics fired in the wild — and the phase still passed.**
+  V3.1 called `post_note` (`note (observer off): # P3 Scaffold Verification` →
+  recorded to run.log) and `request_review` (→ LOUD `UNAVAILABLE`), then went on
+  to pass P3's gate. Provenance unaffected (F3); only delivery disappeared.
+- `[SKIP]` is a third state, not a green: nothing claimed a homeserver was
+  verified when none was contacted.
+
+**What it did NOT prove — acceptance (i) is unmet.** `--auto` **STOPPED at P5,
+gate RED**, so the lifecycle did not reach P9 in one command. The harness
+behaved exactly as designed (advance-while-green; stop on red; print the repair
+command; repairs stay operator actions). The reds were **model** defects, and
+C2 is exonerated by the evidence: **T5.1 called only `write_file` +
+`mark_complete` — zero Matrix-touching tools** — so the null semantics never
+entered the tester's context.
+
+```
+P5 RED  (1 fail / 7 pass)   test_unknown_command
+        contract:  unknown !cmd -> "unknown command: cmd (try !help)"   (no bang)
+        tester:    "unknown command: unknown_command (try !help)"       (no bang — correct)
+        impl:      "unknown command: !bogus (try !help)"                (kept the bang — WRONG)
+  -> repair 1/1: --rerun-task T4.1 --oracle P5   (cross-phase; T4.1 owns the router)
+P5 RED  (2 fail / 6 pass)   -> STOP (second red on one gate; waivers forbidden)
+        the bang WAS fixed: '!bogus' -> 'unknown command: bogus (try !help)'
+        but !roll was DROPPED: '!roll 2d6' -> 'unknown command: roll (try !help)'
+        grep -c roll core.py = 1 — the sole survivor is the help text, which still
+        ADVERTISES a command the dispatcher no longer implements.
+```
+
+**F12×F14, reproduced live.** The measured (write-only) surface forces a
+whole-file rewrite to change one string; gemma fixed the named defect and lost
+an unrelated feature, leaving the artifact internally inconsistent — and P5's
+suite caught it. This is the mirror image of run 2.0's P4 case ("T4.2 rewrote
+core.py to add !roll and OMITTED roll entirely", Part 8) and reproduces run
+2.0's **P5 trajectory almost exactly**: red → one T4.1 cross-phase repair → red
+→ stop.
+
+**Non-determinism, again, at a fixed seed.** The baseline's implementation
+stripped the bang correctly (`'!bogus' -> 'unknown command: bogus (try !help)'`)
+under *identical* seed and params. Two runs, same conditions, different defects.
+Whatever else the baseline is, it is not a reproducible fixed point — the
+caveat in "Deviations" above is now demonstrated rather than asserted.
+
+Provenance: `<scratchpad>/runs_out/verify-c2/` (untracked).

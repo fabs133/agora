@@ -119,3 +119,39 @@ def test_doctor_skip_is_not_a_green() -> None:
     lines: list[str] = []
     assert report([r], lines.append) == 0
     assert any("1 skipped" in line for line in lines)
+
+
+@pytest.mark.asyncio
+async def test_observer_on_still_builds_the_real_client(monkeypatch) -> None:
+    """The other half of the gate: observer ON must be behaviourally UNCHANGED.
+
+    C2 made Matrix optional; it must not make Matrix absent. If this ever
+    returns a NullMatrixClient, the live-observation view has silently died.
+    """
+    built: dict = {}
+
+    class _Realish:
+        def __init__(self, **kw) -> None:
+            built["kw"] = kw
+
+        async def login(self, _password: str) -> None:
+            built["logged_in"] = True
+
+        async def create_room(self, name, topic="", invite=None, initial_state=None):
+            # build_matrix_client wraps this for the observer auto-invite shim.
+            built["invited"] = list(invite or [])
+            return "!real:local"
+
+    monkeypatch.setattr("agora.plan.harness.AgoraMatrixClient", _Realish)
+    cfg = make_harness_config()  # observer on by default
+    assert cfg.enable_observer is True
+
+    client = await build_matrix_client(cfg)
+
+    assert not isinstance(client, NullMatrixClient), "observer ON must NOT get the null client"
+    assert built.get("logged_in"), "observer ON must actually log in"
+
+    # ...and the observer auto-invite shim must still be wired: it exists only on
+    # this path, so C2 could plausibly have severed it without any other symptom.
+    await client.create_room("proj")
+    assert cfg.observer_user in built.get("invited", []), "auto-invite shim lost"
