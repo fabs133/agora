@@ -23,15 +23,18 @@ Active research code; framework stable at Round 18 of empirical hardening.
 Five load-bearing ideas validated across 46 runs on three test-bed projects
 and four model tiers. Test suite: **1095 tests, 80%+ coverage**.
 
-**All 46 cited runs were performed on a single machine** — Windows 11 +
-Conduit + Ollama + RTX 3060 Ti, by the primary author. No second-machine
-or non-Windows reproduction has been verified. The framework is plain
-Python with standard deps, so it *should* run anywhere Python ≥3.12,
-Docker, and Ollama do — but if you hit setup friction the quickstart
-doesn't anticipate, that's a real signal, please open an issue.
+**Every cited run was performed on a single machine** — Windows 11 + Ollama +
+a **Tesla P40 24 GB**, by the primary author. (That box's earlier work, through
+the Round-18 stress-test era, ran on its RTX 3060 Ti 8 GB before the P40 was
+added in May 2026.) No second-machine or non-Windows reproduction has been
+verified. The framework is plain Python with standard deps, so it *should* run
+anywhere Python ≥3.12 and Ollama do — but if you hit setup friction the
+quickstart doesn't anticipate, that's a real signal, please open an issue.
 
-Primary author is paused on local-hardware experiments pending a 24 GB VRAM
-upgrade — see [Known limitations](#known-limitations).
+The 24 GB card is in place; the reference lifecycle run
+([session log](docs/runs/lifecycle-baseline/session-log.md), tag
+`lifecycle-baseline-1`) is measured on it — see
+[Known limitations](#known-limitations) for what remains unverified.
 
 ## Evidence
 
@@ -297,18 +300,21 @@ deliberately left as written rather than retroactively edited.
 Deferred deliberately, not bugs:
 
 - **Single-machine validation.** Every cited run, every screenshot,
-  every reproduced quickstart was on one Windows 11 + RTX 3060 Ti +
-  Conduit + Ollama setup, by the primary author. Cross-platform
-  reproduction (Linux, macOS, different GPUs, different Conduit /
-  Ollama versions) is unverified. The runner scripts include
+  every reproduced quickstart was on one Windows 11 + **Tesla P40 24 GB** +
+  Ollama setup, by the primary author (that box's pre-May-2026 work used
+  its RTX 3060 Ti 8 GB). Cross-platform reproduction (Linux, macOS,
+  different GPUs, different Ollama versions) is unverified — and the
+  validated cast needs ~15 GB of VRAM, so a smaller-hardware cast is an
+  open item, not a promise. The runner scripts include
   Windows-specific guards (UTF-8 stdout wrapping in
   [scripts/run_fastapi_crud_test.py:23-25](scripts/run_fastapi_crud_test.py#L23-L25))
   and the lessons-learned doc occasionally references Windows venv
   paths verbatim — a POSIX user should swap `.venv/Scripts/python.exe`
   for `.venv/bin/python` mentally.
-- **Hardware-gated 14B+ runs.** All published reference runs are on
-  qwen2.5:7b. The "next big lever" is upgrading to a 14B / 32B class
-  model — pending a 24 GB VRAM card.
+- **14B+ runs are thin.** The 24 GB P40 lifted the old VRAM gate — a
+  32B-class run exists ([baseline-32b.run1](docs/runs/baseline-32b.run1.md))
+  and the validated lifecycle runs gemma-e4b + qwen2.5:7b-instruct — but no
+  14B/32B campaign has been driven to the same standard as the 7B work.
 - **Code-review flow** runs cleanly on 7B but the reviewer produces
   "looks clean" regardless of input. Framework is fine; the model has
   effectively zero analysis capability for this task at 7B. Pending
