@@ -18,8 +18,19 @@ machine:
 |---|---|
 | **VRAM** | ~6 GB free (GPU strongly recommended; CPU-only works but is slow) |
 | **Model download** | ~4.7 GB, one time (`agora setup-ollama`) |
-| **Demo runtime** | ~6 minutes on the reference box (RTX 3060 Ti) |
+| **Demo runtime** | **unverified** — see the note below |
 | **Success looks like** | the run ends `DONE 12/12` — all 12 tasks green |
+
+> **On the runtime claim.** This table previously read *"~6 minutes on the
+> reference box (RTX 3060 Ti)"*. That figure is **withdrawn**: there is no
+> recorded end-to-end completion of this 12-task demo, on that card or any
+> other. (The model it drives, `qwen2.5:7b-instruct` at ~4.7 GB, does fit the
+> 3060 Ti's ~6 GB of usable VRAM — the claim is unsupported, not impossible.)
+> The project's measured end-to-end reference is a different run: the phased
+> echobot lifecycle, **P3→P9 green in 32 min on a Tesla P40 24 GB** —
+> [docs/runs/lifecycle-baseline/session-log.md](runs/lifecycle-baseline/session-log.md),
+> tag `lifecycle-baseline-1`. Numbers will be restored here only once this demo
+> has actually been measured end-to-end.
 
 No GPU? `agora doctor` reports VRAM as a non-blocking note (never a red) and
 the run still executes on CPU, just slower.
