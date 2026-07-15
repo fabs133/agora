@@ -45,3 +45,6 @@ docs/runs/_inventory.csv
 # settings (permission allowlists for the gamedev-mcp doc-gen workflow).
 .claude/*
 !.claude/settings.json
+
+# Personal working notes — not part of the project record.
+INBOX.md
