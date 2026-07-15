@@ -4,10 +4,13 @@
 (session log b117471, provenance runs_out/integration-run-1/). Run 1.1
 pre-registration recorded BEFORE its execution, per program practice.*
 
-> **Scope note.** Parts 1–16 of this file cover the whole integration
+> **Scope note.** Parts 1–17 of this file cover the whole integration
 > program — runs 1.x (repair doctrine), 2.x (greenfield echobot → v1.1,
-> tag `echobot-v1`), and 3 (brownfield → v2.1, tag `echobot-v2`). Findings
-> are numbered F1–F25. Canonical index / narrative: `docs/arc/arc-outline.md`.
+> tag `echobot-v1`), 3 (brownfield → v2.1, tag `echobot-v2`), and the
+> 2026-07-15 lifecycle baseline (first clean single-session P3→P9, tag
+> `lifecycle-baseline-1`; session log
+> `docs/runs/lifecycle-baseline/session-log.md`). Findings are numbered
+> F1–F25. Canonical index / narrative: `docs/arc/arc-outline.md`.
 
 ## Part 1 — run 1 findings
 
@@ -1261,3 +1264,114 @@ so a future flow that adds a behavioural run_check the record misses will fail t
 Lifecycle now fully closed: greenfield build → handoff (v1.1, echobot-v1) → phase-0
 re-validation (red-team proven) → brownfield extension via brief-as-index navigation →
 re-handoff (v2 → fact-check → v2.1 corrections, echobot-v2). No open framework blocker.
+
+## Part 17 — lifecycle baseline: first clean end-to-end run (2026-07-15)
+
+*Session log: `docs/runs/lifecycle-baseline/session-log.md` (verbatim gates,
+per-task provenance, live bot transcript). Executed at `5ab8950` on
+`chore/integration-hardening` (`echobot-v2` is an ancestor — the full fix stack
+is present). Provenance rule applied to this entry: every configuration claim
+below is quoted from the run's **effective-params log**, never from the campaign
+file — `campaigns/integration-run-2.yaml` today reads `max_tokens: 4096`, but run
+2.0 **executed** at 2048 (the 4096 was written back after the run-2.3 envelope
+experiment), so the file cannot testify to what any past run actually did.*
+
+**The first single-session, zero-repair P3→P9 traversal in program history.**
+All six gates green in 32m 25s, no repair budget consumed, no waiver, no spec
+amendment, no operator intervention beyond one `--next` per phase.
+
+```
+[*] effective params [ollama/gemma4:e4b]:          num_ctx=8192* max_tokens=4096* temperature=0.0* seed=42*
+[*] effective params [ollama/qwen2.5:7b-instruct]: num_ctx=8192* max_tokens=4096* temperature=0.0* seed=42*
+harness {corrective, nudge 1, review 0, salvage 1} | cast p40-24gb | Ollama 0.31.1 | Python 3.14.3
+=== integration-run-2 — phase status ===
+  P3 green | P4 green | P5 green | P6 green | P7 green | P9 green (mechanical re-eval)
+next: done (all phases green or waived)
+```
+
+Every prior "completion" was a **program, not a run**: run 2 reached `next: done`
+only at run 2.5 — six executions across two days, ~5 repairs, an F15 spec
+amendment, and code/flow fixes committed *between* runs. This is the first time
+the accumulated stack ran **as a stack**, on a fresh ledger, in one sitting.
+
+**Fix-stack-as-a-stack — every fix verified live, simultaneously.** The value of
+this run is not that it went green; it is that the fixes stopped needing each
+other's absence to work:
+
+- **F13** invariant: the allowlist filtered 13 tools on all **10 implementer
+  tasks**; **none** logged `hid write_file`. The hide fired only on unrestricted
+  seats — the tester (T5.1) and every verifier. Both behaviours correct, matching
+  the Part-8 record exactly.
+- **F6**: `tests/test_core.py` imports the real `handle_message`, **zero** mocks.
+  World (a) on the first pass.
+- **F15**: the malformed-roll reply carries the literal `NdM` substring; the
+  tester asserted it. Green with no amendment — the defect that *stopped run 2.0*
+  did not recur.
+- **F16/F17**: `__main__.py` line 3 imports `handle_message`; **no bare `except`**
+  anywhere. Both run-2.1 blockers absent first pass.
+- **F18''' / task design**: T9.2a–d each first try, `turns_reasoning_only=0`.
+- **F19**: `max_tokens=4096*` confirmed reaching both models.
+- **F17b**: 6 mechanical re-eval records persisted (23 records = 17 executed + 6).
+- **F10**: the `!ping` / `!roll 2d6` behavioural asserts are what proved P4.
+
+**Emission floor: silent this run — S7 armed and never needed.** Across **all 23
+records**: `turns_reasoning_only=0`, `salvages_used=0`, `nudges_used=0`,
+`tool_calls_malformed=0`. `salvage_budget: 1` was active and never fired. (Four
+turns show `tool_calls=0 content_len=0`; each is its task's **final** turn — the
+normal loop-termination signal after `mark_complete`, not F18''' derailment. The
+distinction is exactly why the provenance field exists and why raw log greps must
+not be read as reasoning-only turns.)
+
+**Verifier series — updated, and the envelope hypothesis REJECTED for it.**
+This run: **V3.1 pass (valid `verdicts/p3.json` — first time in program
+history)**, V4.1 pass, **V5.1 fail (malformed)**, **V6.1 fail (malformed)**,
+V7.1 pass, V9.1 pass. V3 flipped at 4096; **V5 and V6 did not**. So the
+long-standing "V3/V5/V6 malformed, V4/V7/V9 valid — instruct phase-inconsistent"
+backlog item **stands**: the envelope does **not** explain the verifier-fidelity
+gap. Only its V3 clause is retired. Verifier failures gate nothing (non-blocking
+by design) and were recorded, not waived.
+
+**F14-at-P4 — candidate re-read, NOT rewritten.** T4.2 produced correct `NdM`
+regex parsing **first pass** at 4096. Both prior 2048 attempts failed it: run 2.0
+dropped `!roll` entirely (Part 8), and a 2026-07-15 attempt on the discarded
+run-1 campaign wrote `!roll` with space-separated `N M` grammar and then no-oped
+its repair. That is suggestive, not established — **this run changed more than one
+variable** (envelope 2048→4096, salvage 0→1, Python →3.14, both-model
+co-residency). The F14 P4 clause is **left standing** pending the pre-registered
+A/B (2048 vs 4096, T4.2 only, n=3 each; `docs/design/deployment-reconciliation.md`
+Phase 1). Note F18' already *falsified* the envelope hypothesis at T9.2 — so any
+envelope effect is task-dependent, and a P4-scoped result must not be generalised.
+
+**Not a determinism claim.** At identical seed/params, the earlier same-day
+attempt drew a *different* T4.2 defect than run 2.0's. One sample, not a fixed
+point.
+
+**Confounds and deviations** (full list in the session log): Python **3.14.3**
+(no 3.12 on the box; above the `>=3.12` floor, never previously exercised —
+passed); prewarm loaded both models at **32768**, the first task call reloaded
+gemma at the pinned **8192** (redundant load, not a fidelity loss);
+`OLLAMA_MAX_LOADED_MODELS=2` against `OLLAMA.md`'s `=1` (the cast's 14.6 GB
+co-residency fits 24 GB; `=1` thrashes on every verifier task); Ollama on `:11700`
+because port 11434 sits inside a WinNAT reserved range (11420–11519) on this box —
+absorbed by a one-line `AGORA_OLLAMA_BASE_URL` change, an unplanned live proof of
+the single-source config design; T7.1 logged 4 `tool_call_unknown_name` events and
+still passed (roster quirk, backlog); `duration_s` is unpopulated on every record
+(wall-clock derived from `run.log`).
+
+**T9.2d reads `failed` in its executed record and passes on mechanical re-eval** —
+its postconditions include the assembled `PROJECT_STATE.md` headers, evaluated
+before the runner assembles `FACT + prose`. Designed assembly order, not a masked
+failure; the `(mechanical re-eval)` tag on the P9 gate records it.
+
+`PROJECT_STATE.md` is **fully model-authored** — zero `(human)` placeholders — and
+its architecture prose independently restates the frozen-signature/pure-core/
+injected-rng invariants. The artifact runs: `printf '!ping\n!roll 2d6\n!help\n' |
+python -m echobot` → `pong` / `rolled 2d6: 5+5=10` / the full help listing.
+
+**What this establishes for the deployment work.** The framework holds end-to-end
+on the validated path. Every failure chased on 2026-07-15 before this run was
+configuration, environment, or documentation — never the framework: a discarded
+campaign (`integration-run-1.yaml`, no `salvage_budget`, 2048) that disabled the
+very mitigation its repair then needed; a dead Conduit against an unguarded
+`build_matrix_client` await; and a demo path the program never drove. Baseline
+tagged `lifecycle-baseline-1`.
