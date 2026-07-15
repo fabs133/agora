@@ -1,5 +1,7 @@
 # Agora
 
+[![CI](https://github.com/fabs133/agora/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fabs133/agora/actions/workflows/ci.yml)
+
 **Agora drives a weak or cheap LLM through a DAG of specified tasks to produce
 working code end-to-end.** The framework absorbs everything the model is
 unreliable at — postcondition gates verify each task instead of trusting the

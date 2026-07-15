@@ -14,19 +14,17 @@ permissions:
   contents: read
 
 jobs:
+  # ------------------------------------------------------------------ style
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-
       - name: Install ruff
         run: pip install ruff
-
       - name: ruff check
         run: ruff check .
 
@@ -35,14 +33,39 @@ jobs:
       # Track via the open follow-up; flip to `ruff format --check .` once
       # a one-shot reformat commit lands.
 
+  # ------------------------------------------------- the hardening merge gates
+  invariants:
+    # "One config source, injected sinks" is only real while these hold, and
+    # nothing but a gate keeps them true: the audit that found 58 env reads and
+    # 27 localhost literals across 15 files was a one-off, and the next
+    # os.getenv is one convenient moment away. Encoded so the invariant
+    # outlives the person who remembers it — and so a branch that forked before
+    # the hardening cannot regress it on contact.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Hardening invariants (env-in-one-place / no-localhost / Settings-at-root)
+        # stdlib only, no install: this gate cannot be blocked by a dependency
+        # problem it is meant to be independent of. Run it locally the same way.
+        run: python scripts/check_hardening_invariants.py
+
+  # ------------------------------------------------------------------ tests
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    name: test (py${{ matrix.python-version }})
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Configure git identity for repo-creating tests
@@ -55,16 +78,34 @@ jobs:
           git config --global user.email "ci@agora.local"
           git config --global init.defaultBranch main
 
-      - name: Install Agora with all optional extras
+      - name: Install Agora
+        # [analysis] is REQUIRED for the suite, not optional: the layer2 /
+        # analysis tests import pandas, which lives in that extra. Omitting it
+        # is exactly what kept CI red while every developer's venv stayed green
+        # — they had pandas from other work. A CI install must match what the
+        # tests import, not what the runtime minimally needs.
+        # (The old `litellm,llm` extras went away with the dead adapters in
+        # Stage 1; pip ignores unknown extras silently, so they lingered here
+        # doing nothing at all.)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,litellm,llm]"
+          pip install -e ".[dev,analysis]"
+
+      - name: Import the package
+        # Trivial, and it earns its place: catches a broken __init__, a missing
+        # runtime dep, or a py-version incompatibility immediately rather than
+        # as noise inside a pytest collection error.
+        run: python -c "import agora; print('import agora OK')"
 
       - name: pytest with coverage gate
         env:
-          # E2E suites need a live Conduit + Ollama; skip in CI.
+          # Live suites need a real Conduit + Ollama. They already
+          # skip-if-unreachable; these keep them explicitly off in CI.
           AGORA_E2E: "0"
           AGORA_MATRIX_LIVE: "0"
+        # The `serial` marker exists because those tests contend on the git
+        # index. No xdist here, so they cannot interleave. If xdist is ever
+        # added, group them onto one worker: -n auto --dist loadgroup.
         run: |
           pytest \
             --cov=agora \
@@ -75,7 +116,7 @@ jobs:
             -q
 
       - name: Upload coverage XML
-        if: always()
+        if: always() && matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-xml
