@@ -58,7 +58,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        # 3.12 is the requires-python floor; 3.14 is what the reference
+        # lifecycle run (tag lifecycle-baseline-1) was measured on. Both ends
+        # are load-bearing claims, so both get tested.
+        python-version: ["3.12", "3.13", "3.14"]
     name: test (py${{ matrix.python-version }})
     steps:
       - uses: actions/checkout@v4
