@@ -21,9 +21,16 @@ anticipate? That's a real signal — please [open an issue](../../issues).
 
 ## Status
 
-Active research code; framework stable at Round 18 of empirical hardening.
-Five load-bearing ideas validated across 46 runs on three test-bed projects
-and four model tiers. Test suite: **1095 tests, 80%+ coverage**.
+Active research code. Five load-bearing ideas, hardened empirically across the
+axis-1 characterisation campaigns and the echobot integration runs — the ledger
+of what was actually run is
+[arc Appendix B](docs/arc/arc.md#appendix-b--runs-ledger-summary), and the
+findings it produced are indexed in
+[Appendix A](docs/arc/arc.md#appendix-a--integration-findings-index-f1f25).
+
+The test suite and its 80% coverage floor are enforced on every push — the CI
+badge above is the live answer, so this line does not carry a count that would
+start rotting the moment it was written.
 
 **Every cited run was performed on a single machine** — Windows 11 + Ollama +
 a **Tesla P40 24 GB**, by the primary author. (That box's earlier work, through
@@ -260,7 +267,7 @@ during debugging, set `AGORA_SKIP_VRAM_CHECK=1`.
 | `AGORA_PROFILES_FILE` | `./profiles.yaml` | Point at an alternate profile file |
 | `AGORA_MAX_PARALLEL_AGENTS` | `3` | Concurrent task executions per phase |
 | `AGORA_SKIP_VRAM_CHECK` | `false` | Force-skip the VRAM pre-flight (honored: `1`/`true`/`yes`/`on`) |
-| `AGORA_REVIEW_TIMEOUT_SECONDS` | `86400` | Auto-approve after N seconds |
+| `AGORA_REVIEW_TIMEOUT_SECONDS` | `300` | How long the REVIEW poll waits for a human vote. On timeout it is **task-aware**: approves only if every task passed, else loops back to rework — it does not blanket-approve. |
 | `AGORA_MAX_TASK_RETRIES` | (per runner) | In-phase auto-retries per failed task |
 
 Every LLM call is `async`; within a phase, ready tasks run concurrently
@@ -271,9 +278,10 @@ up to `AGORA_MAX_PARALLEL_AGENTS`.
 - [docs/lessons-learned.md](docs/lessons-learned.md) — project log:
   architecture diagram, the 5 load-bearing ideas with citations, Round 1–18
   evolution table, file map, failure taxonomy.
-- [docs/runs/](docs/runs/) — run history archive: 46 runs catalogued in
-  [registry.yaml](docs/runs/registry.yaml), 5 narrative deep-dives, cross-cutting
-  findings, publishable thread candidates.
+- [docs/runs/](docs/runs/) — run history archive: every run catalogued in
+  [registry.yaml](docs/runs/registry.yaml), narrative deep-dives, cross-cutting
+  findings, publishable thread candidates. Summary ledger:
+  [arc Appendix B](docs/arc/arc.md#appendix-b--runs-ledger-summary).
 - [docs/runs/findings.md](docs/runs/findings.md) — what worked, what didn't,
   model-tier comparison.
 - [docs/runs/publishable.md](docs/runs/publishable.md) — three paper-shaped
