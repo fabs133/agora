@@ -1,6 +1,9 @@
 # Agora
 
 [![CI](https://github.com/fabs133/agora/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fabs133/agora/actions/workflows/ci.yml)
+[![Docs](https://github.com/fabs133/agora/actions/workflows/docs.yml/badge.svg?branch=main)](https://fabs133.github.io/agora/)
+
+**[API reference & docs →](https://fabs133.github.io/agora/)**
 
 **Agora drives a weak or cheap LLM through a DAG of specified tasks to produce
 working code end-to-end.** The framework absorbs everything the model is
