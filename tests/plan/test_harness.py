@@ -192,3 +192,50 @@ def test_from_settings_rejects_invalid_tool_errors() -> None:
 
     with pytest.raises(ValueError, match="harness_tool_errors"):
         HarnessConfig.from_settings(Settings(harness_tool_errors="bogus"))
+
+
+@pytest.mark.asyncio
+async def test_build_matrix_client_login_is_bounded(monkeypatch) -> None:
+    """A hung homeserver must fail fast and NAMED, never block indefinitely.
+
+    Regression: on 2026-07-15 a dead Conduit hung `run_phased` here for minutes
+    with zero output and near-zero CPU — indistinguishable from a model stall.
+    The login had no timeout, and the runner's preflight checked Ollama but not
+    Conduit, so nothing caught it earlier.
+    """
+    import asyncio as _asyncio
+
+    from agora.core.errors import AgoraError
+    from agora.plan.harness import build_matrix_client
+
+    closed: dict = {"called": False}
+
+    class _HangingClient:
+        def __init__(self, **_kw) -> None: ...
+
+        async def login(self, _password: str) -> None:
+            await _asyncio.sleep(3600)  # never returns
+
+        async def close(self) -> None:
+            closed["called"] = True
+
+    monkeypatch.setattr("agora.plan.harness.AgoraMatrixClient", _HangingClient)
+    cfg = make_harness_config()
+
+    with pytest.raises(AgoraError, match="timed out after 8s"):
+        await _asyncio.wait_for(build_matrix_client(cfg), timeout=20)
+
+    assert closed["called"], "the half-open session must be closed on timeout"
+
+
+@pytest.mark.asyncio
+async def test_build_matrix_client_requires_a_password() -> None:
+    """No password is a named config error, not an opaque auth failure."""
+    from dataclasses import replace
+
+    from agora.core.errors import AgoraError
+    from agora.plan.harness import build_matrix_client
+
+    cfg = replace(make_harness_config(), system_password="")
+    with pytest.raises(AgoraError, match="AGORA_MATRIX_PASSWORD"):
+        await build_matrix_client(cfg)

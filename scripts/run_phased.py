@@ -760,10 +760,19 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         for rb in resolve_cast(cast, profiles)
         if not rb.is_human and rb.model.startswith("ollama/") and rb.resident
     ]
-    doctor.preflight_or_die([
+    # Preflight EVERY dependency this run will actually touch, not just Ollama.
+    # Conduit belongs here because build_matrix_client() below is unconditional:
+    # omitting it is what let a dead homeserver hang the runner for minutes with
+    # no output (2026-07-15). doctor.check_conduit bounds its login at 8s, so a
+    # down Conduit is a named red line here rather than a silent await later.
+    checks = [
         doctor.check_ollama_reachable(settings.ollama_base_url),
         doctor.check_ollama_models(settings.ollama_base_url, required),
-    ])
+        await doctor.check_conduit(
+            settings.matrix_homeserver, settings.matrix_user_id, settings.matrix_password
+        ),
+    ]
+    doctor.preflight_or_die(checks)
 
     flow = load_flow(campaign["flow"])
     agents, tasks = instantiate_flow(flow, "echobot", id_strategy="preserve")
@@ -975,6 +984,13 @@ def main(argv: list[str] | None = None) -> int:
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--status", action="store_true", help="Print per-phase state and exit.")
     g.add_argument("--next", action="store_true", dest="do_next", help="Run the next pending phase.")
+    g.add_argument(
+        "--auto",
+        action="store_true",
+        help="Deployment mode: advance while green — run phases in order until the "
+             "flow is done or a gate goes RED. A red gate STOPS the run (repairs stay "
+             "operator actions). Same execution path as --next, looped.",
+    )
     g.add_argument("--waive", metavar="REASON", help="Record a waiver on the newest red gate.")
     g.add_argument("--rerun-task", metavar="ID", dest="rerun_task", help="Repair-rerun one task.")
     g.add_argument("--phase0", metavar="ARTIFACT", help="Re-validate a PROJECT_STATE.md's gate checks (brownfield P0).")
@@ -1034,6 +1050,49 @@ def main(argv: list[str] | None = None) -> int:
         print(format_gate_report(gate, results_by_id, campaign.get("harness")))
         return 0 if gate.passed else 1
 
+    def _execute(phase: str) -> bool:
+        """Run one phase, persist provenance, print its gate report. -> gate.passed.
+
+        The single execution path shared by --next and --auto: --auto is this
+        function in a while-loop and nothing more, so the two modes can never
+        drift apart.
+        """
+        gate, results_by_id, task_records = asyncio.run(run_phase(campaign, phase, run_id=run_id))
+        append_task_records(out_dir / "tasks.jsonl", task_records)
+        append_phase_record(out_dir / "phases.jsonl", gate, run_id)
+        print(format_gate_report(gate, results_by_id, campaign.get("harness")))
+        return bool(gate.passed)
+
+    if args.auto:
+        # Deployment mode: advance while green. A red gate STOPS the run — that
+        # is the feature, not a limitation: repairs are operator decisions
+        # (--rerun-task ... --oracle ...), never something a loop guesses at.
+        # Waivers stay forbidden here as everywhere.
+        while True:
+            # Re-read the ledger every turn: the phase we just ran wrote to it,
+            # and provenance — not memory — is the source of truth.
+            records = load_jsonl(out_dir / "phases.jsonl")
+            waivers = load_jsonl(out_dir / "waivers.jsonl")
+            kind, phase, msg = next_action(phase_states(phases, records, waivers))
+            if kind == "refuse":
+                print(f"[refuse] {msg}")
+                print("[auto] STOPPED — frontier is red. Inspect the gate report "
+                      "above, then repair with:\n"
+                      f"    python scripts/run_phased.py {args.campaign} "
+                      "--rerun-task <id> --oracle <phase>")
+                return 1
+            if kind == "done":
+                print("done - all phases green or waived.")
+                return 0
+            print(f"\n[auto] ==> {phase}")
+            if not _execute(phase):
+                print(f"\n[auto] STOPPED at {phase} — gate RED (report above). "
+                      "Repairs are operator actions; --auto does not guess.\n"
+                      f"    python scripts/run_phased.py {args.campaign} "
+                      "--rerun-task <id> --oracle {phase}\n"
+                      "Then re-run --auto to continue from the frontier.")
+                return 1
+
     # --next
     kind, phase, msg = next_action(phase_states(phases, records, waivers))
     if kind == "refuse":
@@ -1041,11 +1100,7 @@ def main(argv: list[str] | None = None) -> int:
     if kind == "done":
         print("done - all phases green or waived.")
         return 0
-    gate, results_by_id, task_records = asyncio.run(run_phase(campaign, phase, run_id=run_id))
-    append_task_records(out_dir / "tasks.jsonl", task_records)
-    append_phase_record(out_dir / "phases.jsonl", gate, run_id)
-    print(format_gate_report(gate, results_by_id, campaign.get("harness")))
-    return 0 if gate.passed else 1
+    return 0 if _execute(phase) else 1
 
 
 if __name__ == "__main__":

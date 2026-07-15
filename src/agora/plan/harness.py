@@ -13,6 +13,8 @@ callers pass the ``(agents, tasks, staged_tasks)`` triple that
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import sys
 import warnings
 from dataclasses import dataclass, field
@@ -165,7 +167,25 @@ async def build_matrix_client(cfg: HarnessConfig) -> AgoraMatrixClient:
         )
     print(f"[*] Logging into Conduit as {cfg.system_user}")
     client = AgoraMatrixClient(homeserver=cfg.homeserver, user_id=cfg.system_user)
-    await client.login(cfg.system_password)
+    # Bound the login. An unreachable homeserver must produce a fast, named
+    # failure — never an open-ended await. (2026-07-15: a dead Conduit hung
+    # run_phased here for minutes with zero output and no CPU, looking for all
+    # the world like a model stall; the runner's preflight checked Ollama but
+    # not Conduit, so nothing caught it earlier. agora.doctor.check_conduit has
+    # carried this same bound since the integration-hardening pass — this is the
+    # library path catching up.)
+    try:
+        await asyncio.wait_for(client.login(cfg.system_password), timeout=8.0)
+    except TimeoutError as exc:
+        # Close the half-open session before surfacing, or every timeout leaks an
+        # aiohttp connector ("Unclosed client session").
+        with contextlib.suppress(Exception):
+            await client.close()
+        raise AgoraError(
+            f"Matrix login timed out after 8s against {cfg.homeserver} "
+            f"(as {cfg.system_user}). Is Conduit up? "
+            f"`cd conduit && docker compose up -d`, then `agora doctor`."
+        ) from exc
 
     if cfg.observer_user:
         _orig_create_room = client.create_room
