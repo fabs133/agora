@@ -986,6 +986,10 @@ class Orchestrator:
             matrix_client=self._matrix,
             agent_room_id=identity.room_id,
             project_room_id=project_room,
+            # No observer => no room anyone reads and no human to answer. Tools
+            # that inform must say "recorded to log"; tools that block on a
+            # person must refuse loudly. Neither may post into the void.
+            matrix_live=self._enable_observer,
             git_repo=repo,
             knowledge_refs=list(identity.knowledge_refs),
             knowledge_fetcher=fetcher,

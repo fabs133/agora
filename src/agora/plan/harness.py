@@ -28,7 +28,7 @@ from agora.fleet.llm_adapter import create_llm_adapter
 from agora.fleet.orchestrator import Orchestrator, ProjectResult
 from agora.fleet.profiles import ModelProfile, build_llm_factory, resolve_base_url
 from agora.fleet.vram import check_model_fits, raise_if_wont_fit
-from agora.matrix.client import AgoraMatrixClient
+from agora.matrix.client import AgoraMatrixClient, MatrixClientProtocol, NullMatrixClient
 from agora.matrix.room_manager import RoomManager
 
 
@@ -154,8 +154,24 @@ async def preflight_vram(
     raise_if_wont_fit(check, model)
 
 
-async def build_matrix_client(cfg: HarnessConfig) -> AgoraMatrixClient:
-    """Log in as the system user and wire the auto-invite shim if observer is set."""
+async def build_matrix_client(cfg: HarnessConfig) -> MatrixClientProtocol:
+    """Log in as the system user and wire the auto-invite shim if observer is set.
+
+    With ``enable_observer=False`` this returns a :class:`NullMatrixClient` and
+    never touches the network: an unobserved run has no reason to require a
+    homeserver, a password, or rooms nobody opens. Provenance is unaffected —
+    JSONL + run.log are written unconditionally (F3); only the live room view
+    goes away. That makes Python + Ollama the whole dependency set for a phased
+    run, with Conduit an opt-in observation surface.
+    """
+    if not cfg.enable_observer:
+        print(
+            "[*] Matrix surface OFF (enable_observer=False) — no Conduit required.\n"
+            "    Provenance is unaffected: run.log + JSONL are written as always;\n"
+            "    only the live room view is absent. Set enable_observer=True to watch."
+        )
+        return NullMatrixClient(homeserver=cfg.homeserver, user_id=cfg.system_user)
+
     # Loud, clear failure when the system agent has no Matrix password — better
     # than an opaque auth error from Conduit. (harness stays config-free per the
     # composition-root allowlist, so the message is inlined rather than imported.)

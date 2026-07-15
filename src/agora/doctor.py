@@ -25,12 +25,19 @@ from typing import Any
 
 @dataclass(frozen=True)
 class CheckResult:
-    """One preflight check outcome. ``hint`` is shown only when ``ok`` is False."""
+    """One preflight check outcome. ``hint`` is shown only when ``ok`` is False.
+
+    ``skipped`` is a THIRD state, deliberately not folded into ``ok``: a check
+    that never ran is not a check that passed. A run with the Matrix surface off
+    should report ``[SKIP] conduit`` — reading ``[ OK ] conduit`` there would
+    claim a homeserver was verified when none was contacted.
+    """
 
     name: str
     ok: bool
     detail: str
     hint: str = ""
+    skipped: bool = False
 
 
 def _get_json(url: str, timeout: float) -> Any:
@@ -206,10 +213,21 @@ async def run_checks(
     return results
 
 
+def skipped(name: str, reason: str) -> CheckResult:
+    """A check that did not run, and says so.
+
+    Not a green: nothing was verified. Used where a dependency is genuinely
+    absent from a run's path (e.g. Conduit when the Matrix surface is off), so
+    the report neither fails on it nor pretends it was checked.
+    """
+    return CheckResult(name, ok=True, detail=f"skipped ({reason})", skipped=True)
+
+
 def format_line(r: CheckResult) -> str:
     # ASCII-only separator: this output must render in a bare cp1252 Windows
     # console (the doctor runs before force_utf8_stdio would be in play).
-    line = f"[{' OK ' if r.ok else 'FAIL'}] {r.name}: {r.detail}"
+    tag = "SKIP" if r.skipped else (" OK " if r.ok else "FAIL")
+    line = f"[{tag}] {r.name}: {r.detail}"
     if not r.ok and r.hint:
         line += f"  -> {r.hint}"
     return line
@@ -220,11 +238,12 @@ def report(results: Sequence[CheckResult], echo: Callable[[str], None] = print) 
     echo("== agora doctor ==")
     for r in results:
         echo(format_line(r))
-    reds = [r for r in results if not r.ok]
+    reds = [r for r in results if not r.ok and not r.skipped]
     if reds:
         echo(f"\n{len(reds)} check(s) FAILED - fix the items marked FAIL above.")
         return 1
-    echo("\nall checks passed.")
+    n_skipped = sum(1 for r in results if r.skipped)
+    echo(f"\nall checks passed.{f' ({n_skipped} skipped)' if n_skipped else ''}")
     return 0
 
 

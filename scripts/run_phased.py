@@ -734,6 +734,14 @@ def _flow_phases(flow_path: str) -> tuple[list[str], list[Any], list[Any]]:
 
 # ------------------------------------------------------------------ orchestration glue
 
+#: The phased runner is headless BY DESIGN: its product is gates + provenance
+#: (phases.jsonl / tasks.jsonl / run.log), not a live room view. One constant
+#: drives BOTH the Conduit preflight and the HarnessConfig below, so the
+#: preflight can never demand a service the run doesn't build — or skip one it
+#: does. Flip this to True only alongside a Conduit that is actually up.
+OBSERVER_ON = False
+
+
 async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001",
                     rerun_task: str | None = None, oracle_phase: str | None = None) -> Any:
     """Execute one phase's tasks via the cast-loaded orchestrator.
@@ -760,18 +768,25 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         for rb in resolve_cast(cast, profiles)
         if not rb.is_human and rb.model.startswith("ollama/") and rb.resident
     ]
-    # Preflight EVERY dependency this run will actually touch, not just Ollama.
-    # Conduit belongs here because build_matrix_client() below is unconditional:
-    # omitting it is what let a dead homeserver hang the runner for minutes with
-    # no output (2026-07-15). doctor.check_conduit bounds its login at 8s, so a
-    # down Conduit is a named red line here rather than a silent await later.
+    # Preflight EVERY dependency this run will actually touch — and ONLY those.
+    # Conduit is checked exactly when the run will use it: the observer flag
+    # decides both, so the preflight can never demand a service the run then
+    # doesn't build (or skip one it does). Omitting the Conduit check while
+    # build_matrix_client awaited it unconditionally is what let a dead
+    # homeserver hang the runner for minutes with no output (2026-07-15).
+    # doctor.check_conduit bounds its login at 8s -> named red line, not a hang.
     checks = [
         doctor.check_ollama_reachable(settings.ollama_base_url),
         doctor.check_ollama_models(settings.ollama_base_url, required),
-        await doctor.check_conduit(
-            settings.matrix_homeserver, settings.matrix_user_id, settings.matrix_password
-        ),
     ]
+    if OBSERVER_ON:
+        checks.append(
+            await doctor.check_conduit(
+                settings.matrix_homeserver, settings.matrix_user_id, settings.matrix_password
+            )
+        )
+    else:
+        checks.append(doctor.skipped("conduit", "observer off"))
     doctor.preflight_or_die(checks)
 
     flow = load_flow(campaign["flow"])
@@ -825,7 +840,7 @@ async def run_phase(campaign: dict[str, Any], phase: str, *, run_id: str = "r001
         review_budget=int(harness.get("review_budget", 0)),
         salvage_budget=int(harness.get("salvage_budget", 0)),
         review_timeout_seconds=float(campaign.get("run", {}).get("review_timeout_seconds", 5)),
-        enable_observer=False,
+        enable_observer=OBSERVER_ON,  # same constant the preflight gated on
     )
 
     def llm_factory(model_ref: str, _m2p=model_to_profile, _prof=profiles, _bu=settings.ollama_base_url):
