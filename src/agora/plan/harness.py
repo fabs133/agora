@@ -451,12 +451,26 @@ def force_utf8_stdio() -> None:
     """Windows cp1252 cannot encode many characters LLMs produce. Force UTF-8.
 
     Call from a runner's top-level before any logging is configured.
+
+    ``line_buffering=True`` is load-bearing. A bare ``TextIOWrapper`` is
+    BLOCK-buffered whenever stdout is a pipe or a file, so a redirected run
+    emits nothing until the process exits — and it silently defeats ``python
+    -u``, because that flag configures the *original* stdout, not the wrapper
+    installed over it. Without this, `run_phased … --auto > run.txt` shows an
+    empty file for the whole run and is indistinguishable from a hang
+    (observed 2026-07-15: multi-minute runs written off as dead purely because
+    nothing streamed). Progress output is a diagnostic surface; buffering it
+    away costs real debugging time.
     """
     import io
 
     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+        )
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True
+        )
 
 
 __all__ = [

@@ -50,9 +50,19 @@ import uuid
 from pathlib import Path
 
 # Windows cp1252 cannot encode many characters LLMs produce; force UTF-8.
+# line_buffering=True is load-bearing, not cosmetic: a bare TextIOWrapper is
+# BLOCK-buffered when stdout is a pipe or file, so every print vanishes until the
+# process exits — and it overrides `python -u`, because the flag configures the
+# *original* stdout, not this replacement. Redirect the demo to a log without it
+# and a 20-minute run looks stone dead the entire time (observed 2026-07-15: two
+# runs diagnosed as hangs purely because nothing streamed).
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    sys.stdout = io.TextIOWrapper(
+        sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+    )
+    sys.stderr = io.TextIOWrapper(
+        sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True
+    )
 
 import logging
 
